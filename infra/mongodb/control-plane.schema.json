@@ -1,0 +1,123 @@
+{
+  "title": "TailWatch MongoDB control-plane contract v1",
+  "description": "Stage 1 document shapes. Runtime validators are materialized by 001_control_plane.js.",
+  "database": "tailwatch_control",
+  "collections": {
+    "counters": {
+      "document": {
+        "bsonType": "object",
+        "required": ["_id", "value"],
+        "properties": {
+          "_id": { "bsonType": "string" },
+          "value": { "bsonType": "long", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tenants": {
+      "document": {
+        "bsonType": "object",
+        "required": ["_id", "createdAt", "status", "plan", "region"],
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "createdAt": { "bsonType": "date" },
+          "updatedAt": { "bsonType": "date" },
+          "status": { "enum": ["active", "suspended", "deleted"] },
+          "plan": { "bsonType": "string" },
+          "region": { "enum": ["in", "in-eu"] },
+          "billing": {
+            "bsonType": "object",
+            "properties": {
+              "customerId": { "bsonType": "string" },
+              "subscriptionId": { "bsonType": "string" }
+            },
+            "additionalProperties": false
+          },
+          "settings": { "bsonType": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "users": {
+      "document": {
+        "bsonType": "object",
+        "required": ["_id", "email", "emailNormalized", "createdAt", "status"],
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "email": { "bsonType": "string", "minLength": 3, "maxLength": 320 },
+          "emailNormalized": { "bsonType": "string", "minLength": 3, "maxLength": 320 },
+          "passwordHash": { "bsonType": "string", "maxLength": 512 },
+          "oauth": { "bsonType": "object" },
+          "createdAt": { "bsonType": "date" },
+          "updatedAt": { "bsonType": "date" },
+          "status": { "enum": ["active", "disabled", "deleted"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "memberships": {
+      "document": {
+        "bsonType": "object",
+        "required": ["_id", "tenantId", "userId", "role", "createdAt"],
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "tenantId": { "bsonType": "objectId" },
+          "userId": { "bsonType": "objectId" },
+          "role": { "enum": ["owner", "admin", "viewer"] },
+          "createdAt": { "bsonType": "date" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "sites": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "tenantId",
+          "domain",
+          "timezone",
+          "allowedHosts",
+          "retentionDays",
+          "status",
+          "region",
+          "keys",
+          "createdAt"
+        ],
+        "properties": {
+          "_id": { "bsonType": ["long", "int"], "minimum": 1 },
+          "tenantId": { "bsonType": "objectId" },
+          "domain": { "bsonType": "string", "minLength": 1, "maxLength": 253 },
+          "timezone": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "allowedHosts": {
+            "bsonType": "array",
+            "minItems": 1,
+            "items": { "bsonType": "string", "maxLength": 253 }
+          },
+          "retentionDays": { "bsonType": ["int", "long"], "minimum": 1 },
+          "status": { "enum": ["active", "paused", "deleted"] },
+          "region": { "enum": ["in", "in-eu"] },
+          "verifiedAt": { "bsonType": ["date", "null"] },
+          "keys": {
+            "bsonType": "array",
+            "items": {
+              "bsonType": "object",
+              "required": ["id", "publicKey", "createdAt", "status"],
+              "properties": {
+                "id": { "bsonType": "string", "maxLength": 64 },
+                "publicKey": { "bsonType": "string", "pattern": "^tw_pub_[A-Za-z0-9]{32}$" },
+                "createdAt": { "bsonType": "date" },
+                "revokedAt": { "bsonType": ["date", "null"] },
+                "status": { "enum": ["active", "revoked"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "createdAt": { "bsonType": "date" },
+          "updatedAt": { "bsonType": "date" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

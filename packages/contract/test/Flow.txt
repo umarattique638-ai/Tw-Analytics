@@ -1,0 +1,802 @@
+import { CONTRACT_VERSION } from '@tailwatch/contract';
+
+// Stage 0 hello world. The real collector (POST /e) is Stage 2.
+export default {
+  async fetch(req) {
+    const { pathname } = new URL(req.url);
+    if (pathname === '/health') return new Response('ok', { headers: { 'x-tw-contract': String(CONTRACT_VERSION) } });
+    return new Response(null, { status: 404 });
+  },
+} satisfies ExportedHandler;
+
+
+import { describe, expect, it } from 'vitest';
+import worker from '../src/index';
+
+const call = (path: string) => worker.fetch(new Request(`https://in.tailwatch.com${path}`) as never);
+
+describe('collector hello world (Stage 0)', () => {
+  it('GET /health answers ok and proves the contract package is wired in', async () => {
+    const res = await call('/health');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(res.headers.get('x-tw-contract')).toBe('1');
+  });
+  it('anything else is 404', async () => {
+    expect((await call('/nope')).status).toBe(404);
+  });
+});
+
+
+
+
+export const CONTRACT_VERSION = 1 as const;
+
+export * from './limits';
+export * from './wire';
+export * from './outcome';
+export * from './queue';
+export * from './url';
+export * from './bots';
+export * from './identity';
+export * from './metrics';
+
+import type { DropReason } from './outcome';
+
+
+export const VERIFIER_UA = /^TailwatchVerifier\//;
+
+export const UA_DENYLIST: readonly RegExp[] = [
+  /^curl\//i, /^wget\//i, /^httpie\//i, /^postmanruntime\//i,
+  /^python-requests/i, /^python-urllib/i, /^go-http-client/i, /^libwww-perl/i,
+  /^node-fetch/i, /^axios\//i, /^scrapy/i,
+  /headlesschrome/i, /phantomjs/i,
+  /googlebot|bingbot|ahrefsbot|semrushbot|yandexbot|baiduspider|duckduckbot|applebot|gptbot|claudebot|ccbot|petalbot|dotbot|mj12bot/i,
+];
+
+export const DATACENTRE_ASNS: ReadonlySet<number> = new Set([
+  14618, 16509, 
+  8075,
+  14061, 
+  24940, 
+  16276, 
+  63949,
+  20473, 
+  396982, 
+  45102,
+]);
+
+export interface BotVerdict { reason: Extract<DropReason, 'bot' | 'verification_agent'>; detail: string }
+
+export function edgeBotReason(userAgent: string | null, asn?: number): BotVerdict | null {
+  if (!userAgent) return { reason: 'bot', detail: 'missing_user_agent' };
+  if (VERIFIER_UA.test(userAgent)) return { reason: 'verification_agent', detail: 'install_check' };
+  if (UA_DENYLIST.some((re) => re.test(userAgent))) return { reason: 'bot', detail: 'ua_denylist' };
+  if (asn !== undefined && DATACENTRE_ASNS.has(asn)) return { reason: 'bot', detail: `datacentre_asn:${asn}` };
+  return null;
+}
+
+
+
+const enc = new TextEncoder();
+const toHex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+
+export const utcDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+export const previousUtcDate = (ms: number): string => utcDate(ms - 86_400_000);
+
+export async function visitorHash(salt: string, ip: string, userAgent: string, siteId: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(`${salt}\n${siteId}\n${ip}\n${userAgent}`));
+  return new DataView(digest).getBigUint64(0).toString();
+}
+
+
+export async function deriveSalt(secret: string, date: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return toHex(await crypto.subtle.sign('HMAC', key, enc.encode(date)));
+}
+
+
+
+export const LIMITS = {
+  maxBodyBytes: 32 * 1024, 
+  maxUrlLength: 2048,
+  maxReferrerLength: 2048,
+  maxRouteLength: 256,
+  maxInsertIdLength: 64,
+  maxUserAgentLength: 512,
+  maxScreenWidth: 100_000,
+  maxVersion: 65_535,
+  maxFlags: 255,
+  maxEngagementMs: 24 * 60 * 60 * 1000, 
+  maxProps: 25,
+  maxPropKeyLength: 40, 
+  maxPropValueLength: 255,
+  maxDropDetailLength: 200,
+  backfillAfterMs: 72 * 60 * 60 * 1000, 
+  maxFutureSkewMs: 5 * 60 * 1000, 
+  sessionGapMs: 30 * 60 * 1000,
+  engagedMinMs: 10_000, 
+} as const;
+
+export const EVENT_NAME_RE = /^[a-z0-9_]{1,40}$/;
+
+export const SITE_KEY_RE = /^tw_pub_[A-Za-z0-9]{32}$/;
+
+export const UNSAFE_PROP_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
+
+export const RESERVED_NAME_PREFIX = 'tw_';
+
+
+export const AUTOMATIC_EVENTS: ReadonlySet<string> = new Set([
+  'pageview', 'session_start', 'first_visit', 'engagement',
+  'scroll', 'outbound_click', 'file_download', 'site_search', 'form_start', 'form_submit',
+  'video_start', 'video_progress', 'video_complete', 'rage_click', 'dead_click', 'js_error', 'web_vitals',
+]);
+
+
+const CONTROL_CHARS_RE = /[\x00-\x1F\x7F]/g;
+export const stripControlChars = (s: string): string => s.replace(CONTROL_CHARS_RE, '');
+
+
+import { AUTOMATIC_EVENTS, LIMITS } from './limits';
+
+
+export interface MetricEvent {
+  visitor: string;
+  t: number; 
+  name: string;
+  engagementMs?: number; 
+  utm?: string; 
+}
+
+export interface Session {
+  visitor: string;
+  id: number; 
+  start: number;
+  end: number;
+  pageviews: number;
+  customEvents: number;
+  engagementMs: number;
+  engaged: boolean;
+}
+
+export function sessionise(events: readonly MetricEvent[]): Session[] {
+  const sorted = [...events].sort((a, b) => (a.visitor < b.visitor ? -1 : a.visitor > b.visitor ? 1 : a.t - b.t));
+  const out: Session[] = [];
+  let cur: Session | null = null;
+  for (const e of sorted) {
+    if (!cur || cur.visitor !== e.visitor || e.t - cur.end > LIMITS.sessionGapMs) {
+      cur = { visitor: e.visitor, id: Math.floor(e.t / 1000), start: e.t, end: e.t, pageviews: 0, customEvents: 0, engagementMs: 0, engaged: false };
+      out.push(cur);
+    }
+    cur.end = e.t;
+    cur.engagementMs += e.engagementMs ?? 0;
+    if (e.name === 'pageview') cur.pageviews++;
+    else if (!AUTOMATIC_EVENTS.has(e.name)) cur.customEvents++;
+  }
+  for (const s of out) s.engaged = s.engagementMs > LIMITS.engagedMinMs || s.customEvents >= 1 || s.pageviews >= 2;
+  return out;
+}
+
+export function summarise(events: readonly MetricEvent[]) {
+  const sessions = sessionise(events);
+  const engagedSessions = sessions.filter((s) => s.engaged).length;
+  return {
+    sessions: sessions.length,
+    engagedSessions,
+    bounceRate: sessions.length ? 1 - engagedSessions / sessions.length : 0,
+    pageviews: sessions.reduce((sum, s) => sum + s.pageviews, 0),
+    uniqueVisitors: new Set(events.map((e) => e.visitor)).size,
+  };
+}
+
+
+import type { PropValue } from './wire';
+
+
+
+export interface SiteConfig {
+  id: string; 
+  publicKey: string; 
+  allowedHosts: string[]; 
+  live: boolean;
+  region: 'in' | 'in-eu'; 
+}
+
+export interface EdgeMeta {
+  receivedAt: number;
+  site: SiteConfig | null; 
+  country?: string;
+  asn?: number;
+  asOrganization?: string;
+}
+
+export interface HeaderReader { get(name: string): string | null }
+
+export type DropReason = 'not_found' | 'hostname' | 'bot' | 'verification_agent' | 'gpc';
+
+export interface ValidatedEvent {
+  siteId: string;
+  name: string;
+  url: string;
+  host: string;
+  path: string;
+  route?: string;
+  referrer?: string;
+  seq: number;
+  createdAt: number; 
+  occurredAt: number; 
+  receivedAt: number;
+  backfill: boolean;
+  trackerVersion?: number;
+  engagementMs?: number;
+  width?: number;
+  insertId?: string;
+  flags: number;
+  props: Record<string, PropValue>;
+  warnings: string[]; 
+  extra: Record<string, unknown>;
+  userAgent?: string;
+  country?: string;
+  asn?: number;
+  asOrganization?: string;
+}
+
+export type Outcome =
+  | { kind: 'accept'; status: 204; event: ValidatedEvent }
+  | { kind: 'drop'; status: 204; reason: DropReason; detail?: string; headers: { 'x-tw-dropped': DropReason }; siteId?: string; country?: string; asn?: number }
+  | { kind: 'reject'; status: 400 | 413; error: string };
+
+
+  import type { DropReason, ValidatedEvent } from './outcome';
+
+
+export interface VisitorHashes {
+  hash: string; 
+  prevHash: string; 
+}
+
+export type QueueMessage =
+  | { v: 1; type: 'event'; event: ValidatedEvent; visitor: VisitorHashes }
+  | { v: 1; type: 'drop'; at: number; siteId: string; reason: DropReason; detail?: string; country?: string; asn?: number };
+
+
+  
+export interface NormalizedUrl {
+  href: string;
+  host: string; 
+  path: string; 
+}
+
+
+export const DEFAULT_QUERY_ALLOWLIST = [
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref', 'source',
+] as const;
+
+
+export function normalizeUrl(input: string, allow: readonly string[] = DEFAULT_QUERY_ALLOWLIST): NormalizedUrl | null {
+  let u: URL;
+  try {
+    u = new URL(input);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
+  if (!host) return null;
+
+  let path = u.pathname || '/';
+  if (path.length > 1) path = path.replace(/\/+$/, '') || '/';
+
+  const kept = [...u.searchParams.entries()]
+    .filter(([key]) => allow.includes(key))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const query = new URLSearchParams(kept).toString();
+
+  const authority = u.port ? `${host}:${u.port}` : host;
+  return { href: `${u.protocol}//${authority}${path}${query ? `?${query}` : ''}`, host, path };
+}
+
+export function hostAllowed(host: string, allowed: readonly string[]): boolean {
+  const h = host.toLowerCase().replace(/\.$/, '');
+  return allowed.some((raw) => {
+    const a = raw.trim().toLowerCase().replace(/\.$/, '');
+    if (!a) return false;
+    if (a.startsWith('*.')) {
+      const base = a.slice(2);
+      return base !== '' && h.length > base.length + 1 && h.endsWith('.' + base);
+    }
+    return h === a;
+  });
+}
+
+
+
+
+export type PropValue = string | number | boolean;
+
+export const FLAG_FIRST_PAGEVIEW = 1; 
+
+export interface WirePayload {
+  s: string;
+  n: string;
+  u: string;
+  q: number; 
+  t: number;
+
+  v?: number; 
+  r?: string;
+  e?: number; 
+  rt?: string; 
+  w?: number; 
+  i?: string;
+  x?: number; 
+  f?: number; 
+  p?: Record<string, PropValue>; 
+
+  [futureField: string]: unknown;
+}
+
+export const WIRE_FIELDS = ['s', 'n', 'u', 'q', 't', 'v', 'r', 'e', 'rt', 'w', 'i', 'x', 'f', 'p'] as const;
+
+
+
+
+
+
+
+ab test cases 
+
+import { describe, expect, it } from 'vitest';
+import { edgeBotReason } from '../src';
+
+const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+describe('edgeBotReason', () => {
+  it('lets a normal browser through', () => {
+    expect(edgeBotReason(CHROME)).toBeNull();
+    expect(edgeBotReason(CHROME, 13335)).toBeNull(); // a non-datacentre ASN
+  });
+  it('a missing or empty user agent is a bot', () => {
+    expect(edgeBotReason(null)).toEqual({ reason: 'bot', detail: 'missing_user_agent' });
+    expect(edgeBotReason('')).toEqual({ reason: 'bot', detail: 'missing_user_agent' });
+  });
+  it('our own verifier is recognised on its own reason, never counted as a visitor', () => {
+    expect(edgeBotReason('TailwatchVerifier/1.0')).toEqual({ reason: 'verification_agent', detail: 'install_check' });
+  });
+  it('scripting libraries and headless browsers are bots', () => {
+    for (const ua of ['curl/8.4.0', 'python-requests/2.31', 'Go-http-client/1.1', CHROME.replace('Chrome', 'HeadlessChrome')]) {
+      expect(edgeBotReason(ua)?.reason, ua).toBe('bot');
+    }
+  });
+  it('declared crawlers are bots', () => {
+    expect(edgeBotReason('Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)')?.reason).toBe('bot');
+    expect(edgeBotReason('Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.0)')?.reason).toBe('bot');
+  });
+  it('a datacentre ASN is a bot even with a normal browser user agent', () => {
+    expect(edgeBotReason(CHROME, 14061)).toEqual({ reason: 'bot', detail: 'datacentre_asn:14061' });
+  });
+  it('an unknown ASN, or no ASN at all, is not enough to drop', () => {
+    expect(edgeBotReason(CHROME, 64512)).toBeNull();
+    expect(edgeBotReason(CHROME, undefined)).toBeNull();
+  });
+  it('only UNAMBIGUOUS cases are dropped: "curl" in the middle of a real browser UA is not matched', () => {
+    expect(edgeBotReason(`${CHROME} curl/8.0`)).toBeNull();
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { deriveSalt, previousUtcDate, utcDate, visitorHash } from '../src';
+
+describe('visitor identity', () => {
+  const base = ['salt-a', '203.0.113.7', 'Mozilla/5.0', '42'] as const;
+
+  it('is deterministic', async () => {
+    expect(await visitorHash(...base)).toBe(await visitorHash(...base));
+  });
+  it('changes with the salt, so daily rotation unlinks one day from the next', async () => {
+    expect(await visitorHash('salt-b', base[1], base[2], base[3])).not.toBe(await visitorHash(...base));
+  });
+  it('is per site: no cross-site identity', async () => {
+    expect(await visitorHash(base[0], base[1], base[2], '43')).not.toBe(await visitorHash(...base));
+  });
+  it('changes with the IP and with the user agent', async () => {
+    expect(await visitorHash(base[0], '203.0.113.8', base[2], base[3])).not.toBe(await visitorHash(...base));
+    expect(await visitorHash(base[0], base[1], 'Mozilla/4.0', base[3])).not.toBe(await visitorHash(...base));
+  });
+  it('is a decimal string that fits an unsigned 64-bit integer', async () => {
+    const h = await visitorHash(...base);
+    expect(h).toMatch(/^\d+$/);
+    expect(BigInt(h) >= 0n && BigInt(h) < 2n ** 64n).toBe(true);
+  });
+  it('does not contain the IP', async () => {
+    expect(await visitorHash(...base)).not.toContain('203');
+  });
+  it('derives a stable salt per date and a different one for another date or another secret', async () => {
+    expect(await deriveSalt('k', '2026-10-02')).toBe(await deriveSalt('k', '2026-10-02'));
+    expect(await deriveSalt('k', '2026-10-02')).not.toBe(await deriveSalt('k', '2026-10-03'));
+    expect(await deriveSalt('k', '2026-10-02')).not.toBe(await deriveSalt('other', '2026-10-02'));
+    expect(await deriveSalt('k', '2026-10-02')).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it('salt dates are UTC', () => {
+    expect(utcDate(Date.UTC(2026, 9, 2, 23, 59))).toBe('2026-10-02');
+    expect(previousUtcDate(Date.UTC(2026, 9, 2, 0, 1))).toBe('2026-10-01');
+  });
+});
+
+import { describe, expect, it } from 'vitest';
+import { deriveSalt, previousUtcDate, utcDate, visitorHash } from '../src';
+
+describe('visitor identity', () => {
+  const base = ['salt-a', '203.0.113.7', 'Mozilla/5.0', '42'] as const;
+
+  it('is deterministic', async () => {
+    expect(await visitorHash(...base)).toBe(await visitorHash(...base));
+  });
+  it('changes with the salt, so daily rotation unlinks one day from the next', async () => {
+    expect(await visitorHash('salt-b', base[1], base[2], base[3])).not.toBe(await visitorHash(...base));
+  });
+  it('is per site: no cross-site identity', async () => {
+    expect(await visitorHash(base[0], base[1], base[2], '43')).not.toBe(await visitorHash(...base));
+  });
+  it('changes with the IP and with the user agent', async () => {
+    expect(await visitorHash(base[0], '203.0.113.8', base[2], base[3])).not.toBe(await visitorHash(...base));
+    expect(await visitorHash(base[0], base[1], 'Mozilla/4.0', base[3])).not.toBe(await visitorHash(...base));
+  });
+  it('is a decimal string that fits an unsigned 64-bit integer', async () => {
+    const h = await visitorHash(...base);
+    expect(h).toMatch(/^\d+$/);
+    expect(BigInt(h) >= 0n && BigInt(h) < 2n ** 64n).toBe(true);
+  });
+  it('does not contain the IP', async () => {
+    expect(await visitorHash(...base)).not.toContain('203');
+  });
+  it('derives a stable salt per date and a different one for another date or another secret', async () => {
+    expect(await deriveSalt('k', '2026-10-02')).toBe(await deriveSalt('k', '2026-10-02'));
+    expect(await deriveSalt('k', '2026-10-02')).not.toBe(await deriveSalt('k', '2026-10-03'));
+    expect(await deriveSalt('k', '2026-10-02')).not.toBe(await deriveSalt('other', '2026-10-02'));
+    expect(await deriveSalt('k', '2026-10-02')).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it('salt dates are UTC', () => {
+    expect(utcDate(Date.UTC(2026, 9, 2, 23, 59))).toBe('2026-10-02');
+    expect(previousUtcDate(Date.UTC(2026, 9, 2, 0, 1))).toBe('2026-10-01');
+  });
+});
+
+import { describe, expect, it } from 'vitest';
+import { AUTOMATIC_EVENTS, EVENT_NAME_RE, SITE_KEY_RE, UNSAFE_PROP_KEYS, WIRE_FIELDS, stripControlChars } from '../src';
+
+describe('site key', () => {
+  const body = 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6'; // 32 chars
+  it('is tw_pub_ + exactly 32 letters/digits', () => {
+    expect(body).toHaveLength(32);
+    expect(SITE_KEY_RE.test(`tw_pub_${body}`)).toBe(true);
+  });
+  it('rejects 31 chars, 33 chars, wrong prefix and symbols', () => {
+    expect(SITE_KEY_RE.test(`tw_pub_${body.slice(1)}`)).toBe(false);
+    expect(SITE_KEY_RE.test(`tw_pub_${body}x`)).toBe(false);
+    expect(SITE_KEY_RE.test(`tw_sec_${body}`)).toBe(false);
+    expect(SITE_KEY_RE.test(`tw_pub_${body.slice(1)}-`)).toBe(false);
+    expect(SITE_KEY_RE.test('tw_pub_test')).toBe(false);
+  });
+});
+
+describe('event name', () => {
+  it('accepts lowercase letters, digits and underscore up to 40 chars', () => {
+    expect(EVENT_NAME_RE.test('signup_click')).toBe(true);
+    expect(EVENT_NAME_RE.test('a'.repeat(40))).toBe(true);
+  });
+  it('rejects empty, 41 chars, uppercase, spaces and dashes', () => {
+    for (const bad of ['', 'a'.repeat(41), 'PageView', 'sign up', 'sign-up']) expect(EVENT_NAME_RE.test(bad)).toBe(false);
+  });
+});
+
+describe('stripControlChars', () => {
+  it('removes newlines, tabs, NUL and DEL so one value cannot forge a second log line', () => {
+    expect(stripControlChars('a\nb\r\nc\td\u0000e\u007Ff')).toBe('abcdef');
+  });
+  it('keeps normal text, spaces and non-latin characters', () => {
+    expect(stripControlChars('hello world — سلام')).toBe('hello world — سلام');
+  });
+});
+
+describe('constants', () => {
+  it('prototype-pollution keys are blocked', () => {
+    for (const k of ['__proto__', 'constructor', 'prototype']) expect(UNSAFE_PROP_KEYS.has(k)).toBe(true);
+  });
+  it('automatic events include pageview but not a custom name', () => {
+    expect(AUTOMATIC_EVENTS.has('pageview')).toBe(true);
+    expect(AUTOMATIC_EVENTS.has('signup')).toBe(false);
+    expect(AUTOMATIC_EVENTS.size).toBe(17); // Tier A (4) + Tier B (13)
+  });
+  it('the wire has 14 distinct known fields', () => {
+    expect(WIRE_FIELDS).toHaveLength(14);
+    expect(new Set(WIRE_FIELDS).size).toBe(14);
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { AUTOMATIC_EVENTS, LIMITS, sessionise } from '../src';
+import type { MetricEvent } from '../src';
+import { sessionEvents } from '../fixtures/sessions';
+
+// A SECOND implementation, written differently on purpose: one pass in global time order with a map of open
+// sessions (the reference sorts per visitor instead). If the two ever disagree, a definition is ambiguous.
+// This is the executable form of the Stage 1 "two people compute the same session count" check.
+interface Sess { visitor: string; start: number; end: number; pageviews: number; customEvents: number; engagementMs: number }
+
+function independent(events: readonly MetricEvent[]) {
+  const ordered = [...events].sort((a, b) => a.t - b.t || (a.visitor < b.visitor ? -1 : a.visitor > b.visitor ? 1 : 0));
+  const open = new Map<string, Sess>();
+  const done: Sess[] = [];
+  for (const e of ordered) {
+    let s = open.get(e.visitor);
+    if (s && e.t - s.end > LIMITS.sessionGapMs) {
+      done.push(s);
+      s = undefined;
+    }
+    if (!s) {
+      s = { visitor: e.visitor, start: e.t, end: e.t, pageviews: 0, customEvents: 0, engagementMs: 0 };
+      open.set(e.visitor, s);
+    }
+    s.end = e.t;
+    s.engagementMs += e.engagementMs ?? 0;
+    if (e.name === 'pageview') s.pageviews += 1;
+    else if (!AUTOMATIC_EVENTS.has(e.name)) s.customEvents += 1;
+  }
+  done.push(...open.values());
+  return done
+    .map((s) => ({
+      ...s,
+      id: Math.floor(s.start / 1000),
+      engaged: s.engagementMs > 10_000 || s.customEvents > 0 || s.pageviews > 1,
+    }))
+    .sort((a, b) => (a.visitor < b.visitor ? -1 : a.visitor > b.visitor ? 1 : a.start - b.start));
+}
+
+const reference = (events: readonly MetricEvent[]) =>
+  sessionise(events).sort((a, b) => (a.visitor < b.visitor ? -1 : a.visitor > b.visitor ? 1 : a.start - b.start));
+
+// small deterministic random generator (mulberry32) so a failure is reproducible
+function rng(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('two independent implementations agree', () => {
+  it('on the hand-worked fixture', () => {
+    expect(independent(sessionEvents)).toEqual(reference(sessionEvents));
+  });
+
+  it('on 300 random event streams that deliberately sit on the 30-minute boundary', () => {
+    const gaps = [0, 1, 1000, 29 * 60_000, 30 * 60_000 - 1, 30 * 60_000, 30 * 60_000 + 1, 31 * 60_000, 3 * 3_600_000];
+    const names = ['pageview', 'pageview', 'pageview', 'signup', 'scroll', 'engagement', 'checkout_done'];
+    const visitors = ['v1', 'v2', 'v3', 'v4'];
+    const t0 = Date.UTC(2026, 9, 1, 0, 0, 0);
+    for (let seed = 1; seed <= 300; seed++) {
+      const r = rng(seed);
+      const events: MetricEvent[] = [];
+      for (const visitor of visitors) {
+        let t = t0 + Math.floor(r() * 3_600_000);
+        const n = 1 + Math.floor(r() * 8);
+        for (let i = 0; i < n; i++) {
+          events.push({
+            visitor,
+            t,
+            name: names[Math.floor(r() * names.length)]!,
+            engagementMs: r() < 0.4 ? [0, 3000, 10_000, 10_001, 25_000][Math.floor(r() * 5)]! : undefined,
+          });
+          t += gaps[Math.floor(r() * gaps.length)]!;
+        }
+      }
+      expect(independent(events), `seed ${seed}`).toEqual(reference(events));
+    }
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { sessionise, summarise } from '../src';
+import { sessionEvents, sessionExpected, sessionExpectedList } from '../fixtures/sessions';
+
+describe('metric definitions (PLAN 5) against the hand-worked fixture', () => {
+  it('reproduces the hand-worked totals', () => {
+    const s = summarise(sessionEvents);
+    expect(s).toMatchObject({
+      sessions: sessionExpected.sessions,
+      engagedSessions: sessionExpected.engagedSessions,
+      pageviews: sessionExpected.pageviews,
+      uniqueVisitors: sessionExpected.uniqueVisitors,
+    });
+    expect(s.bounceRate).toBeCloseTo(sessionExpected.bounceRate, 12);
+  });
+
+  it('reproduces every session, one by one', () => {
+    const got = sessionise(sessionEvents).map(({ visitor, pageviews, customEvents, engagementMs, engaged }) => ({
+      visitor, pageviews, customEvents, engagementMs, engaged,
+    }));
+    expect(got).toEqual(sessionExpectedList);
+  });
+
+  it('does not depend on input order', () => {
+    expect(summarise([...sessionEvents].reverse())).toEqual(summarise(sessionEvents));
+  });
+
+  it('does not split a session at midnight UTC', () => {
+    const a = sessionise(sessionEvents).filter((s) => s.visitor === 'A');
+    expect(a).toHaveLength(2);
+    expect(a[0]!.pageviews).toBe(3);
+  });
+
+  it('does not split a session when the campaign changes', () => {
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'C')).toHaveLength(1);
+  });
+
+  it('a gap of exactly 30:00 stays, 30:00.001 splits', () => {
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'E')).toHaveLength(1);
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'F')).toHaveLength(2);
+  });
+
+  it('exactly 10 s visible is not engaged', () => {
+    expect(sessionise(sessionEvents).find((s) => s.visitor === 'H')!.engaged).toBe(false);
+  });
+
+  it('session_id is the start time in unix seconds', () => {
+    const s = sessionise(sessionEvents).find((x) => x.visitor === 'B')!;
+    expect(s.id).toBe(Math.floor(s.start / 1000));
+  });
+
+  it('an empty period has no sessions and a bounce rate of 0, not NaN', () => {
+    expect(summarise([])).toEqual({ sessions: 0, engagedSessions: 0, bounceRate: 0, pageviews: 0, uniqueVisitors: 0 });
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { sessionise, summarise } from '../src';
+import { sessionEvents, sessionExpected, sessionExpectedList } from '../fixtures/sessions';
+
+describe('metric definitions (PLAN 5) against the hand-worked fixture', () => {
+  it('reproduces the hand-worked totals', () => {
+    const s = summarise(sessionEvents);
+    expect(s).toMatchObject({
+      sessions: sessionExpected.sessions,
+      engagedSessions: sessionExpected.engagedSessions,
+      pageviews: sessionExpected.pageviews,
+      uniqueVisitors: sessionExpected.uniqueVisitors,
+    });
+    expect(s.bounceRate).toBeCloseTo(sessionExpected.bounceRate, 12);
+  });
+
+  it('reproduces every session, one by one', () => {
+    const got = sessionise(sessionEvents).map(({ visitor, pageviews, customEvents, engagementMs, engaged }) => ({
+      visitor, pageviews, customEvents, engagementMs, engaged,
+    }));
+    expect(got).toEqual(sessionExpectedList);
+  });
+
+  it('does not depend on input order', () => {
+    expect(summarise([...sessionEvents].reverse())).toEqual(summarise(sessionEvents));
+  });
+
+  it('does not split a session at midnight UTC', () => {
+    const a = sessionise(sessionEvents).filter((s) => s.visitor === 'A');
+    expect(a).toHaveLength(2);
+    expect(a[0]!.pageviews).toBe(3);
+  });
+
+  it('does not split a session when the campaign changes', () => {
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'C')).toHaveLength(1);
+  });
+
+  it('a gap of exactly 30:00 stays, 30:00.001 splits', () => {
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'E')).toHaveLength(1);
+    expect(sessionise(sessionEvents).filter((s) => s.visitor === 'F')).toHaveLength(2);
+  });
+
+  it('exactly 10 s visible is not engaged', () => {
+    expect(sessionise(sessionEvents).find((s) => s.visitor === 'H')!.engaged).toBe(false);
+  });
+
+  it('session_id is the start time in unix seconds', () => {
+    const s = sessionise(sessionEvents).find((x) => x.visitor === 'B')!;
+    expect(s.id).toBe(Math.floor(s.start / 1000));
+  });
+
+  it('an empty period has no sessions and a bounce rate of 0, not NaN', () => {
+    expect(summarise([])).toEqual({ sessions: 0, engagedSessions: 0, bounceRate: 0, pageviews: 0, uniqueVisitors: 0 });
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { hostAllowed, normalizeUrl } from '../src';
+
+const href = (u: string) => normalizeUrl(u)?.href;
+
+describe('normalizeUrl', () => {
+  it('lowercases the host but keeps the path case', () => {
+    expect(href('https://EXAMPLE.com/About')).toBe('https://example.com/About');
+  });
+  it('drops the fragment', () => expect(href('https://example.com/docs#install')).toBe('https://example.com/docs'));
+  it('drops default ports, keeps others', () => {
+    expect(href('https://example.com:443/x')).toBe('https://example.com/x');
+    expect(href('http://example.com:80/x')).toBe('http://example.com/x');
+    expect(href('http://example.com:8080/')).toBe('http://example.com:8080/');
+  });
+  it('treats trailing-slash variants as one page, but keeps the root slash', () => {
+    expect(href('https://example.com/pricing/')).toBe('https://example.com/pricing');
+    expect(href('https://example.com/pricing')).toBe('https://example.com/pricing');
+    expect(href('https://example.com')).toBe('https://example.com/');
+    expect(normalizeUrl('https://example.com/a/b///')!.path).toBe('/a/b');
+  });
+  it('removes a trailing dot from the host', () => expect(normalizeUrl('https://example.com./x')!.host).toBe('example.com'));
+  it('never stores credentials typed into the URL', () => {
+    expect(href('https://user:secret@example.com/x')).toBe('https://example.com/x');
+  });
+  it('keeps only allow-listed query keys, sorted', () => {
+    expect(href('https://example.com/p?z=1&utm_source=x&a=2&ref=y')).toBe('https://example.com/p?ref=y&utm_source=x');
+  });
+  it('drops tokens, emails and click ids', () => {
+    expect(href('https://example.com/p?token=abc&email=a@b.com&fbclid=1&gclid=2')).toBe('https://example.com/p');
+  });
+  it('is idempotent: normalising twice changes nothing', () => {
+    for (const u of [
+      'https://EXAMPLE.com:443/a/b/?z=1&utm_source=a%20b&ref=y#top',
+      'http://example.com./x//',
+      'https://user:pw@example.com:8443/p/?utm_campaign=x+y',
+    ]) {
+      const once = normalizeUrl(u)!;
+      expect(normalizeUrl(once.href)!.href).toBe(once.href);
+    }
+  });
+  it('refuses anything that is not an http(s) page URL', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,hi', 'ftp://example.com/', 'file:///etc/passwd', 'not a url', '', '//example.com/x']) {
+      expect(normalizeUrl(bad)).toBeNull();
+    }
+  });
+  it('returns host and path parts', () => {
+    const n = normalizeUrl('https://Blog.Example.com/post/1/?utm_source=x')!;
+    expect([n.host, n.path]).toEqual(['blog.example.com', '/post/1']);
+  });
+});
+
+describe('hostAllowed', () => {
+  it('exact match, case-insensitive', () => {
+    expect(hostAllowed('example.com', ['example.com'])).toBe(true);
+    expect(hostAllowed('EXAMPLE.com', ['example.com'])).toBe(true);
+    expect(hostAllowed('www.example.com', ['example.com'])).toBe(false);
+  });
+  it('a wildcard needs a real subdomain and never matches the apex', () => {
+    expect(hostAllowed('a.example.com', ['*.example.com'])).toBe(true);
+    expect(hostAllowed('a.b.example.com', ['*.example.com'])).toBe(true);
+    expect(hostAllowed('example.com', ['*.example.com'])).toBe(false);
+  });
+  it('lookalike hosts are refused', () => {
+    expect(hostAllowed('badexample.com', ['*.example.com'])).toBe(false);
+    expect(hostAllowed('example.com.evil.com', ['example.com', '*.example.com'])).toBe(false);
+    expect(hostAllowed('evil.com', ['example.com'])).toBe(false);
+  });
+  it('an empty list, or a blank or bare-wildcard entry, allows nothing', () => {
+    expect(hostAllowed('example.com', [])).toBe(false);
+    expect(hostAllowed('example.com', ['', '  ', '*.'])).toBe(false);
+  });
+});
+
+
+import { describe, expect, it } from 'vitest';
+import { CONTRACT_VERSION } from '../src';
+
+describe('contract package', () => {
+  it('is importable (Stage 0 wiring only; real tests arrive with the contract in Stage 1)', () => {
+    expect(CONTRACT_VERSION).toBe(0);
+  });
+});

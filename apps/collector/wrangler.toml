@@ -1,0 +1,5 @@
+name = "tailwatch-collector"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Stage 0: hello world only. KV, Queue and rate-limit bindings are added in Stage 2.

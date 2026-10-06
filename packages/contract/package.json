@@ -1,0 +1,13 @@
+{
+  "name": "@tailwatch/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}

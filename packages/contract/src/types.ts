@@ -1,0 +1,1 @@
+export type PropValue = string | number | boolean;
