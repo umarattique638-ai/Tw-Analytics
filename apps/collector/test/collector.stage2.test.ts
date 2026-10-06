@@ -1,0 +1,290 @@
+import { describe, expect, it } from 'vitest';
+import { LIMITS, deriveVisitorHashes } from '@tailwatch/contract';
+import worker from '../src/index';
+import { contractFixtures } from '../../../packages/contract/fixtures/payloads';
+
+const KEY = 'tw_pub_12345678901234567890123456789012';
+const IP = '203.0.113.77';
+const UA = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0';
+const SECRET = 'stage2-test-secret';
+
+const SITE = { id: 123, publicKey: KEY, allowedHosts: ['example.com', '*.example.com'], live: true, region: 'in', identitySecret: SECRET };
+
+// Fixtures use their own key; give that site a config too.
+const FIXTURE_KEY = (contractFixtures[0]!.payload as { s: string }).s;
+
+function harness(opts: { kv?: (key: string) => Promise<string | null>; region?: string; sendFails?: number } = {}) {
+  const sent: any[] = [];
+  let failures = opts.sendFails ?? 0;
+  const pending: Promise<unknown>[] = [];
+  const kv = opts.kv ?? (async (key: string) =>
+    key === `site:${KEY}` ? JSON.stringify(SITE)
+    : key === `site:${FIXTURE_KEY}` ? JSON.stringify({ ...SITE, publicKey: FIXTURE_KEY })
+    : null);
+  return {
+    sent,
+    events: () => sent.filter((m) => m.type === 'event'),
+    drops: () => sent.filter((m) => m.type === 'drop'),
+    env: {
+      SITE_CONFIG: { get: (key: string) => kv(key) },
+      EVENTS: { async send(m: unknown) { if (failures-- > 0) throw new Error('queue down'); sent.push(m); } },
+      ...(opts.region ? { REGION: opts.region } : {}),
+    } as any,
+    ctx: { waitUntil: (p: Promise<unknown>) => void pending.push(p) },
+    settle: () => Promise.all(pending),
+  };
+}
+
+const body = (extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ s: KEY, n: 'pageview', u: 'https://example.com/a', q: 1, t: Date.now(), v: 1, ...extra });
+
+const post = (h: ReturnType<typeof harness>, b: BodyInit | null, headers: Record<string, string> = {}) =>
+  worker.fetch(
+    new Request('https://in.tailwatch.com/e', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'cf-connecting-ip': IP, 'user-agent': UA, ...headers },
+      body: b,
+    }),
+    h.env,
+    h.ctx,
+  );
+
+describe('Stage 2 done-when: every fixture returns its specified code', () => {
+  it('replays all 50 fixtures with exact expectations', async () => {
+    const h = harness();
+    const mismatches: string[] = [];
+    for (const f of contractFixtures) {
+      const res = await post(h, JSON.stringify(f.payload));
+      const text = await res.text();
+      const accepted = f.expected === 'accept' || f.expected === 'accept_warning';
+      const ok = accepted ? res.status === 204 : res.status === 400 && text === f.expected;
+      if (!ok) mismatches.push(`${f.name}: expected ${f.expected}, got ${res.status} ${text}`);
+    }
+    await h.settle();
+    expect(mismatches).toEqual([]);
+    expect(h.events()).toHaveLength(contractFixtures.filter((f) => f.expected.startsWith('accept')).length);
+  });
+});
+
+describe('Stage 2 done-when: malformed input never 500s', () => {
+  const nasty: [string, BodyInit | null][] = [
+    ['empty body', ''],
+    ['null body', null],
+    ['not json', '{{{'],
+    ['array', '[]'],
+    ['number', '42'],
+    ['deep nesting', `{"s":"${KEY}","z":${'['.repeat(20000)}${']'.repeat(20000)}}`],
+    ['lone surrogate', `{"s":"${KEY}","n":"pageview","u":"https://example.com/\\ud800","q":1,"t":${Date.now()},"v":1}`],
+    ['binary', new Uint8Array([0, 255, 254, 1, 2, 3])],
+    ['proto key', `{"__proto__":{"x":1},"s":"${KEY}"}`],
+  ];
+  for (const [name, payload] of nasty) {
+    it(name, async () => {
+      const h = harness();
+      const res = await post(h, payload);
+      await h.settle();
+      expect(res.status).toBeLessThan(500);
+    });
+  }
+
+  it('a throwing KV and a corrupt site config are survived', async () => {
+    for (const kv of [
+      async () => { throw new Error('kv down'); },
+      async () => '{"publicKey":"x"}',
+      async () => 'not json',
+      async () => JSON.stringify({ ...SITE, allowedHosts: null }),
+    ]) {
+      const h = harness({ kv });
+      const res = await post(h, body());
+      await h.settle();
+      expect(res.status).toBe(204);
+      expect(h.events()).toHaveLength(0);
+    }
+  });
+
+  it('even an unexpected exception becomes a 204, not a 5xx', async () => {
+    const h = harness();
+    h.env.EVENTS = undefined; // would throw if touched outside the guarded paths
+    h.env.SITE_CONFIG = undefined;
+    const res = await post(h, body());
+    expect(res.status).toBe(204);
+  });
+});
+
+describe('Stage 2 done-when: messages land in the queue', () => {
+  it('enqueues an event with visitor hashes equal to the contract derivation, and never the IP', async () => {
+    const h = harness();
+    const res = await post(h, body());
+    await h.settle();
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+    const [msg] = h.events();
+    const expected = await deriveVisitorHashes(SECRET, msg.event.receivedAt, IP, UA, '123');
+    expect(msg.visitor).toEqual(expected);
+    expect(msg.v).toBe(1);
+    const wire = JSON.stringify(h.sent);
+    expect(wire).not.toContain(IP);
+    expect(wire).not.toContain(SECRET);
+  });
+
+  it('cached salts do not change the hashes across repeated requests', async () => {
+    const h = harness();
+    for (let i = 0; i < 3; i += 1) await post(h, body({ q: i + 1 }));
+    await h.settle();
+    const hashes = h.events().map((m) => m.visitor.hash);
+    expect(new Set(hashes).size).toBe(1);
+  });
+
+  it('a different client gets a different visitor hash', async () => {
+    const h = harness();
+    await post(h, body());
+    await post(h, body({ q: 2 }), { 'cf-connecting-ip': '198.51.100.9' });
+    await h.settle();
+    const [a, b] = h.events();
+    expect(a.visitor.hash).not.toBe(b.visitor.hash);
+  });
+
+  it('retries a failed queue send once', async () => {
+    const h = harness({ sendFails: 1 });
+    await post(h, body());
+    await h.settle();
+    expect(h.events()).toHaveLength(1);
+  });
+
+  it('gives up quietly after two failures and the browser still sees 204', async () => {
+    const h = harness({ sendFails: 2 });
+    const res = await post(h, body());
+    await h.settle();
+    expect(res.status).toBe(204);
+    expect(h.events()).toHaveLength(0);
+  });
+});
+
+describe('drops are itemised, not silent (PLAN 3.1 b, 8.2)', () => {
+  it('hostname, bot and gpc drops queue a drop message with a reason', async () => {
+    const h = harness();
+    await post(h, body({ u: 'https://evil.example/' }));
+    await post(h, body({ q: 2 }), { 'user-agent': 'curl/8.5.0' });
+    await post(h, body({ q: 3 }), { 'sec-gpc': '1' });
+    await h.settle();
+    expect(h.drops().map((d) => d.reason).sort()).toEqual(['bot', 'gpc', 'hostname']);
+    expect(h.drops().every((d) => d.siteId === 123)).toBe(true);
+    expect(h.events()).toHaveLength(0);
+    expect(JSON.stringify(h.sent)).not.toContain(IP);
+  });
+
+  it('an unknown site queues nothing at all (no attribution possible)', async () => {
+    const h = harness();
+    const res = await post(h, body({ s: 'tw_pub_00000000000000000000000000000000' }));
+    await h.settle();
+    expect(res.headers.get('x-tw-dropped')).toBe('not_found');
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('a malformed site key is a 400 before any lookup', async () => {
+    const h = harness();
+    const res = await post(h, body({ s: 'tw_pub_unknown' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('a key from another region is treated as unknown', async () => {
+    const h = harness({ region: 'in-eu' });
+    const res = await post(h, body());
+    await h.settle();
+    expect(res.headers.get('x-tw-dropped')).toBe('not_found');
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('missing client address fails closed and is itemised', async () => {
+    const h = harness();
+    const res = await post(h, body(), { 'cf-connecting-ip': '' });
+    await h.settle();
+    expect(res.headers.get('x-tw-dropped')).toBe('identity_unavailable');
+    expect(h.events()).toHaveLength(0);
+    expect(h.drops()[0]?.reason).toBe('identity_unavailable');
+  });
+});
+
+describe('size cap on the stream, not just Content-Length', () => {
+  it('rejects an oversized body that declares no length', async () => {
+    const h = harness();
+    const big = 'x'.repeat(LIMITS.maxBodyBytes + 10);
+    const stream = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(big)); c.close(); } });
+    const res = await worker.fetch(
+      new Request('https://in.tailwatch.com/e', {
+        method: 'POST', body: stream, duplex: 'half',
+        headers: { 'cf-connecting-ip': IP, 'user-agent': UA },
+      } as RequestInit),
+      h.env, h.ctx,
+    );
+    expect(res.status).toBe(413);
+  });
+  it('accepts a body exactly at the cap boundary region without error', async () => {
+    const h = harness();
+    const res = await post(h, body({ pad: 'y'.repeat(LIMITS.maxBodyBytes - body().length - 20) }));
+    expect(res.status).toBeLessThan(500);
+  });
+});
+
+describe('rate limiting', () => {
+  const limiter = (ok: () => boolean) => ({ async limit() { return { success: ok() }; } });
+  it('per-IP limiter returns 429 with Retry-After before the body is read', async () => {
+    const h = harness();
+    h.env.RATE_LIMITER_IP = limiter(() => false);
+    const res = await post(h, body());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('10');
+  });
+  it('per-site limiter returns 429', async () => {
+    const h = harness();
+    h.env.RATE_LIMITER = limiter(() => false);
+    expect((await post(h, body())).status).toBe(429);
+  });
+  it('a throwing limiter does not stop collection', async () => {
+    const h = harness();
+    h.env.RATE_LIMITER = { async limit() { throw new Error('x'); } };
+    expect((await post(h, body())).status).toBe(204);
+  });
+});
+
+describe('pixel and OPTIONS', () => {
+  it('GET /e.gif returns a GIF for accepts AND drops, so the two look the same', async () => {
+    const h = harness();
+    const q = (extra: Record<string, string>) =>
+      new URLSearchParams({ s: KEY, n: 'pageview', u: 'https://example.com/p', q: '1', t: String(Date.now()), v: '1', ...extra });
+    const get = (params: URLSearchParams) =>
+      worker.fetch(new Request(`https://in.tailwatch.com/e.gif?${params}`, { headers: { 'cf-connecting-ip': IP, 'user-agent': UA } }), h.env, h.ctx);
+    const ok = await get(q({}));
+    const dropped = await get(q({ u: 'https://evil.example/' }));
+    await h.settle();
+    for (const r of [ok, dropped]) {
+      expect(r.status).toBe(200);
+      expect(r.headers.get('content-type')).toBe('image/gif');
+    }
+    expect(h.events()).toHaveLength(1);
+    expect(h.drops()).toHaveLength(1);
+  });
+  it('OPTIONS is a 204 with CORS headers', async () => {
+    const h = harness();
+    const res = await worker.fetch(new Request('https://in.tailwatch.com/e', { method: 'OPTIONS' }), h.env, h.ctx);
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+});
+
+describe('latency proxy (real p99 must still be measured on staging)', () => {
+  it('p99 of the response path is far below the 20 ms budget', async () => {
+    const h = harness();
+    const times: number[] = [];
+    for (let i = 0; i < 1500; i += 1) {
+      const t0 = performance.now();
+      await post(h, body({ q: i + 1 }));
+      times.push(performance.now() - t0);
+    }
+    await h.settle();
+    times.sort((a, b) => a - b);
+    const p99 = times[Math.floor(times.length * 0.99)]!;
+    console.log(`in-process p99 = ${p99.toFixed(3)} ms, p50 = ${times[750]!.toFixed(3)} ms`);
+    expect(p99).toBeLessThan(20);
+  });
+});

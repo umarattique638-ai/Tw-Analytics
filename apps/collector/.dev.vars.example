@@ -1,0 +1,1 @@
+DEV_SITE_CONFIG={"id":1,"publicKey":"tw_pub_TESTTESTTESTTESTTESTTESTTESTTEST","allowedHosts":["example.com","*.example.com"],"live":true,"region":"in","identitySecret":"local-dev-secret"}

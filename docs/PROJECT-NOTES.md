@@ -353,7 +353,7 @@ Accounts / infra (Stage 0):
 Stage 0 done-when: pnpm build passes [x] | CI runs [ ] (needs the GitHub repo) | wrangler dev serves hello world [x].
 
 Stage 1 contract: [ ] wire v1 | [ ] ClickHouse DDL | [ ] MongoDB schema | [ ] URL normalisation | [ ] metric definitions | [ ] ~50 fixtures | [ ] 8 CF unknowns re-verified with source + date | [ ] two-people sessions test.
-Stage 2 collector: [ ]    Stage 3 storage + consumer: [ ]    Stage 4 tracker: [ ]    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
+Stage 2 collector: [x] code + tests (43 collector tests, 50-fixture exact replay, curl on local wrangler dev 2026-10-06) | [ ] real queue/KV deploy | [ ] p99 on staging      Stage 3 storage + consumer: [ ]    Stage 4 tracker: [ ]    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
 
 Leftovers from the first attempt that still exist online. OWNER ORDERED DELETION on 2026-10-05 (delete order: consumer Worker first, then collector, testsite, queues, KV, then the ClickHouse database). Tick when done:
 - [ ] Workers: tailwatch-consumer (first: it is still consuming the queue), tailwatch-collector, tailwatch-testsite

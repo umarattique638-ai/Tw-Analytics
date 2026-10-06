@@ -6,6 +6,8 @@ export interface SiteConfig {
   allowedHosts: string[];
   live: boolean;
   region: 'in' | 'in-eu';
+  /** Server-only secret used to derive daily visitor salts. Never expose to the browser. */
+  identitySecret?: string;
 }
 
 export interface EdgeMeta {
@@ -25,7 +27,8 @@ export type DropReason =
   | 'hostname'
   | 'bot'
   | 'verification_agent'
-  | 'gpc';
+  | 'gpc'
+  | 'identity_unavailable';
 
 export type NoopReason = 'duplicate';
 
