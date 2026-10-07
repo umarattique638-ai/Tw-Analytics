@@ -28,6 +28,10 @@ const CH = (process.env.TW_CH_URL ?? 'http://127.0.0.1:8123').replace(/\/+$/, ''
 const ADMIN = process.env.TW_CH_USER ?? 'default';
 const ADMIN_PASSWORD = process.env.TW_CH_PASSWORD ?? '';
 const db = `tw_e2e_${Date.now()}`;
+// Newer ClickHouse (Cloud 26.x) prints UInt64 in JSON WITHOUT quotes by default, and JSON.parse then rounds
+// a 19-digit visitor_hash (…900 became …800 on the owner's Cloud service). Always ask for quoted 64-bit ints.
+// TW_TEST_QUOTE64=0 reproduces the Cloud default (used once to prove the failure).
+const QUOTE64 = process.env.TW_TEST_QUOTE64 ?? '1';
 const INSERT_USER = `tw_insert_${Date.now()}`;
 // Meets ClickHouse Cloud's password policy (length, upper, lower, digit, special character).
 const INSERT_PASSWORD = `Tw-E2e-${Math.random().toString(36).slice(2, 12)}-7x!`;
@@ -35,7 +39,7 @@ const CLIENT_IP = '198.51.100.44';
 
 async function sql(statement: string): Promise<string> {
   // select_sequential_consistency: read-your-writes on ClickHouse Cloud's replicas (ignored by a plain server).
-  const res = await fetch(`${CH}/?select_sequential_consistency=1`, {
+  const res = await fetch(`${CH}/?select_sequential_consistency=1&output_format_json_quote_64bit_integers=${QUOTE64}`, {
     method: 'POST',
     headers: { 'X-ClickHouse-User': ADMIN, 'X-ClickHouse-Key': ADMIN_PASSWORD },
     body: statement,

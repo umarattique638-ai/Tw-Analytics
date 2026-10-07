@@ -117,6 +117,8 @@ There is no IP address in any table (that is invariant 12; the tests check it to
 | `NOTE: this MongoDB is a standalone server` | fine for Stages 1–4. Before Stage 5, make it a single-node replica set (the note says how) |
 | `ExperimentalWarning: SQLite` | harmless (Node's built-in SQLite is used by one unit test) |
 | `first row visible … after 12 s` and a failure | the Cloud service was waking up: run step 8 again |
+| `The Workers runtime failed to start` + `access violation` / `has overflowed its stack` (Windows) | install the latest **Microsoft Visual C++ Redistributable (x64)**: https://aka.ms/vs/17/release/vc_redist.x64.exe, then open a new terminal and run steps 6 and 8 again. If it still crashes, run them in WSL (Ubuntu) or rely on the GitHub CI `pipeline` job, which runs the same tests on Linux |
+| a 19-digit `visitor_hash` differs only in the last digits | old copy of the tests: newer ClickHouse prints UInt64 unquoted in JSON and JavaScript rounds it. Fixed in the tests by `output_format_json_quote_64bit_integers=1` |
 
 ---
 
