@@ -149,9 +149,11 @@ The documents were silent or contradicted each other on these (PROJECT-NOTES §1
 | **A3** | 2026-10-07 | Edge UA denylist also catches runtime default User-Agents (`undici`, `node`, `Deno/`, `Bun/`, `okhttp/`, `Java/`, `Apache-HttpClient/`). Bot lists are data, not wire contract. | Stage 2 workerd test. |
 
 ## 10. What is still VERIFY (not assumed true)
-1. Run `infra/mongodb/001_control_plane.js` once on a real replica set (Atlas M0 is free). It is only
-   checked against a recording fake here (`packages/contract/test/infra.test.ts`); MongoDB binaries could
-   not be downloaded in the build environment.
+1. Prove the MongoDB rules on a real server: `pnpm verify:mongo` against the owner's local MongoDB
+   (owner decision 2026-10-07: local MongoDB for development, ClickHouse Cloud for analytics). It creates a
+   scratch database, applies the schema, checks all 14 rules and drops it. In the build environment the
+   script was only run against a recording fake (MongoDB binaries could not be downloaded there).
+   Transactions (Stage 5) additionally need the local server to run as a single-node replica set.
 2. Whether the Workers **Rate Limiting** binding is available on the Free plan. The collector works
    without it (missing binding = allowed); if `wrangler deploy` rejects it, remove the two `[[ratelimits]]`
    blocks.

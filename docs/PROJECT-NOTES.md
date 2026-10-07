@@ -318,6 +318,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 6. Over-quota response (200 + quota_limited) needs the edge to read a per-tenant flag from KV, while MongoDB gets zero per-event writes: quota counters are rolled up periodically and a flag is pushed to KV. Design this in Phase 3.
 7. Facts to settle in Phase 0 that no document fixes: target markets, browser support floor, retention per plan, region of the control plane for EU tenants' account data (emails), custom-domain names (cdn., in., app., api.).
 8. Dashboard: PLAN 2.1 says reuse TailWatch's existing admin-app patterns; the earlier UI was a static mock with a fake login. Rebuild only at Stage 6.
+11. OWNER DECISION 2026-10-07: development and testing use ClickHouse CLOUD (online) and the owner's LOCAL MongoDB (opened in Compass). Settings live in the git-ignored root .env (see .env.example); docs/TESTING.md is the step-by-step test guide; `pnpm verify:stages` runs every Stage 1-3 check against them.
 9. OWNER RULE 2026-10-07: use Cloudflare FREE features only (no paid add-ons). Free-plan limits and their consequences: docs/contract/CLOUDFLARE-VERIFICATION.md and STAGE-1 D9. R2 is activated on the account.
 10. Drop-reason header (STAGE-1 D2): production sends no x-tw-dropped header (existence oracle); EXPOSE_DROP_REASON="true" only in dev/staging.
 
@@ -348,9 +349,9 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 Accounts / infra (Stage 0):
 - [x] Cloudflare account, Workers, Queues, KV usable (workers.dev address in use)
 - [x] ClickHouse Cloud service (region il-central-1) - old tables from the first attempt still exist
-- [ ] R2 bucket (needed for the Stage 3 archive)
-- [ ] MongoDB host with replica set (Atlas or local Docker replica set); decision made 2026-10-05
-- [ ] Redis or Durable Objects (section 15 item 5)
+- [x] R2 activated on the account (bucket tailwatch-raw is created at first deploy)
+- [x] MongoDB: owner's local server (Compass), decision 2026-10-07. [ ] single-node replica set before Stage 5 (transactions)
+- [x] Session store: Durable Objects (SQLite), free plan (STAGE-1 D4)
 - [ ] Domains: cdn. in. app. api. (+ in-staging.)
 - [ ] GitHub repo with CI running
 - [x] Monorepo skeleton: pnpm workspaces, contract package, collector hello world, CI file
@@ -358,7 +359,7 @@ Accounts / infra (Stage 0):
 
 Stage 0 done-when: pnpm build passes [x] | CI runs [ ] (needs the GitHub repo) | wrangler dev serves hello world [x].
 
-Stage 1 contract: FROZEN 2026-10-07 (docs/contract/STAGE-1.md) [x] wire v1 | [x] ClickHouse DDL (applied to ClickHouse 24.8) | [x] MongoDB schema (fake-run; [ ] one real replica-set run) | [x] URL normalisation | [x] metric definitions | [x] 50 fixtures with exact outcomes | [x] 8 CF unknowns + free-plan limits re-verified 2026-10-07 | [x] two-people sessions test.
+Stage 1 contract: FROZEN 2026-10-07 (docs/contract/STAGE-1.md) [x] wire v1 | [x] ClickHouse DDL (applied to ClickHouse 24.8) | [x] MongoDB schema (fake-run; [ ] `pnpm verify:mongo` on the owner's local MongoDB) | [x] URL normalisation | [x] metric definitions | [x] 50 fixtures with exact outcomes | [x] 8 CF unknowns + free-plan limits re-verified 2026-10-07 | [x] two-people sessions test.
 Stage 2 collector: DONE 2026-10-07 [x] every fixture returns its code (Node + workerd) | [x] never 5xx | [x] messages land in the queue (workerd local Queue) | [x] latency on workerd: collector adds ~3 ms at the median | [ ] real deploy + p99 measured on the deployed Worker
 Stage 3 storage + consumer: DONE 2026-10-07 [x] fixtures in -> exact rows out (real ClickHouse) | [x] session metrics right inside ClickHouse | [x] rollup = raw GROUP BY | [x] replay -> no duplicates (tokens + Durable Object de-dup) | [x] R2 holds the raw file (workerd) | [x] milestone: HTTP pageview -> ClickHouse row in ~1.1 s | [ ] real deploy (R2 bucket, queues, DO migration, ClickHouse user)
 Stage 4 tracker: [ ] (packages/core + packages/browser exist as an unreviewed draft from earlier; not part of this pass)    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]

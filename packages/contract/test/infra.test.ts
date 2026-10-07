@@ -18,6 +18,7 @@ const mongoScript = readFileSync(new URL('mongodb/001_control_plane.js', root), 
 const mongoSchema = JSON.parse(readFileSync(new URL('mongodb/control-plane.schema.json', root), 'utf8')) as {
   database: string;
   collections: Record<string, { document: unknown }>;
+  indexes: { collection: string; keys: Record<string, number>; options?: Record<string, unknown> }[];
 };
 
 interface Recorded {
@@ -91,6 +92,12 @@ describe('MongoDB control-plane script (Stage 1 artefact)', () => {
       expect(JSON.parse(JSON.stringify(rec.validators.get(name)))).toEqual(mongoSchema.collections[name]!.document);
     });
   }
+
+  it('creates exactly the indexes listed in control-plane.schema.json (the Node tool applies those)', () => {
+    const norm = (i: { collection: string; keys: Record<string, number>; options?: Record<string, unknown> }) =>
+      JSON.stringify({ c: i.collection, k: Object.entries(i.keys), o: i.options ?? {} });
+    expect(rec.indexes.map(norm)).toEqual(mongoSchema.indexes.map(norm));
+  });
 
   it('has the uniqueness guarantees the control plane relies on', () => {
     const unique = rec.indexes.filter((i) => i.options?.unique).map((i) => `${i.collection}:${Object.keys(i.keys).join(',')}`);

@@ -9,7 +9,8 @@ import type { ClickHousePort, ClickHouseTable, InboundMessage, StatePort } from 
 import { createMemoryState } from '../../src/state/memory';
 
 /**
- * Stage 3 done-when, against a REAL ClickHouse. Skipped unless TW_LIVE_CLICKHOUSE=1.
+ * Stage 3 done-when, against a REAL ClickHouse (ClickHouse Cloud or local). Run: pnpm --filter @tailwatch/consumer live
+ * It is not part of `pnpm test`. Settings come from the repository-root .env:
  *
  *   TW_CH_URL       default http://127.0.0.1:8123 (a local server); or https://<service>.clickhouse.cloud:8443
  *   TW_CH_USER      default "default"
@@ -27,14 +28,14 @@ import { createMemoryState } from '../../src/state/memory';
  */
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const enabled = process.env.TW_LIVE_CLICKHOUSE === '1';
 const BASE = (process.env.TW_CH_URL ?? 'http://127.0.0.1:8123').replace(/\/+$/, '');
 const USER = process.env.TW_CH_USER ?? 'default';
 const PASSWORD = process.env.TW_CH_PASSWORD ?? '';
 const db = `tw_stage3_${Date.now()}`;
 
 async function sql(statement: string): Promise<string> {
-  const res = await fetch(`${BASE}/`, {
+  // select_sequential_consistency: read-your-writes on ClickHouse Cloud's replicas (ignored by a plain server).
+  const res = await fetch(`${BASE}/?select_sequential_consistency=1`, {
     method: 'POST',
     headers: { 'X-ClickHouse-User': USER, 'X-ClickHouse-Key': PASSWORD },
     body: statement,
@@ -79,7 +80,7 @@ const sessionTotals = async (site = 123) => ({
   pageviews: await one(`SELECT sum(toInt64(pageviews) * sign) FROM ${db}.sessions WHERE site_id = ${site}`),
 });
 
-(enabled ? describe : describe.skip)('Stage 3 on a real ClickHouse', () => {
+describe('Stage 3 on a real ClickHouse', () => {
   beforeAll(async () => {
     const ddl = readFileSync(new URL('../../../../infra/clickhouse/001_contract.sql', import.meta.url), 'utf8');
     const statements = ddl
@@ -92,6 +93,10 @@ const sessionTotals = async (site = 123) => ({
   });
 
   afterAll(async () => {
+    if (process.env.TW_KEEP_TEST_DB === '1') {
+      console.log(`TW_KEEP_TEST_DB=1: database ${db} kept. Look at it in the SQL console, then: DROP DATABASE ${db}`);
+      return;
+    }
     await sql(`DROP DATABASE IF EXISTS ${db}`);
   });
 

@@ -6,6 +6,7 @@ Cloud-only web analytics: one hosted collector, four install surfaces. Read in t
 2. `docs/PLAN.md` - what we are building and why.
 3. `docs/BUILD-ORDER.md` - where to start, in what order, what the customer experiences.
 4. `docs/contract/STAGE-1.md` - the frozen contract and the decisions D1-D13 / amendments A1-A3.
+5. `docs/TESTING.md` - how to test Stages 1-3 against ClickHouse Cloud and your local MongoDB.
 
 Status (2026-10-07): Stage 1 frozen, Stage 2 (collector) and Stage 3 (consumer + storage) done and proven
 end to end on the Workers runtime with a real ClickHouse. Cloudflare free features only.
@@ -14,16 +15,13 @@ Requires Node 22+ and pnpm 9 (`corepack enable`).
 
 ```
 pnpm install
-pnpm typecheck
-pnpm test                                    # unit tests, no servers needed
-pnpm build
+cp .env.example .env          # then fill in ClickHouse Cloud + local MongoDB (Windows: copy .env.example .env)
+pnpm db:check                 # ClickHouse Cloud reachable? schema present?
+pnpm db:clickhouse            # create schema v1 (or db:clickhouse:reset to replace the old first-attempt database)
+pnpm db:mongo                 # create tailwatch_control in your local MongoDB (see it in Compass)
+pnpm verify:stages            # every Stage 1-3 check, against the real databases (docs/TESTING.md)
 
-# need a ClickHouse on http://127.0.0.1:8123 (or TW_CH_URL / TW_CH_USER / TW_CH_PASSWORD):
-pnpm --filter @tailwatch/collector e2e       # collector on workerd: fixtures, queue, latency
-pnpm --filter @tailwatch/consumer live       # consumer against real ClickHouse: rows, metrics, rollup, replay
-pnpm --filter @tailwatch/consumer e2e        # HTTP -> collector -> Queue -> consumer -> R2 + Durable Object -> ClickHouse
-
-pnpm --filter @tailwatch/collector dev       # wrangler dev, then open http://localhost:8787/health
+pnpm --filter @tailwatch/collector dev   # wrangler dev, then open http://localhost:8787/health
 ```
 
 | Path | What |

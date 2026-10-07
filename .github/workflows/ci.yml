@@ -13,7 +13,7 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-  # Stage 2 + 3 done-when on the real Workers runtime (Miniflare/workerd) and a real ClickHouse.
+  # Stage 1-3 done-when against real servers: MongoDB rules, the Workers runtime (Miniflare/workerd) and ClickHouse.
   pipeline:
     runs-on: ubuntu-latest
     needs: verify
@@ -27,10 +27,14 @@ jobs:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: ci-only-password
           CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1'
+      mongodb:
+        image: mongo:7
+        ports: ['27017:27017']
     env:
       TW_CH_URL: http://127.0.0.1:8123
       TW_CH_USER: default
       TW_CH_PASSWORD: ci-only-password
+      TW_MONGO_URL: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,6 +43,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: wait for ClickHouse
         run: for i in $(seq 60); do curl -sf http://127.0.0.1:8123/ping && exit 0; sleep 2; done; exit 1
+      - run: pnpm verify:mongo
       - run: pnpm --filter @tailwatch/collector e2e
       - run: pnpm --filter @tailwatch/consumer live
       - run: pnpm --filter @tailwatch/consumer e2e

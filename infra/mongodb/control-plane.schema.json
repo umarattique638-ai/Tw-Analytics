@@ -285,5 +285,70 @@
         "additionalProperties": false
       }
     }
-  }
+  },
+  "indexes": [
+    {
+      "collection": "users",
+      "keys": {
+        "emailNormalized": 1
+      },
+      "options": {
+        "unique": true,
+        "collation": {
+          "locale": "en",
+          "strength": 2
+        }
+      }
+    },
+    {
+      "collection": "memberships",
+      "keys": {
+        "tenantId": 1,
+        "userId": 1
+      },
+      "options": {
+        "unique": true
+      }
+    },
+    {
+      "collection": "memberships",
+      "keys": {
+        "userId": 1,
+        "tenantId": 1
+      }
+    },
+    {
+      "collection": "sites",
+      "keys": {
+        "keys.publicKey": 1
+      },
+      "options": {
+        "unique": true
+      }
+    },
+    {
+      "collection": "sites",
+      "keys": {
+        "tenantId": 1,
+        "domain": 1
+      },
+      "options": {
+        "unique": true
+      }
+    },
+    {
+      "collection": "sites",
+      "keys": {
+        "tenantId": 1,
+        "status": 1
+      }
+    },
+    {
+      "collection": "tenants",
+      "keys": {
+        "status": 1,
+        "createdAt": -1
+      }
+    }
+  ]
 }

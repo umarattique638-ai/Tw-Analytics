@@ -1,0 +1,17 @@
+{
+  "name": "@tailwatch/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ch:check": "node tools/clickhouse.mjs check",
+    "ch:apply": "node tools/clickhouse.mjs apply",
+    "ch:user": "node tools/clickhouse.mjs user",
+    "mongo:apply": "node tools/mongo.mjs apply",
+    "mongo:verify": "node tools/mongo.mjs verify",
+    "ch:reset": "node tools/clickhouse.mjs apply --reset"
+  },
+  "dependencies": {
+    "mongodb": "^7.7.0"
+  }
+}

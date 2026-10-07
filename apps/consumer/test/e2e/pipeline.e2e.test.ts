@@ -18,8 +18,10 @@ import {
  *        -> R2 archive + SQLite Durable Object state -> ClickHouse (a real local server)
  *
  * Every Cloudflare piece is a free feature, simulated locally by Miniflare/workerd.
- * Needs a ClickHouse on TW_CH_URL (default http://127.0.0.1:8123) whose `default` user may create
- * databases and users. Run: pnpm --filter @tailwatch/consumer e2e
+ * ClickHouse is REAL: ClickHouse Cloud or a local server, from TW_CH_URL / TW_CH_USER / TW_CH_PASSWORD in the
+ * repository-root .env (default http://127.0.0.1:8123, user `default`). That user must be allowed to create
+ * databases and users (`default` on ClickHouse Cloud is). A throwaway database and INSERT-only user are
+ * created and dropped. Run: pnpm --filter @tailwatch/consumer e2e
  */
 
 const CH = (process.env.TW_CH_URL ?? 'http://127.0.0.1:8123').replace(/\/+$/, '');
@@ -27,11 +29,13 @@ const ADMIN = process.env.TW_CH_USER ?? 'default';
 const ADMIN_PASSWORD = process.env.TW_CH_PASSWORD ?? '';
 const db = `tw_e2e_${Date.now()}`;
 const INSERT_USER = `tw_insert_${Date.now()}`;
-const INSERT_PASSWORD = `local-e2e-${Math.random().toString(36).slice(2)}`;
+// Meets ClickHouse Cloud's password policy (length, upper, lower, digit, special character).
+const INSERT_PASSWORD = `Tw-E2e-${Math.random().toString(36).slice(2, 12)}-7x!`;
 const CLIENT_IP = '198.51.100.44';
 
 async function sql(statement: string): Promise<string> {
-  const res = await fetch(`${CH}/`, {
+  // select_sequential_consistency: read-your-writes on ClickHouse Cloud's replicas (ignored by a plain server).
+  const res = await fetch(`${CH}/?select_sequential_consistency=1`, {
     method: 'POST',
     headers: { 'X-ClickHouse-User': ADMIN, 'X-ClickHouse-Key': ADMIN_PASSWORD },
     body: statement,
@@ -120,8 +124,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await mf?.dispose();
-  await sql(`DROP DATABASE IF EXISTS ${db}`).catch(() => undefined);
   await sql(`DROP USER IF EXISTS ${INSERT_USER}`).catch(() => undefined);
+  if (process.env.TW_KEEP_TEST_DB === '1') {
+    console.log(`TW_KEEP_TEST_DB=1: database ${db} kept. Look at it in the SQL console, then: DROP DATABASE ${db}`);
+    return;
+  }
+  await sql(`DROP DATABASE IF EXISTS ${db}`).catch(() => undefined);
 });
 
 describe('Stage 3 milestone on workerd: HTTP in, correct ClickHouse rows out', () => {

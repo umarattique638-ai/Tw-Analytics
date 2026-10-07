@@ -18,3 +18,8 @@ How they are tested:
 - ClickHouse DDL + grants: applied to a real ClickHouse by `apps/consumer/test/live` and `test/e2e`.
 - MongoDB script: executed against a recording fake by `packages/contract/test/infra.test.ts`.
   One run on a real replica set is still VERIFY (STAGE-1 section 10).
+
+Tools (read the root .env, see .env.example):
+- `pnpm db:check`, `pnpm db:clickhouse`, `pnpm db:clickhouse:reset`, `pnpm db:clickhouse:user` → `tools/clickhouse.mjs`
+- `pnpm db:mongo`, `pnpm verify:mongo` → `tools/mongo.mjs` (applies control-plane.schema.json, the same
+  validators and indexes as the mongosh script; `verify` proves every rule on the real server)
