@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import worker from '../src/index';
 
-import { contractFixtures } from '../../../packages/contract/fixtures/payloads';
 
 const PUBLIC_KEY = 'tw_pub_12345678901234567890123456789012';
 const UNKNOWN_KEY = 'tw_pub_00000000000000000000000000000000';
@@ -38,6 +37,8 @@ function env(overrides: Partial<Record<string, unknown>> = {}) {
           return { success: !limited };
         },
       },
+      // Local/staging behaviour (STAGE-1 D2): the reason header is visible.
+      EXPOSE_DROP_REASON: 'true',
       ...overrides,
     },
     setLimited(value: boolean) {
@@ -235,20 +236,6 @@ describe('Stage 2 collector', () => {
     expect(res.status).toBe(204);
     expect(res.headers.get('x-tw-dropped')).toBe('identity_unavailable');
     expect(events(h.sent)).toHaveLength(0);
-  });
-
-  it('replays the Stage 1 fixture corpus', async () => {
-    const h = env();
-
-    for (const fixture of contractFixtures) {
-      const res = await worker.fetch(
-        post(JSON.stringify(fixture.payload), BROWSER),
-        h.env,
-        context(),
-      );
-
-      expect([200, 204, 400, 413, 429]).toContain(res.status);
-    }
   });
 
   it('serves the tracking pixel and enqueues its event', async () => {

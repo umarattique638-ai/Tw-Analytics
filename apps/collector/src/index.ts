@@ -1,6 +1,8 @@
 import {
   CONTRACT_VERSION,
   LIMITS,
+  PIXEL_FIELDS,
+  PIXEL_NUMERIC_FIELDS,
   checkWire,
   deriveSalt,
   parseWire,
@@ -41,6 +43,11 @@ interface Env {
   REGION?: string;
   /** Local/staging seed only. Production site configuration always comes from KV. */
   DEV_SITE_CONFIG?: string;
+  /**
+   * "true" adds the x-tw-dropped reason header to responses (local / staging only).
+   * Unset in production: a reason header would tell anyone whether a site key exists (STAGE-1 D2).
+   */
+  EXPOSE_DROP_REASON?: string;
 }
 
 interface ExecutionContextLike {
@@ -67,8 +74,6 @@ const RETRY_AFTER_SECONDS = '10';
 /** KV's minimum cacheTtl is 60 s: site config may lag about a minute (PLAN 2.4). */
 const SITE_CONFIG_CACHE_TTL = 60;
 
-const WIRE_KEYS = ['s', 'n', 'u', 'q', 't', 'v', 'r', 'e', 'rt', 'w', 'i', 'x', 'f'] as const;
-const NUMERIC_KEYS = ['q', 't', 'v', 'e', 'w', 'x', 'f'] as const;
 
 function response(status: number, body: BodyInit | null = null, headers: Record<string, string> = {}): Response {
   return new Response(body, { status, headers: { ...CORS_HEADERS, ...headers } });
@@ -83,15 +88,21 @@ function pixelResponse(): Response {
   });
 }
 
-function outcomeResponse(outcome: Outcome, pixel: boolean): Response {
+/** The drop-reason header, only where the deployment opted in (STAGE-1 D2). */
+function dropHeaders(env: Env, reason: string): Record<string, string> {
+  return env.EXPOSE_DROP_REASON === 'true' ? { 'x-tw-dropped': reason } : {};
+}
+
+function outcomeResponse(outcome: Outcome, pixel: boolean, env: Env): Response {
   switch (outcome.kind) {
     case 'accept':
       return pixel ? pixelResponse() : noContent();
     case 'duplicate':
-      return pixel ? pixelResponse() : noContent({ 'x-tw-deduped': '1' });
+      return pixel ? pixelResponse() : noContent();
     case 'drop':
-      // Same shape as an accept for the caller; the reason is only a header (PLAN 8.2).
-      return pixel ? pixelResponse() : noContent({ 'x-tw-dropped': outcome.reason });
+      // Identical to an accept for the caller (invariant 8). The reason reaches the customer
+      // through the queued drop message and dropped_hits, not through the response.
+      return pixel ? pixelResponse() : noContent(dropHeaders(env, outcome.reason));
     case 'reject':
       return response(outcome.status, outcome.error, { 'content-type': TEXT_CONTENT_TYPE });
     case 'rate_limit':
@@ -149,11 +160,11 @@ async function readBody(request: Request): Promise<string | null> {
 function queryPayload(request: Request): string {
   const params = new URL(request.url).searchParams;
   const payload: Record<string, unknown> = {};
-  for (const key of WIRE_KEYS) {
+  for (const key of PIXEL_FIELDS) {
     const value = params.get(key);
     if (value !== null) payload[key] = value;
   }
-  for (const key of NUMERIC_KEYS) {
+  for (const key of PIXEL_NUMERIC_FIELDS) {
     const value = payload[key];
     if (typeof value === 'string') payload[key] = value.trim() === '' ? Number.NaN : Number(value);
   }
@@ -295,22 +306,22 @@ async function collect(
 
   // 1. Cheapest check first: per-client limiter, before the body is even read.
   if (ip && !(await allowed(env.RATE_LIMITER_IP, `ip:${ip}`))) {
-    return outcomeResponse(rateLimitedOutcome(), pixel);
+    return outcomeResponse(rateLimitedOutcome(), pixel, env);
   }
 
   // 2. Size cap, counted on the stream (413 before parsing).
   const body = pixel ? queryPayload(request) : await readBody(request);
   if (body === null) {
-    return outcomeResponse({ kind: 'reject', status: 413, reason: 'oversized', error: 'body_too_large' }, pixel);
+    return outcomeResponse({ kind: 'reject', status: 413, reason: 'oversized', error: 'body_too_large' }, pixel, env);
   }
 
   // 3. Parse + shape check (400 / 413).
   const parsed = parseWire(body);
-  if (!parsed.ok) return outcomeResponse(parsed.outcome, pixel);
+  if (!parsed.ok) return outcomeResponse(parsed.outcome, pixel, env);
 
   // 4. Per-site limiter, before the KV lookup so unknown-key floods cannot reach the Queue.
   if (!(await allowed(env.RATE_LIMITER, `site:${parsed.payload.s}`))) {
-    return outcomeResponse(rateLimitedOutcome(), pixel);
+    return outcomeResponse(rateLimitedOutcome(), pixel, env);
   }
 
   // 5. Site lookup, host check, GPC, cheap bot reject (contract).
@@ -321,9 +332,9 @@ async function collect(
   if (outcome.kind === 'drop') {
     const message = dropMessage(outcome, receivedAt);
     if (message) ctx.waitUntil(enqueue(env, message));
-    return outcomeResponse(outcome, pixel);
+    return outcomeResponse(outcome, pixel, env);
   }
-  if (outcome.kind !== 'accept') return outcomeResponse(outcome, pixel);
+  if (outcome.kind !== 'accept') return outcomeResponse(outcome, pixel, env);
 
   // 6. Privacy: no event is queued without a per-site secret and a client address.
   //    The raw IP lives only inside this hash computation.
@@ -341,7 +352,7 @@ async function collect(
       receivedAt,
     );
     if (message) ctx.waitUntil(enqueue(env, message));
-    return pixel ? pixelResponse() : noContent({ 'x-tw-dropped': 'identity_unavailable' });
+    return pixel ? pixelResponse() : noContent(dropHeaders(env, 'identity_unavailable'));
   }
 
   // 7. Respond now, hash + enqueue after (ctx.waitUntil).
@@ -352,7 +363,7 @@ async function collect(
       .then((visitor) => enqueue(env, { v: 1, type: 'event', event: outcome.event, visitor }))
       .catch((error) => log('hash_failed', error)),
   );
-  return outcomeResponse(outcome, pixel);
+  return outcomeResponse(outcome, pixel, env);
 }
 
 async function route(request: Request, env: Env, ctx: ExecutionContextLike): Promise<Response> {
@@ -377,7 +388,7 @@ export default {
     } catch (error) {
       // Safety net: whatever goes wrong inside, the browser never sees a 5xx or our internals.
       log('unhandled', error);
-      return noContent({ 'x-tw-dropped': 'internal' });
+      return noContent(dropHeaders(env, 'internal'));
     }
   },
 } satisfies ExportedHandler<Env>;

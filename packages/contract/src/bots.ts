@@ -7,6 +7,8 @@ export const UA_DENYLIST: readonly RegExp[] = [
   /^curl\//i, /^wget\//i, /^httpie\//i, /^postmanruntime\//i,
   /^python-requests/i, /^python-urllib/i, /^go-http-client/i, /^libwww-perl/i,
   /^node-fetch/i, /^axios\//i, /^scrapy/i,
+  // Default User-Agents of server runtimes and HTTP libraries (no browser sends these).
+  /^undici/i, /^node$/i, /^deno\//i, /^bun\//i, /^okhttp\//i, /^java\//i, /^apache-httpclient\//i,
   /headlesschrome/i, /phantomjs/i,
   /googlebot|bingbot|ahrefsbot|semrushbot|yandexbot|baiduspider|duckduckbot|applebot|gptbot|claudebot|ccbot|petalbot|dotbot|mj12bot/i,
 ];

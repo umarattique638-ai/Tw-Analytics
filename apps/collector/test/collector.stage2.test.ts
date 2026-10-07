@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LIMITS, deriveVisitorHashes } from '@tailwatch/contract';
 import worker from '../src/index';
-import { contractFixtures } from '../../../packages/contract/fixtures/payloads';
+import {
+  FIXTURE_IP,
+  FIXTURE_RECEIVED_AT,
+  FIXTURE_SITE,
+  contractFixtures,
+  fixtureBody,
+  fixtureHeaders,
+} from '../../../packages/contract/fixtures/payloads';
+import { wireQueueMessages } from '../../../packages/contract/fixtures/queue';
 
 const KEY = 'tw_pub_12345678901234567890123456789012';
 const IP = '203.0.113.77';
@@ -10,16 +18,13 @@ const SECRET = 'stage2-test-secret';
 
 const SITE = { id: 123, publicKey: KEY, allowedHosts: ['example.com', '*.example.com'], live: true, region: 'in', identitySecret: SECRET };
 
-// Fixtures use their own key; give that site a config too.
-const FIXTURE_KEY = (contractFixtures[0]!.payload as { s: string }).s;
-
-function harness(opts: { kv?: (key: string) => Promise<string | null>; region?: string; sendFails?: number } = {}) {
+function harness(opts: { kv?: (key: string) => Promise<string | null>; region?: string; sendFails?: number; production?: boolean } = {}) {
   const sent: any[] = [];
   let failures = opts.sendFails ?? 0;
   const pending: Promise<unknown>[] = [];
   const kv = opts.kv ?? (async (key: string) =>
     key === `site:${KEY}` ? JSON.stringify(SITE)
-    : key === `site:${FIXTURE_KEY}` ? JSON.stringify({ ...SITE, publicKey: FIXTURE_KEY })
+    : key === `site:${FIXTURE_SITE.publicKey}` ? JSON.stringify(FIXTURE_SITE)
     : null);
   return {
     sent,
@@ -29,6 +34,8 @@ function harness(opts: { kv?: (key: string) => Promise<string | null>; region?: 
       SITE_CONFIG: { get: (key: string) => kv(key) },
       EVENTS: { async send(m: unknown) { if (failures-- > 0) throw new Error('queue down'); sent.push(m); } },
       ...(opts.region ? { REGION: opts.region } : {}),
+      // Local/staging behaviour: reason header on. Production leaves it unset (STAGE-1 D2).
+      ...(opts.production ? {} : { EXPOSE_DROP_REASON: 'true' }),
     } as any,
     ctx: { waitUntil: (p: Promise<unknown>) => void pending.push(p) },
     settle: () => Promise.all(pending),
@@ -49,20 +56,86 @@ const post = (h: ReturnType<typeof harness>, b: BodyInit | null, headers: Record
     h.ctx,
   );
 
+/** A fixture as the HTTP request the edge would see, including request.cf.asn. */
+function fixtureRequest(fixture: (typeof contractFixtures)[number]): Request {
+  const request = new Request('https://in.tailwatch.com/e', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain', 'cf-connecting-ip': FIXTURE_IP, ...fixtureHeaders(fixture) },
+    body: fixtureBody(fixture),
+  });
+  if (fixture.asn !== undefined) Object.defineProperty(request, 'cf', { value: { asn: fixture.asn } });
+  return request;
+}
+
 describe('Stage 2 done-when: every fixture returns its specified code', () => {
-  it('replays all 50 fixtures with exact expectations', async () => {
+  // The collector stamps receivedAt with Date.now(); pin it to the moment the fixtures are defined at,
+  // so time rules (skew, backfill, future repair) and daily salts are exactly the frozen ones.
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXTURE_RECEIVED_AT);
+  });
+  afterAll(() => vi.useRealTimers());
+
+  it('replays all 50 fixtures over HTTP with their exact status, body and header', async () => {
     const h = harness();
     const mismatches: string[] = [];
     for (const f of contractFixtures) {
-      const res = await post(h, JSON.stringify(f.payload));
+      const res = await worker.fetch(fixtureRequest(f), h.env, h.ctx);
       const text = await res.text();
-      const accepted = f.expected === 'accept' || f.expected === 'accept_warning';
-      const ok = accepted ? res.status === 204 : res.status === 400 && text === f.expected;
-      if (!ok) mismatches.push(`${f.name}: expected ${f.expected}, got ${res.status} ${text}`);
+      const want = f.expect;
+      const got = `${res.status} ${JSON.stringify(text)} dropped=${res.headers.get('x-tw-dropped')}`;
+      const ok =
+        want.kind === 'accept' ? res.status === 204 && text === '' && res.headers.get('x-tw-dropped') === null
+        : want.kind === 'drop' ? res.status === 204 && text === '' && res.headers.get('x-tw-dropped') === want.reason
+        : res.status === want.status && text === want.error;
+      if (!ok) mismatches.push(`${f.name}: expected ${JSON.stringify(want)}, got ${got}`);
     }
     await h.settle();
     expect(mismatches).toEqual([]);
-    expect(h.events()).toHaveLength(contractFixtures.filter((f) => f.expected.startsWith('accept')).length);
+  });
+
+  it('queues exactly the frozen queue-message fixtures for the accepted ones (byte-for-byte)', async () => {
+    const h = harness();
+    for (const f of contractFixtures) await worker.fetch(fixtureRequest(f), h.env, h.ctx);
+    await h.settle();
+    const expected = (await wireQueueMessages()).map((m) => m.message);
+    expect(h.events()).toEqual(expected);
+  });
+
+  it('queues one drop message per attributable drop, none for not_found', async () => {
+    const h = harness();
+    for (const f of contractFixtures) await worker.fetch(fixtureRequest(f), h.env, h.ctx);
+    await h.settle();
+    const wanted = contractFixtures
+      .filter((f) => f.expect.kind === 'drop' && f.expect.reason !== 'not_found')
+      .map((f) => (f.expect as { reason: string }).reason)
+      .sort();
+    expect(h.drops().map((d) => d.reason).sort()).toEqual(wanted);
+    expect(h.drops().every((d) => d.siteId === FIXTURE_SITE.id && d.at === FIXTURE_RECEIVED_AT)).toBe(true);
+    expect(JSON.stringify(h.sent)).not.toContain(FIXTURE_IP);
+  });
+});
+
+describe('Stage 2: production responses do not reveal why a hit was dropped (STAGE-1 D2, invariant 8)', () => {
+  it('an accept and every kind of drop answer with identical status, body and headers', async () => {
+    const h = harness({ production: true });
+    const shape = async (res: Response) => ({
+      status: res.status,
+      body: await res.text(),
+      headers: [...res.headers.entries()].sort(),
+    });
+    const accepted = await shape(await post(h, body()));
+    const drops = [
+      await post(h, body({ s: 'tw_pub_00000000000000000000000000000000' })), // not_found
+      await post(h, body({ u: 'https://evil.example/' })), // hostname
+      await post(h, body(), { 'sec-gpc': '1' }), // gpc
+      await post(h, body(), { 'user-agent': 'curl/8.5.0' }), // bot
+      await post(h, body(), { 'cf-connecting-ip': '' }), // identity_unavailable
+    ];
+    for (const d of drops) expect(await shape(d)).toEqual(accepted);
+    await h.settle();
+    // ... while the reasons are still itemised for the customer's warnings feed.
+    expect(h.drops().map((d) => d.reason).sort()).toEqual(['bot', 'gpc', 'hostname', 'identity_unavailable']);
   });
 });
 

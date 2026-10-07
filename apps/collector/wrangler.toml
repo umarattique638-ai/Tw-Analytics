@@ -3,6 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
 # Region this deployment serves. A site key is valid only in its own region.
+# EXPOSE_DROP_REASON is deliberately NOT set here: production responses must not say why a hit was
+# dropped (STAGE-1 D2). Local dev sets it in .dev.vars.
 [vars]
 REGION = "in"
 
@@ -10,15 +12,18 @@ REGION = "in"
 # Replace the placeholder KV id before deploying to a real account.
 [[kv_namespaces]]
 binding = "SITE_CONFIG"
-id = "00000000000000000000000000000000"
+id = "0878a2b0f1c148148ec8dbe73cac767c"
 preview_id = "00000000000000000000000000000000"
 
 [[queues.producers]]
 binding = "EVENTS"
 queue = "tailwatch-events"
 
+# Rate limiting (free features only, STAGE-1 D9). VERIFY on first deploy: the docs do not state whether
+# this binding exists on the Workers Free plan. If `wrangler deploy` rejects it, delete both [[ratelimits]]
+# blocks: the collector treats a missing limiter as "allowed".
 # Per-site limiter (keyed by public key), applied before the KV lookup.
-# Replace namespace_id with a real account namespace before production deploy.
+# namespace_id: any positive integer unique within your account.
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1001"

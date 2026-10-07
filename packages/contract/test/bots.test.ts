@@ -35,3 +35,11 @@ describe('edgeBotReason', () => {
     expect(edgeBotReason(`${CHROME} curl/8.0`)).toBeNull();
   });
 });
+describe('runtime default User-Agents are edge bots (found by the Stage 2 workerd test)', () => {
+  for (const ua of ['undici', 'node', 'Deno/2.1.0', 'Bun/1.1.0', 'okhttp/4.12.0', 'Java/17.0.2', 'Apache-HttpClient/4.5.14 (Java/17)']) {
+    it(ua, () => expect(edgeBotReason(ua)?.reason).toBe('bot'));
+  }
+  it('a browser that merely mentions node in its UA is not caught', () => {
+    expect(edgeBotReason('Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0 node')).toBeNull();
+  });
+});
