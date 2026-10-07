@@ -343,6 +343,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 - (Owner's Windows run, 2026-10-07) ClickHouse Cloud 26.x prints UInt64 in JSON WITHOUT quotes by default; JSON.parse then rounds a 19-digit visitor_hash (…900 read as …800). Every JSON read of ClickHouse data (tests now, the Stage 6 query API later) must set output_format_json_quote_64bit_integers=1.
 - (Owner's Windows run) workerd (Miniflare e2e) crashed at start with an access violation / stack overflow: the known fix is the latest Microsoft Visual C++ Redistributable x64. The CI pipeline job runs the same e2e tests on Linux.
 - (Owner's Windows run) the in-process latency unit test gated on p99 and failed at 21.5 ms with a 1.2 ms median while pnpm ran packages in parallel. Unit tests gate on the median; p99 belongs to the deployed Worker.
+- (Owner's Windows run) workerd crashed until the Microsoft Visual C++ Redistributable x64 was installed (it was missing entirely) and the PC restarted. After that the collector e2e ran on Windows: fixtures, queue and never-5xx pass. Local latency on a laptop (median +21 ms over a no-op Worker right after reboot) is not a done-when; the deployed Worker's p99 and CPU time are.
 - (Stage 1) Stage 2's commit had accidentally truncated docs/contract/STAGE-1.md from 118 to 14 lines. Check `git diff --stat` before committing docs.
 
 ---------------------------------------------------------------------------------------------------------
