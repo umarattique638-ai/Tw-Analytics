@@ -12,3 +12,33 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  # Stage 2 + 3 done-when on the real Workers runtime (Miniflare/workerd) and a real ClickHouse.
+  pipeline:
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        ports: ['8123:8123']
+        env:
+          # A password makes the image open the default user to the network (the port mapping);
+          # access management lets the tests create their throwaway INSERT-only user.
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ci-only-password
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1'
+    env:
+      TW_CH_URL: http://127.0.0.1:8123
+      TW_CH_USER: default
+      TW_CH_PASSWORD: ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: wait for ClickHouse
+        run: for i in $(seq 60); do curl -sf http://127.0.0.1:8123/ping && exit 0; sleep 2; done; exit 1
+      - run: pnpm --filter @tailwatch/collector e2e
+      - run: pnpm --filter @tailwatch/consumer live
+      - run: pnpm --filter @tailwatch/consumer e2e

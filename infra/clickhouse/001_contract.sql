@@ -5,6 +5,8 @@
 --   * UTC everywhere. Site timezone is applied at query time from MongoDB sites.timezone.
 --   * Never single-row INSERT. The consumer inserts batches and sets insert_deduplication_token explicitly.
 --   * Do NOT put DEFAULT now() on event/session columns: implicit timestamps defeat block-level deduplication.
+--   * Every insert also sets deduplicate_blocks_in_dependent_materialized_views = 1 (consumer adapter),
+--     so a de-duplicated events block is not re-counted by the rollup materialized view (Amendment A1).
 --   * non_replicated_deduplication_window: plain (self-hosted / local) MergeTree keeps NO insert
 --     de-duplication history by default (window = 0), so insert_deduplication_token would silently do
 --     nothing. ClickHouse Cloud tables are replicated and keep a window by default; the setting is harmless
@@ -142,7 +144,12 @@ ORDER BY (
     bucket,
     pathname
 )
-TTL bucket + INTERVAL 425 DAY;
+TTL bucket + INTERVAL 425 DAY
+-- Amendment A1 (2026-10-07, found by the Stage 3 replay test on ClickHouse 24.8): when the events
+-- insert is de-duplicated, the materialized view still re-inserts the block into this table unless
+-- the insert sets deduplicate_blocks_in_dependent_materialized_views = 1 AND this target table keeps a
+-- de-duplication window too. Without both, a replayed batch double-counts pageviews in the rollup.
+SETTINGS non_replicated_deduplication_window = 1000;
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS tailwatch.rollup_15m_pages_mv

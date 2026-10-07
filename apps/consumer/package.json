@@ -1,0 +1,26 @@
+{
+  "name": "@tailwatch/consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run --exclude \"test/e2e/**\"",
+    "build": "tsc --noEmit",
+    "bundle": "wrangler deploy --dry-run --outdir dist",
+    "e2e": "pnpm --filter @tailwatch/collector build && wrangler deploy --dry-run --outdir dist && vitest run test/e2e",
+    "live": "TW_LIVE_CLICKHOUSE=1 vitest run test/live"
+  },
+  "dependencies": {
+    "@tailwatch/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261001.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0",
+    "wrangler": "^4.0.0",
+    "miniflare": "5.20261001.0-alpha"
+  }
+}

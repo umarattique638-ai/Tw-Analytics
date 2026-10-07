@@ -120,7 +120,7 @@ Write path, in this exact order:
 3. CONSUMER, one batch, this order:
    - (a) R2 PUT raw/{date}/{hour}/{uuid}.ndjson. ARCHIVE FIRST, the untransformed batch, before any enrichment. If (b)-(e) crash or a bug ships, this is the only thing that saves us (Snowplow model).
    - (b) enrich in memory: bot, country, UA, referrer, normalise URL. Drop decisions recorded WITH REASON.
-   - (c) Redis GET/SET sess:{site}:{visitor_hash}, TTL 1800 s: new session or continue? engaged yet? pageview count? Plausible serialises per visitor with a 1 s lock timeout, then drops rather than blocking.
+   - (c) Durable Object (SQLite, STAGE-1 D4) load of sess:{site}:{visitor_hash} (TTL 1800 s) and 7-day de-dup markers, one call per state shard; committed LAST together in one transaction. (PLAN said Redis; free-only rule.)
    - (d) ClickHouse INSERT INTO events, BATCH only. Use async_insert=1, wait_for_async_insert=1. Idempotency: insert_deduplication_token = batch id. TRAP: a column with DEFAULT now() makes block dedup silently do nothing.
    - (e) ClickHouse INSERT INTO sessions, two rows per mutation, VersionedCollapsingMergeTree: old state sign=-1, new state sign=+1 (PostHog used ReplacingMergeTree and calls it a mistake).
    - (f) ROLLUPS: no code. Materialized views on events write into AggregatingMergeTree targets with uniqState(visitor_hash) on insert, uniqMerge on read.
@@ -336,6 +336,10 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 - No TTL meant retentionDays was a promise nothing enforced. Retention is a Phase 3 deliverable; the schema must allow it from Stage 1.
 - Chat turns URLs and file names into markdown links when copied. Type file names and JSON yourself or edit files in the editor.
 - Passwords pasted into chat are compromised: reset them. Secrets only via `wrangler secret put`.
+- (Stage 3) A de-duplicated ClickHouse insert still fires the materialized view unless the insert sets deduplicate_blocks_in_dependent_materialized_views=1 AND the MV target table has a de-dup window. A replay test on a real server is the only thing that catches this (STAGE-1 A1).
+- (Stage 3) A materialized view runs its SELECT with the INSERTING user's rights: an INSERT-only user fails with error 497 until it gets column-level SELECT on the source columns (STAGE-1 A2).
+- (Stage 2) Node's fetch sends "user-agent: undici" when none is given; tests of the "missing UA" case must send an empty header. Runtime default UAs are now edge bots (STAGE-1 A3).
+- (Stage 1) Stage 2's commit had accidentally truncated docs/contract/STAGE-1.md from 118 to 14 lines. Check `git diff --stat` before committing docs.
 
 ---------------------------------------------------------------------------------------------------------
 
@@ -354,8 +358,10 @@ Accounts / infra (Stage 0):
 
 Stage 0 done-when: pnpm build passes [x] | CI runs [ ] (needs the GitHub repo) | wrangler dev serves hello world [x].
 
-Stage 1 contract: [ ] wire v1 | [ ] ClickHouse DDL | [ ] MongoDB schema | [ ] URL normalisation | [ ] metric definitions | [ ] ~50 fixtures | [ ] 8 CF unknowns re-verified with source + date | [ ] two-people sessions test.
-Stage 2 collector: [x] code + tests (43 collector tests, 50-fixture exact replay, curl on local wrangler dev 2026-10-06) | [ ] real queue/KV deploy | [ ] p99 on staging      Stage 3 storage + consumer: [ ]    Stage 4 tracker: [ ]    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
+Stage 1 contract: FROZEN 2026-10-07 (docs/contract/STAGE-1.md) [x] wire v1 | [x] ClickHouse DDL (applied to ClickHouse 24.8) | [x] MongoDB schema (fake-run; [ ] one real replica-set run) | [x] URL normalisation | [x] metric definitions | [x] 50 fixtures with exact outcomes | [x] 8 CF unknowns + free-plan limits re-verified 2026-10-07 | [x] two-people sessions test.
+Stage 2 collector: DONE 2026-10-07 [x] every fixture returns its code (Node + workerd) | [x] never 5xx | [x] messages land in the queue (workerd local Queue) | [x] latency on workerd: collector adds ~3 ms at the median | [ ] real deploy + p99 measured on the deployed Worker
+Stage 3 storage + consumer: DONE 2026-10-07 [x] fixtures in -> exact rows out (real ClickHouse) | [x] session metrics right inside ClickHouse | [x] rollup = raw GROUP BY | [x] replay -> no duplicates (tokens + Durable Object de-dup) | [x] R2 holds the raw file (workerd) | [x] milestone: HTTP pageview -> ClickHouse row in ~1.1 s | [ ] real deploy (R2 bucket, queues, DO migration, ClickHouse user)
+Stage 4 tracker: [ ] (packages/core + packages/browser exist as an unreviewed draft from earlier; not part of this pass)    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
 
 Leftovers from the first attempt that still exist online. OWNER ORDERED DELETION on 2026-10-05 (delete order: consumer Worker first, then collector, testsite, queues, KV, then the ClickHouse database). Tick when done:
 - [ ] Workers: tailwatch-consumer (first: it is still consuming the queue), tailwatch-collector, tailwatch-testsite

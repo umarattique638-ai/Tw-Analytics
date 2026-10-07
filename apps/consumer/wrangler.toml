@@ -1,0 +1,40 @@
+name = "tailwatch-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Free Cloudflare features only (STAGE-1 D9): Queues, R2, SQLite-backed Durable Objects.
+
+[vars]
+# Replace with your ClickHouse HTTPS endpoint. The PASSWORD is a secret, not a var:
+#   pnpm --filter @tailwatch/consumer exec wrangler secret put CLICKHOUSE_PASSWORD
+CLICKHOUSE_URL = "https://REPLACE_ME.clickhouse.cloud:8443"
+# A dedicated user with INSERT on events, sessions, dropped_hits and rollup_15m_pages only, never `default`.
+CLICKHOUSE_USER = "tw_insert"
+CLICKHOUSE_DATABASE = "tailwatch"
+# Number of state shards (Durable Objects). See src/state/port.ts before changing it.
+SESSION_SHARDS = "8"
+# REQUIRE_ARCHIVE is not set: the archive is required (fail closed). The R2 binding below provides it.
+
+# Raw archive (PLAN 3.1 a). Create once: wrangler r2 bucket create tailwatch-raw
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "tailwatch-raw"
+
+# Session + de-dup state (STAGE-1 D4). SQLite backend = the only Durable Object backend on Free.
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "SessionStateObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionStateObject"]
+
+[[queues.consumers]]
+queue = "tailwatch-events"
+# 25 keeps one invocation well inside the Free plan's 10 ms CPU and 50 subrequests
+# (1 R2 + 3 ClickHouse inserts with retries + 2 calls per touched state shard). Measure, then tune.
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+# Free plan: queue retention is 24 h. Whatever lands here must be looked at within a day.
+dead_letter_queue = "tailwatch-events-dlq"

@@ -127,8 +127,8 @@ describe('ClickHouse DDL (Stage 1 artefact): static rules', () => {
     expect(code).not.toMatch(/DEFAULT\s+now/i);
   });
 
-  it('keeps an insert de-duplication window on every table the consumer writes', () => {
-    for (const table of ['events', 'sessions', 'dropped_hits']) {
+  it('keeps an insert de-duplication window on every table the consumer writes, including the MV target (A1)', () => {
+    for (const table of ['events', 'sessions', 'dropped_hits', 'rollup_15m_pages']) {
       const block = code.slice(code.indexOf(`tailwatch.${table}\n`));
       const end = block.indexOf(';');
       expect(block.slice(0, end), table).toContain('non_replicated_deduplication_window');

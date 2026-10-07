@@ -140,7 +140,15 @@ The documents were silent or contradicted each other on these (PROJECT-NOTES §1
 | **D12** | `i` stays optional on the wire (server senders, old clients); the Stage 4 tracker always sends it. | Without it de-dup falls back to the queue message id, which still covers redeliveries. |
 | **D13** | The BUILD-ORDER `curl` example (no browser User-Agent) is dropped as `bot` **by design**. Manual tests send a browser `User-Agent`. | Edge bot rule: `curl/` is on the denylist. |
 
-## 9. What is still VERIFY (not assumed true)
+## 9. Amendments after the freeze (append-only)
+
+| # | Date | Change | Found by |
+|---|---|---|---|
+| **A1** | 2026-10-07 | `rollup_15m_pages` gets `SETTINGS non_replicated_deduplication_window = 1000`, and every consumer insert sets `deduplicate_blocks_in_dependent_materialized_views = 1`. No column changed. | Stage 3 replay test on ClickHouse 24.8: the events table dropped the replayed block but the materialized view re-counted it into the rollup. |
+| **A2** | 2026-10-07 | `infra/clickhouse/002_insert_user.sql`: the consumer user needs column-level `SELECT(site_id, timestamp, pathname, visitor_hash, engagement_ms, name)` on `events`, because a materialized view runs with the inserting user's rights. | Stage 3 workerd pipeline test (ClickHouse error 497 with INSERT-only grants). |
+| **A3** | 2026-10-07 | Edge UA denylist also catches runtime default User-Agents (`undici`, `node`, `Deno/`, `Bun/`, `okhttp/`, `Java/`, `Apache-HttpClient/`). Bot lists are data, not wire contract. | Stage 2 workerd test. |
+
+## 10. What is still VERIFY (not assumed true)
 1. Run `infra/mongodb/001_control_plane.js` once on a real replica set (Atlas M0 is free). It is only
    checked against a recording fake here (`packages/contract/test/infra.test.ts`); MongoDB binaries could
    not be downloaded in the build environment.
