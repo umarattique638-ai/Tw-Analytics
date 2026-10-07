@@ -1,73 +1,236 @@
-import type { WirePayload } from '../src';
+import type { DropReason, SiteConfig, ValidatedEvent } from '../src';
 
-/** Stage 1: exactly 50 hand-written contract fixtures. */
+/**
+ * Stage 1 fixture corpus: exactly 50 hand-written cases, FROZEN with wire v1.
+ *
+ * Every fixture states its exact outcome. The same corpus is replayed:
+ *   - through validate() in packages/contract (Stage 1),
+ *   - over HTTP through the collector Worker (Stage 2 done-when: "every fixture returns its code"),
+ *   - and, for the accepted ones, through the consumer into ClickHouse (Stage 3).
+ *
+ * Context shared by all fixtures (the "edge" they are evaluated at):
+ *   site     = FIXTURE_SITE (example.com and *.example.com)
+ *   received = FIXTURE_RECEIVED_AT
+ *   headers  = a desktop Chrome User-Agent unless the fixture overrides it
+ */
+
 export const SITE = 'tw_pub_1234567890ABCDEFGHIJKLMNOPQRSTUV';
+export const OTHER_SITE = 'tw_pub_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ';
 export const URL = 'https://example.com/page';
+
+/** The moment every fixture is evaluated at (2026-09-30 12:05:00 UTC). */
+export const FIXTURE_RECEIVED_AT = Date.UTC(2026, 8, 30, 12, 5, 0);
+/** Client created time used by most fixtures: five minutes before receipt. */
 export const BASE = Date.UTC(2026, 8, 30, 12, 0, 0);
+
+export const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+/** Fixture-only client address. Used ONLY inside the hash computation, never stored. */
+export const FIXTURE_IP = '203.0.113.7';
+
+export const FIXTURE_SITE: SiteConfig = {
+  id: 123,
+  publicKey: SITE,
+  allowedHosts: ['example.com', '*.example.com'],
+  live: true,
+  region: 'in',
+  identitySecret: 'fixture-identity-secret-not-for-production',
+};
+
+export type FixtureExpectation =
+  | {
+      kind: 'accept';
+      /** Exact warning list (default: none). */
+      warnings?: string[];
+      /** Fields of the ValidatedEvent that must match exactly. */
+      event?: Partial<ValidatedEvent>;
+    }
+  | { kind: 'drop'; reason: DropReason }
+  | { kind: 'reject'; status: 400 | 413; error: string };
 
 export interface ContractFixture {
   name: string;
-  payload: unknown;
-  expected: 'accept' | string;
+  /** JSON-encoded into the request body. Ignored when `body` is set. */
+  payload?: unknown;
+  /** Raw body, for cases JSON.stringify cannot produce. */
+  body?: string;
+  /** Header overrides. `null` removes the header. Default: { 'user-agent': BROWSER_UA }. */
+  headers?: Record<string, string | null>;
+  /** request.cf.asn for this request. */
+  asn?: number;
+  expect: FixtureExpectation;
 }
 
+const p = (extra: Record<string, unknown> = {}) => ({ s: SITE, n: 'pageview', u: URL, q: 1, t: BASE, v: 1, ...extra });
+const accept = (event?: Partial<ValidatedEvent>, warnings: string[] = []): FixtureExpectation => ({ kind: 'accept', event, warnings });
+const drop = (reason: DropReason): FixtureExpectation => ({ kind: 'drop', reason });
+const bad = (error: string): FixtureExpectation => ({ kind: 'reject', status: 400, error });
+
 export const contractFixtures: ContractFixture[] = [
-  { name: 'valid_01', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/1/?b=2&a=1#fragment`, q: 1, t: BASE + 1 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-01', e: 100, f: 0, p: { plan: 'free', index: 1, active: true } }, expected: 'accept' },
-  { name: 'valid_02', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/2/?b=2&a=1#fragment`, q: 2, t: BASE + 2 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-02', e: 200, f: 0, p: { plan: 'free', index: 2, active: true } }, expected: 'accept' },
-  { name: 'valid_03', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/3/?b=2&a=1#fragment`, q: 3, t: BASE + 3 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-03', e: 300, f: 0, p: { plan: 'free', index: 3, active: true } }, expected: 'accept' },
-  { name: 'valid_04', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/4/?b=2&a=1#fragment`, q: 4, t: BASE + 4 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-04', e: 400, f: 0, p: { plan: 'free', index: 4, active: true } }, expected: 'accept' },
-  { name: 'valid_05', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/5/?b=2&a=1#fragment`, q: 5, t: BASE + 5 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-05', e: 500, f: 0, p: { plan: 'free', index: 5, active: true } }, expected: 'accept' },
-  { name: 'valid_06', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/6/?b=2&a=1#fragment`, q: 6, t: BASE + 6 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-06', e: 600, f: 0, p: { plan: 'free', index: 6, active: true } }, expected: 'accept' },
-  { name: 'valid_07', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/7/?b=2&a=1#fragment`, q: 7, t: BASE + 7 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-07', e: 700, f: 0, p: { plan: 'free', index: 7, active: true } }, expected: 'accept' },
-  { name: 'valid_08', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/8/?b=2&a=1#fragment`, q: 8, t: BASE + 8 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-08', e: 800, f: 0, p: { plan: 'free', index: 8, active: true } }, expected: 'accept' },
-  { name: 'valid_09', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/9/?b=2&a=1#fragment`, q: 9, t: BASE + 9 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-09', e: 900, f: 0, p: { plan: 'free', index: 9, active: true } }, expected: 'accept' },
-  { name: 'valid_10', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/10/?b=2&a=1#fragment`, q: 10, t: BASE + 10 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-10', e: 1000, f: 0, p: { plan: 'free', index: 10, active: true } }, expected: 'accept' },
-  { name: 'valid_11', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/11/?b=2&a=1#fragment`, q: 11, t: BASE + 11 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-11', e: 1100, f: 0, p: { plan: 'free', index: 11, active: true } }, expected: 'accept' },
-  { name: 'valid_12', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/12/?b=2&a=1#fragment`, q: 12, t: BASE + 12 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-12', e: 1200, f: 0, p: { plan: 'free', index: 12, active: true } }, expected: 'accept' },
-  { name: 'valid_13', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/13/?b=2&a=1#fragment`, q: 13, t: BASE + 13 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-13', e: 1300, f: 0, p: { plan: 'free', index: 13, active: true } }, expected: 'accept' },
-  { name: 'valid_14', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/14/?b=2&a=1#fragment`, q: 14, t: BASE + 14 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-14', e: 1400, f: 0, p: { plan: 'free', index: 14, active: true } }, expected: 'accept' },
-  { name: 'valid_15', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/15/?b=2&a=1#fragment`, q: 15, t: BASE + 15 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-15', e: 1500, f: 0, p: { plan: 'free', index: 15, active: true } }, expected: 'accept' },
-  { name: 'valid_16', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/16/?b=2&a=1#fragment`, q: 16, t: BASE + 16 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-16', e: 1600, f: 0, p: { plan: 'free', index: 16, active: true } }, expected: 'accept' },
-  { name: 'valid_17', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/17/?b=2&a=1#fragment`, q: 17, t: BASE + 17 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-17', e: 1700, f: 0, p: { plan: 'free', index: 17, active: true } }, expected: 'accept' },
-  { name: 'valid_18', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/18/?b=2&a=1#fragment`, q: 18, t: BASE + 18 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-18', e: 1800, f: 0, p: { plan: 'free', index: 18, active: true } }, expected: 'accept' },
-  { name: 'valid_19', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/19/?b=2&a=1#fragment`, q: 19, t: BASE + 19 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-19', e: 1900, f: 0, p: { plan: 'free', index: 19, active: true } }, expected: 'accept' },
-  { name: 'valid_20', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/20/?b=2&a=1#fragment`, q: 20, t: BASE + 20 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-20', e: 2000, f: 0, p: { plan: 'free', index: 20, active: true } }, expected: 'accept' },
-  { name: 'valid_21', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/21/?b=2&a=1#fragment`, q: 21, t: BASE + 21 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-21', e: 2100, f: 0, p: { plan: 'free', index: 21, active: true } }, expected: 'accept' },
-  { name: 'valid_22', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/22/?b=2&a=1#fragment`, q: 22, t: BASE + 22 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-22', e: 2200, f: 0, p: { plan: 'free', index: 22, active: true } }, expected: 'accept' },
-  { name: 'valid_23', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/23/?b=2&a=1#fragment`, q: 23, t: BASE + 23 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-23', e: 2300, f: 0, p: { plan: 'free', index: 23, active: true } }, expected: 'accept' },
-  { name: 'valid_24', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/24/?b=2&a=1#fragment`, q: 24, t: BASE + 24 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-24', e: 2400, f: 0, p: { plan: 'free', index: 24, active: true } }, expected: 'accept' },
-  { name: 'valid_25', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/25/?b=2&a=1#fragment`, q: 25, t: BASE + 25 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-25', e: 2500, f: 0, p: { plan: 'free', index: 25, active: true } }, expected: 'accept' },
-  { name: 'valid_26', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/26/?b=2&a=1#fragment`, q: 26, t: BASE + 26 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-26', e: 2600, f: 0, p: { plan: 'free', index: 26, active: true } }, expected: 'accept' },
-  { name: 'valid_27', payload: { s: SITE, n: 'signup', u: `https://Example.com/page/27/?b=2&a=1#fragment`, q: 27, t: BASE + 27 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-27', e: 2700, f: 0, p: { plan: 'free', index: 27, active: true } }, expected: 'accept' },
-  { name: 'valid_28', payload: { s: SITE, n: 'pageview', u: `https://Example.com/page/28/?b=2&a=1#fragment`, q: 28, t: BASE + 28 * 1000, v: 1, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-28', e: 2800, f: 0, p: { plan: 'free', index: 28, active: true } }, expected: 'accept' },
-  { name: 'bad_site_key', payload: { s: 'tw_bad', n: 'pageview', u: URL, q: 31, t: BASE, v: 1 }, expected: 'bad_site_key' },
-  { name: 'bad_event_name', payload: { s: SITE, n: 'PageView', u: URL, q: 32, t: BASE, v: 1 }, expected: 'bad_event_name' },
-  { name: 'empty_event_name', payload: { s: SITE, n: '', u: URL, q: 33, t: BASE, v: 1 }, expected: 'bad_event_name' },
-  { name: 'bad_url_type', payload: { s: SITE, n: 'pageview', u: 123, q: 34, t: BASE, v: 1 }, expected: 'bad_url' },
-  { name: 'empty_url', payload: { s: SITE, n: 'pageview', u: '', q: 35, t: BASE, v: 1 }, expected: 'bad_url' },
-  { name: 'bad_seq_zero', payload: { s: SITE, n: 'pageview', u: URL, q: 0, t: BASE, v: 1 }, expected: 'bad_seq' },
-  { name: 'bad_seq_fraction', payload: { s: SITE, n: 'pageview', u: URL, q: 1.5, t: BASE, v: 1 }, expected: 'bad_seq' },
-  { name: 'bad_timestamp', payload: { s: SITE, n: 'pageview', u: URL, q: 36, t: 0, v: 1 }, expected: 'bad_timestamp' },
-  { name: 'missing_version', payload: { s: SITE, n: 'pageview', u: URL, q: 37, t: BASE }, expected: 'bad_version' },
-  { name: 'bad_version_string', payload: { s: SITE, n: 'pageview', u: URL, q: 38, t: BASE, v: '1' }, expected: 'bad_version' },
-  { name: 'bad_referrer', payload: { s: SITE, n: 'pageview', u: URL, q: 39, t: BASE, v: 1, r: 42 }, expected: 'bad_referrer' },
-  { name: 'bad_engagement', payload: { s: SITE, n: 'pageview', u: URL, q: 40, t: BASE, v: 1, e: -1 }, expected: 'bad_engagement' },
-  { name: 'bad_route', payload: { s: SITE, n: 'pageview', u: URL, q: 41, t: BASE, v: 1, rt: 42 }, expected: 'bad_route' },
-  { name: 'bad_width', payload: { s: SITE, n: 'pageview', u: URL, q: 42, t: BASE, v: 1, w: -1 }, expected: 'bad_width' },
-  { name: 'bad_insert_id', payload: { s: SITE, n: 'pageview', u: URL, q: 43, t: BASE, v: 1, i: 42 }, expected: 'bad_insert_id' },
-  { name: 'bad_sent_at', payload: { s: SITE, n: 'pageview', u: URL, q: 44, t: BASE, v: 1, x: 0 }, expected: 'bad_sent_at' },
-  { name: 'bad_flags', payload: { s: SITE, n: 'pageview', u: URL, q: 45, t: BASE, v: 1, f: 256 }, expected: 'bad_flags' },
-  { name: 'props_array', payload: { s: SITE, n: 'pageview', u: URL, q: 46, t: BASE, v: 1, p: [] }, expected: 'bad_props' },
-  { name: 'props_null', payload: { s: SITE, n: 'pageview', u: URL, q: 47, t: BASE, v: 1, p: null }, expected: 'bad_props' },
-  { name: 'too_many_props', payload: { s: SITE, n: 'pageview', u: URL, q: 48, t: BASE, v: 1, p: Object.fromEntries(Array.from({ length: 26 }, (_, i) => [`k${i}`, i])) }, expected: 'accept_warning' },
-  { name: 'unsafe_prop', payload: { s: SITE, n: 'pageview', u: URL, q: 49, t: BASE, v: 1, p: JSON.parse('{"__proto__":"x"}') }, expected: 'accept_warning' },
-  { name: 'bad_props_boolean', payload: { s: SITE, n: 'pageview', u: URL, q: 50, t: BASE, v: 1, p: true }, expected: 'bad_props' },
-] as ContractFixture[];
+  // ---------------------------------------------------------------- accepted (22)
+  {
+    name: 'pageview_minimal',
+    payload: p(),
+    expect: accept({ siteId: 123, name: 'pageview', url: 'https://example.com/page', host: 'example.com', path: '/page', seq: 1, createdAt: BASE, occurredAt: BASE, backfill: false, trackerVersion: 1, flags: 0, props: {} }),
+  },
+  {
+    name: 'pageview_all_fields',
+    payload: p({ u: 'https://Example.com/page/1/?b=2&a=1#fragment', q: 2, r: 'https://ref.example/path', rt: '/page/[id]', w: 1440, i: 'insert-0002', e: 1200, f: 0 }),
+    expect: accept({ url: 'https://example.com/page/1', path: '/page/1', route: '/page/[id]', referrer: 'https://ref.example/path', width: 1440, insertId: 'insert-0002', engagementMs: 1200, seq: 2 }),
+  },
+  {
+    name: 'custom_event_with_props',
+    payload: p({ n: 'signup', q: 3, i: 'insert-0003', p: { plan: 'pro', seats: 5, trial: false } }),
+    expect: accept({ name: 'signup', props: { plan: 'pro', seats: 5, trial: false } }),
+  },
+  {
+    name: 'utm_kept_others_dropped_and_sorted',
+    payload: p({ u: 'https://example.com/landing?utm_source=news&x=1&utm_medium=email&gclid=abc', q: 4 }),
+    expect: accept({ url: 'https://example.com/landing?utm_medium=email&utm_source=news', path: '/landing' }),
+  },
+  {
+    name: 'host_case_and_trailing_slash_normalised',
+    payload: p({ u: 'HTTPS://WWW.EXAMPLE.COM/Blog/', q: 5 }),
+    expect: accept({ url: 'https://www.example.com/Blog', host: 'www.example.com', path: '/Blog' }),
+  },
+  {
+    name: 'subdomain_allowed_by_wildcard',
+    payload: p({ u: 'https://shop.example.com/cart', q: 6 }),
+    expect: accept({ host: 'shop.example.com', path: '/cart' }),
+  },
+  {
+    name: 'explicit_port_kept',
+    payload: p({ u: 'https://example.com:8443/admin', q: 7 }),
+    expect: accept({ url: 'https://example.com:8443/admin', host: 'example.com' }),
+  },
+  {
+    name: 'referrer_query_and_fragment_stripped',
+    payload: p({ r: 'https://google.com/search?q=private+words#frag', q: 8 }),
+    expect: accept({ referrer: 'https://google.com/search' }),
+  },
+  {
+    name: 'clock_skew_corrected_with_sent_at',
+    // Device clock is 1 h slow. Created 2 s before it was sent.
+    payload: p({ t: FIXTURE_RECEIVED_AT - 3_600_000 - 2_000, x: FIXTURE_RECEIVED_AT - 3_600_000, q: 9 }),
+    expect: accept({ occurredAt: FIXTURE_RECEIVED_AT - 2_000, createdAt: FIXTURE_RECEIVED_AT - 3_602_000, backfill: false }),
+  },
+  {
+    name: 'old_event_is_backfill_not_rewritten',
+    payload: p({ t: FIXTURE_RECEIVED_AT - 4 * 86_400_000, q: 10 }),
+    expect: accept({ occurredAt: FIXTURE_RECEIVED_AT - 4 * 86_400_000, backfill: true }),
+  },
+  {
+    name: 'future_timestamp_repaired_with_warning',
+    payload: p({ t: FIXTURE_RECEIVED_AT + 86_400_000, q: 11 }),
+    expect: accept({ occurredAt: FIXTURE_RECEIVED_AT, backfill: false }, ['timestamp_repaired_future']),
+  },
+  {
+    name: 'unknown_future_field_accepted_and_kept',
+    payload: p({ q: 12, zz: 'from-a-newer-tracker' }),
+    expect: accept({ extra: { zz: 'from-a-newer-tracker' } }),
+  },
+  {
+    name: 'card_number_property_refused',
+    payload: p({ n: 'checkout', q: 13, p: { card: '4111 1111 1111 1111', step: 'pay' } }),
+    expect: accept({ props: { step: 'pay' } }, ['sensitive_prop_refused:card']),
+  },
+  {
+    name: 'ssn_property_refused',
+    payload: p({ n: 'apply', q: 14, p: { ssn: '123-45-6789' } }),
+    expect: accept({ props: {} }, ['sensitive_prop_refused:ssn']),
+  },
+  {
+    name: 'too_many_props_truncated_to_25',
+    payload: p({ n: 'big', q: 15, p: Object.fromEntries(Array.from({ length: 26 }, (_, i) => [`k${String(i).padStart(2, '0')}`, i])) }),
+    expect: accept(undefined, ['props_truncated:26']),
+  },
+  {
+    name: 'proto_prop_key_ignored',
+    payload: p({ n: 'evt', q: 16, p: JSON.parse('{"__proto__":"x","ok":1}') }),
+    expect: accept({ props: { ok: 1 } }, ['prop_key_invalid']),
+  },
+  {
+    name: 'prop_value_over_255_ignored',
+    payload: p({ n: 'evt', q: 17, p: { long: 'a'.repeat(256), short: 'b' } }),
+    expect: accept({ props: { short: 'b' } }, ['prop_value_too_long:long']),
+  },
+  {
+    name: 'nested_prop_value_ignored',
+    payload: p({ n: 'evt', q: 18, p: { nested: { a: 1 }, flat: true } }),
+    expect: accept({ props: { flat: true } }, ['prop_type_invalid:nested']),
+  },
+  {
+    name: 'control_chars_stripped_from_route',
+    payload: p({ q: 19, rt: '/a\nb\u0000c' }),
+    expect: accept({ route: '/abc' }),
+  },
+  {
+    name: 'engagement_event',
+    payload: p({ n: 'engagement', q: 20, e: 15_000 }),
+    expect: accept({ name: 'engagement', engagementMs: 15_000 }),
+  },
+  {
+    name: 'first_pageview_flag',
+    payload: p({ q: 21, f: 1 }),
+    expect: accept({ flags: 1 }),
+  },
+  {
+    name: 'percent_encoded_path_kept',
+    payload: p({ q: 22, u: 'https://example.com/caf%C3%A9' }),
+    expect: accept({ path: '/caf%C3%A9' }),
+  },
 
-export const validWireFixtures: WirePayload[] = contractFixtures
-  .filter((fixture) => fixture.expected === 'accept')
-  .map((fixture) => fixture.payload as WirePayload);
+  // ---------------------------------------------------------------- dropped, still 204 (9)
+  { name: 'unknown_site_key', payload: p({ s: OTHER_SITE }), expect: drop('not_found') },
+  { name: 'hostname_not_registered', payload: p({ u: 'https://evil-example.com/' }), expect: drop('hostname') },
+  { name: 'lookalike_suffix_host', payload: p({ u: 'https://example.com.evil.net/' }), expect: drop('hostname') },
+  { name: 'global_privacy_control', payload: p(), headers: { 'sec-gpc': '1' }, expect: drop('gpc') },
+  { name: 'curl_user_agent', payload: p(), headers: { 'user-agent': 'curl/8.4.0' }, expect: drop('bot') },
+  { name: 'missing_user_agent', payload: p(), headers: { 'user-agent': null }, expect: drop('bot') },
+  { name: 'headless_chrome', payload: p(), headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/126.0.0.0 Safari/537.36' }, expect: drop('bot') },
+  { name: 'install_verifier', payload: p(), headers: { 'user-agent': 'TailwatchVerifier/1.0' }, expect: drop('verification_agent') },
+  { name: 'datacentre_asn', payload: p(), asn: 16509, expect: drop('bot') },
 
-export const malformedFixtureCount = contractFixtures.filter(
-  (fixture) => fixture.expected !== 'accept',
-).length;
+  // ---------------------------------------------------------------- rejected (19)
+  { name: 'not_json', body: '{{{', expect: bad('invalid_json') },
+  { name: 'json_array', body: '[]', expect: bad('not_an_object') },
+  { name: 'bad_site_key', payload: p({ s: 'tw_bad' }), expect: bad('bad_site_key') },
+  { name: 'uppercase_event_name', payload: p({ n: 'PageView' }), expect: bad('bad_event_name') },
+  { name: 'empty_event_name', payload: p({ n: '' }), expect: bad('bad_event_name') },
+  { name: 'event_name_41_chars', payload: p({ n: 'a'.repeat(41) }), expect: bad('bad_event_name') },
+  { name: 'url_not_a_string', payload: p({ u: 123 }), expect: bad('bad_url') },
+  { name: 'empty_url', payload: p({ u: '' }), expect: bad('bad_url') },
+  { name: 'url_not_http', payload: p({ u: 'ftp://example.com/file' }), expect: bad('bad_url') },
+  { name: 'sequence_zero', payload: p({ q: 0 }), expect: bad('bad_seq') },
+  { name: 'sequence_fraction', payload: p({ q: 1.5 }), expect: bad('bad_seq') },
+  { name: 'timestamp_zero', payload: p({ t: 0 }), expect: bad('bad_timestamp') },
+  { name: 'missing_version', payload: { s: SITE, n: 'pageview', u: URL, q: 1, t: BASE }, expect: bad('bad_version') },
+  { name: 'version_as_string', payload: p({ v: '1' }), expect: bad('bad_version') },
+  { name: 'referrer_not_a_string', payload: p({ r: 42 }), expect: bad('bad_referrer') },
+  { name: 'negative_engagement', payload: p({ e: -1 }), expect: bad('bad_engagement') },
+  { name: 'flags_over_255', payload: p({ f: 256 }), expect: bad('bad_flags') },
+  { name: 'props_is_array', payload: p({ p: [] }), expect: bad('bad_props') },
+  {
+    name: 'body_over_32_kib',
+    payload: p({ pad: 'x'.repeat(33 * 1024) }),
+    expect: { kind: 'reject', status: 413, error: 'body_too_large' },
+  },
+];
+
+/** The request body a fixture produces. */
+export function fixtureBody(fixture: ContractFixture): string {
+  return fixture.body ?? JSON.stringify(fixture.payload);
+}
+
+/** The request headers a fixture produces (lower-case names; `null` means "absent"). */
+export function fixtureHeaders(fixture: ContractFixture): Record<string, string> {
+  const merged: Record<string, string | null> = { 'user-agent': BROWSER_UA, ...fixture.headers };
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(merged)) if (v !== null) out[k.toLowerCase()] = v;
+  return out;
+}
+
+export const acceptedFixtures = (): ContractFixture[] => contractFixtures.filter((f) => f.expect.kind === 'accept');
+export const droppedFixtures = (): ContractFixture[] => contractFixtures.filter((f) => f.expect.kind === 'drop');
+export const rejectedFixtures = (): ContractFixture[] => contractFixtures.filter((f) => f.expect.kind === 'reject');

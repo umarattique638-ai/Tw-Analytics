@@ -63,6 +63,12 @@ export const LIMITS = {
   /** Session inactivity timeout. */
   sessionGapMs: 30 * 60 * 1000,
 
+  /** insert_id de-duplication window (PLAN 8.2, Phase 2). Enforced by the consumer, never the collector. */
+  dedupeWindowMs: 7 * 24 * 60 * 60 * 1000,
+
+  /** Rollup time bucket: 15 minutes, so UTC+5:30 / +5:45 / +9:30 days can be re-bucketed exactly (STAGE-1 D3). */
+  rollupBucketMs: 15 * 60 * 1000,
+
   /**
    * Engagement threshold.
    *

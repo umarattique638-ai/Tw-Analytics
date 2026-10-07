@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS, validate } from '../src';
 import type { EdgeMeta, Outcome, SiteConfig } from '../src';
-import { contractFixtures, SITE } from '../fixtures/payloads';
+import { contractFixtures, fixtureBody, SITE } from '../fixtures/payloads';
 
 /**
  * Regression tests for hazards found in review. Each one is a request a
@@ -34,35 +34,6 @@ function accepted(outcome: Outcome) {
 
 /** What the consumer will eventually do with a time: must never throw. */
 const isoSafe = (ms: number) => !Number.isNaN(new Date(ms).getTime()) && new Date(ms).toISOString().length === 24;
-
-describe('stage 1 fixture corpus runs through the real validator', () => {
-  const header = { get: (name: string) => (name.toLowerCase() === 'user-agent' ? CHROME : null) };
-
-  for (const fixture of contractFixtures) {
-    it(fixture.name, () => {
-      const outcome = validate(header, JSON.stringify(fixture.payload), {
-        receivedAt: Date.UTC(2026, 8, 30, 12, 5),
-        site: SITE_CONFIG,
-      });
-
-      if (fixture.expected === 'accept') {
-        expect(outcome.kind).toBe('accept');
-        if (outcome.kind === 'accept') expect(outcome.event.warnings).toEqual([]);
-      } else if (fixture.expected === 'accept_warning') {
-        expect(outcome.kind).toBe('accept');
-        if (outcome.kind === 'accept') expect(outcome.event.warnings.length).toBeGreaterThan(0);
-      } else {
-        expect(outcome.kind).toBe('reject');
-        if (outcome.kind === 'reject') expect(outcome.error).toBe(fixture.expected);
-      }
-    });
-  }
-
-  it('the unsafe_prop fixture really carries a __proto__ key (an object literal would not)', () => {
-    const fixture = contractFixtures.find((f) => f.name === 'unsafe_prop')!;
-    expect(JSON.stringify(fixture.payload)).toContain('"__proto__"');
-  });
-});
 
 describe('past and absurd timestamps are repaired, never crash a downstream date conversion', () => {
   it('t = 1 (1970) is old but storable: kept as backfill, never rewritten (owner rule)', () => {
@@ -182,7 +153,7 @@ describe('referrer never carries a query string, fragment or credentials', () =>
 describe('no 400 depends on whether the site exists (invariant 8)', () => {
   it('every rejected payload is rejected identically for a known and an unknown site', () => {
     for (const fixture of contractFixtures) {
-      const body = JSON.stringify(fixture.payload);
+      const body = fixtureBody(fixture);
       const known = validate(headers, body, { receivedAt: RECEIVED_AT, site: SITE_CONFIG });
       const unknown = validate(headers, body, { receivedAt: RECEIVED_AT, site: null });
       if (known.kind === 'reject' || unknown.kind === 'reject') {

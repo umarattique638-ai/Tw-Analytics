@@ -6,10 +6,18 @@
     "counters": {
       "document": {
         "bsonType": "object",
-        "required": ["_id", "value"],
+        "required": [
+          "_id",
+          "value"
+        ],
         "properties": {
-          "_id": { "bsonType": "string" },
-          "value": { "bsonType": "long", "minimum": 0 }
+          "_id": {
+            "bsonType": "string"
+          },
+          "value": {
+            "bsonType": "long",
+            "minimum": 0
+          }
         },
         "additionalProperties": false
       }
@@ -17,23 +25,54 @@
     "tenants": {
       "document": {
         "bsonType": "object",
-        "required": ["_id", "createdAt", "status", "plan", "region"],
+        "required": [
+          "_id",
+          "createdAt",
+          "status",
+          "plan",
+          "region"
+        ],
         "properties": {
-          "_id": { "bsonType": "objectId" },
-          "createdAt": { "bsonType": "date" },
-          "updatedAt": { "bsonType": "date" },
-          "status": { "enum": ["active", "suspended", "deleted"] },
-          "plan": { "bsonType": "string" },
-          "region": { "enum": ["in", "in-eu"] },
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "updatedAt": {
+            "bsonType": "date"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "suspended",
+              "deleted"
+            ]
+          },
+          "plan": {
+            "bsonType": "string"
+          },
+          "region": {
+            "enum": [
+              "in",
+              "in-eu"
+            ]
+          },
           "billing": {
             "bsonType": "object",
             "properties": {
-              "customerId": { "bsonType": "string" },
-              "subscriptionId": { "bsonType": "string" }
+              "customerId": {
+                "bsonType": "string"
+              },
+              "subscriptionId": {
+                "bsonType": "string"
+              }
             },
             "additionalProperties": false
           },
-          "settings": { "bsonType": "object" }
+          "settings": {
+            "bsonType": "object"
+          }
         },
         "additionalProperties": false
       }
@@ -41,16 +80,47 @@
     "users": {
       "document": {
         "bsonType": "object",
-        "required": ["_id", "email", "emailNormalized", "createdAt", "status"],
+        "required": [
+          "_id",
+          "email",
+          "emailNormalized",
+          "createdAt",
+          "status"
+        ],
         "properties": {
-          "_id": { "bsonType": "objectId" },
-          "email": { "bsonType": "string", "minLength": 3, "maxLength": 320 },
-          "emailNormalized": { "bsonType": "string", "minLength": 3, "maxLength": 320 },
-          "passwordHash": { "bsonType": "string", "maxLength": 512 },
-          "oauth": { "bsonType": "object" },
-          "createdAt": { "bsonType": "date" },
-          "updatedAt": { "bsonType": "date" },
-          "status": { "enum": ["active", "disabled", "deleted"] }
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "email": {
+            "bsonType": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "emailNormalized": {
+            "bsonType": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "passwordHash": {
+            "bsonType": "string",
+            "maxLength": 512
+          },
+          "oauth": {
+            "bsonType": "object"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "updatedAt": {
+            "bsonType": "date"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled",
+              "deleted"
+            ]
+          }
         },
         "additionalProperties": false
       }
@@ -58,13 +128,33 @@
     "memberships": {
       "document": {
         "bsonType": "object",
-        "required": ["_id", "tenantId", "userId", "role", "createdAt"],
+        "required": [
+          "_id",
+          "tenantId",
+          "userId",
+          "role",
+          "createdAt"
+        ],
         "properties": {
-          "_id": { "bsonType": "objectId" },
-          "tenantId": { "bsonType": "objectId" },
-          "userId": { "bsonType": "objectId" },
-          "role": { "enum": ["owner", "admin", "viewer"] },
-          "createdAt": { "bsonType": "date" }
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "tenantId": {
+            "bsonType": "objectId"
+          },
+          "userId": {
+            "bsonType": "objectId"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "viewer"
+            ]
+          },
+          "createdAt": {
+            "bsonType": "date"
+          }
         },
         "additionalProperties": false
       }
@@ -82,39 +172,115 @@
           "status",
           "region",
           "keys",
+          "identitySecret",
           "createdAt"
         ],
         "properties": {
-          "_id": { "bsonType": ["long", "int"], "minimum": 1 },
-          "tenantId": { "bsonType": "objectId" },
-          "domain": { "bsonType": "string", "minLength": 1, "maxLength": 253 },
-          "timezone": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "_id": {
+            "bsonType": [
+              "long",
+              "int"
+            ],
+            "minimum": 1
+          },
+          "tenantId": {
+            "bsonType": "objectId"
+          },
+          "domain": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "timezone": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "IANA timezone name. Stored in MongoDB; query/reporting layer applies it to UTC timestamps."
+          },
           "allowedHosts": {
             "bsonType": "array",
             "minItems": 1,
-            "items": { "bsonType": "string", "maxLength": 253 }
+            "items": {
+              "bsonType": "string",
+              "maxLength": 253
+            }
           },
-          "retentionDays": { "bsonType": ["int", "long"], "minimum": 1 },
-          "status": { "enum": ["active", "paused", "deleted"] },
-          "region": { "enum": ["in", "in-eu"] },
-          "verifiedAt": { "bsonType": ["date", "null"] },
+          "retentionDays": {
+            "bsonType": [
+              "int",
+              "long"
+            ],
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "deleted"
+            ]
+          },
+          "region": {
+            "enum": [
+              "in",
+              "in-eu"
+            ]
+          },
+          "verifiedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
+          },
+          "identitySecret": {
+            "bsonType": "string",
+            "minLength": 32,
+            "maxLength": 128
+          },
           "keys": {
             "bsonType": "array",
+            "minItems": 1,
             "items": {
               "bsonType": "object",
-              "required": ["id", "publicKey", "createdAt", "status"],
+              "required": [
+                "id",
+                "publicKey",
+                "createdAt",
+                "status"
+              ],
               "properties": {
-                "id": { "bsonType": "string", "maxLength": 64 },
-                "publicKey": { "bsonType": "string", "pattern": "^tw_pub_[A-Za-z0-9]{32}$" },
-                "createdAt": { "bsonType": "date" },
-                "revokedAt": { "bsonType": ["date", "null"] },
-                "status": { "enum": ["active", "revoked"] }
+                "id": {
+                  "bsonType": "string",
+                  "maxLength": 64
+                },
+                "publicKey": {
+                  "bsonType": "string",
+                  "pattern": "^tw_pub_[A-Za-z0-9]{32}$"
+                },
+                "createdAt": {
+                  "bsonType": "date"
+                },
+                "revokedAt": {
+                  "bsonType": [
+                    "date",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "revoked"
+                  ]
+                }
               },
               "additionalProperties": false
             }
           },
-          "createdAt": { "bsonType": "date" },
-          "updatedAt": { "bsonType": "date" }
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "updatedAt": {
+            "bsonType": "date"
+          }
         },
         "additionalProperties": false
       }

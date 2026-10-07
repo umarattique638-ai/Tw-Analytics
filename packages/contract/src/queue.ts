@@ -76,3 +76,25 @@ export interface DropQueueMessage {
 export type QueueMessage =
   | EventQueueMessage
   | DropQueueMessage;
+
+/**
+ * Reasons the CONSUMER records in dropped_hits, in addition to the edge DropReason values.
+ * consumer_invalid = a queued message the consumer could not use (itemised, never silent).
+ */
+export type ConsumerDropReason = 'consumer_invalid';
+
+/**
+ * De-duplication key for one event (STAGE-1 D5).
+ *
+ * - With a client insert id: scoped to the site, so a tracker retry (fetch + sendBeacon of the
+ *   same event) and a queue redelivery both collapse to one row.
+ * - Without one (server-side senders, old trackers): the queue message id, which is stable across
+ *   redeliveries of the same message.
+ */
+export function dedupeKey(
+  siteId: number,
+  insertId: string | undefined,
+  messageId: string,
+): string {
+  return insertId ? `i:${siteId}:${insertId}` : `m:${messageId}`;
+}

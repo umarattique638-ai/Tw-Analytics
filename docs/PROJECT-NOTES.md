@@ -54,7 +54,7 @@ NOT building (scope contract):
 | Consumer / enrichment | TypeScript Worker (queue consumer) |
 | Event store | ClickHouse. Adopt Plausible's events_v2 / sessions_v2 shapes from day one |
 | Control plane | **MongoDB** (tenants, sites, keys, billing refs). OWNER DECISION 2026-10-05: replaces the Postgres written in PLAN 2.1 / BUILD-ORDER. See 2b |
-| Session hot store | **Redis**, TTL 30 min (Durable Objects = the CF-native alternative) |
+| Session hot store | **Cloudflare Durable Objects (SQLite)**, one per site, TTL 30 min. DECIDED 2026-10-07 (STAGE-1 D4): free Cloudflare features only, Redis is not on Cloudflare |
 | Geo | Cloudflare request.cf.country (VERIFY availability/accuracy) |
 | Bot filtering | Ported Matomo bots.yml (843 regexes, 78 AI crawlers) + datacentre ASN + edge signals |
 | Dashboard | React, reuse TailWatch's existing admin-app patterns |
@@ -311,13 +311,15 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 ## 15. Places where the documents are silent or disagree - DECIDE ON PURPOSE before the stage that needs it
 
 1. Control plane database: RESOLVED 2026-10-05 by the owner: MongoDB with ClickHouse. PLAN.md and BUILD-ORDER.md now reflect the decision. MongoDB host (Atlas or self-run replica set) remains an infrastructure choice; Stage 1 schema is frozen.
-2. IP vs raw archive (needed Stage 2/3). Section 3.1 says the R2 archive stores the UNTRANSFORMED batch first, and also "no store holds an IP". Both cannot be true if the queue message carries the IP. Option A (used earlier, recommended): the collector computes the salted visitor hash (today's + yesterday's salt) and the IP never enters the queue, R2 or logs. Option B: put the IP in the queue and archive, which breaks invariant 12 and the privacy claim (the plan's own EU-strict profile would then also need truncation before the archive). Decide, then edit PLAN 3.1.
-3. The wire field names (needed Stage 1). BUILD-ORDER says "wire contract v1 (PLAN 6.5)" but PLAN 6.5 holds the event RULES, not field names. The documents only show s, n, u, q, t in the curl example (site key, name, url, sequence, created time). Every other field name, and the GET /e.gif parameters, must be designed in Stage 1 and then frozen (append-only).
-4. Session store (needed Stage 3). Plan says Redis; Durable Objects are named as the CF-native alternative. Pick one and a host.
-5. insert_id de-dupe (Stage 7) must happen in the consumer or ClickHouse, not the collector (invariant 1: collector never touches a database), even though PLAN 8.2 lists it as a collector response.
+2. RESOLVED 2026-10-07 (STAGE-1 D1, option A). IP vs raw archive (needed Stage 2/3). Section 3.1 says the R2 archive stores the UNTRANSFORMED batch first, and also "no store holds an IP". Both cannot be true if the queue message carries the IP. Option A (used earlier, recommended): the collector computes the salted visitor hash (today's + yesterday's salt) and the IP never enters the queue, R2 or logs. Option B: put the IP in the queue and archive, which breaks invariant 12 and the privacy claim (the plan's own EU-strict profile would then also need truncation before the archive). Decide, then edit PLAN 3.1.
+3. RESOLVED 2026-10-07 (STAGE-1 section 1, D10-D12). The wire field names (needed Stage 1). BUILD-ORDER says "wire contract v1 (PLAN 6.5)" but PLAN 6.5 holds the event RULES, not field names. The documents only show s, n, u, q, t in the curl example (site key, name, url, sequence, created time). Every other field name, and the GET /e.gif parameters, must be designed in Stage 1 and then frozen (append-only).
+4. RESOLVED 2026-10-07 (STAGE-1 D4): Durable Objects with SQLite, free plan. Session store (needed Stage 3). Plan says Redis; Durable Objects are named as the CF-native alternative. Pick one and a host.
+5. RESOLVED 2026-10-07 (STAGE-1 D5): consumer-side from Stage 3. insert_id de-dupe (Stage 7) must happen in the consumer or ClickHouse, not the collector (invariant 1: collector never touches a database), even though PLAN 8.2 lists it as a collector response.
 6. Over-quota response (200 + quota_limited) needs the edge to read a per-tenant flag from KV, while MongoDB gets zero per-event writes: quota counters are rolled up periodically and a flag is pushed to KV. Design this in Phase 3.
 7. Facts to settle in Phase 0 that no document fixes: target markets, browser support floor, retention per plan, region of the control plane for EU tenants' account data (emails), custom-domain names (cdn., in., app., api.).
 8. Dashboard: PLAN 2.1 says reuse TailWatch's existing admin-app patterns; the earlier UI was a static mock with a fake login. Rebuild only at Stage 6.
+9. OWNER RULE 2026-10-07: use Cloudflare FREE features only (no paid add-ons). Free-plan limits and their consequences: docs/contract/CLOUDFLARE-VERIFICATION.md and STAGE-1 D9. R2 is activated on the account.
+10. Drop-reason header (STAGE-1 D2): production sends no x-tw-dropped header (existence oracle); EXPOSE_DROP_REASON="true" only in dev/staging.
 
 
 ---------------------------------------------------------------------------------------------------------

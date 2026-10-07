@@ -11,3 +11,4 @@ export * from './bots';
 export * from './identity';
 export * from './metrics';
 export * from './validator';
+export * from './session-state';

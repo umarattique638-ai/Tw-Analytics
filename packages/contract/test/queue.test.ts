@@ -168,3 +168,16 @@ describe('queue contract', () => {
     expect(serialized).not.toContain('"ip"');
   });
 });
+import { dedupeKey } from '../src';
+
+describe('dedupeKey (STAGE-1 D5)', () => {
+  it('uses the client insert id scoped to the site when present', () => {
+    expect(dedupeKey(7, 'abc', 'msg-1')).toBe('i:7:abc');
+    expect(dedupeKey(7, 'abc', 'msg-2')).toBe(dedupeKey(7, 'abc', 'msg-1'));
+    expect(dedupeKey(8, 'abc', 'msg-1')).not.toBe(dedupeKey(7, 'abc', 'msg-1'));
+  });
+  it('falls back to the queue message id without one', () => {
+    expect(dedupeKey(7, undefined, 'msg-1')).toBe('m:msg-1');
+    expect(dedupeKey(7, '', 'msg-1')).toBe('m:msg-1');
+  });
+});

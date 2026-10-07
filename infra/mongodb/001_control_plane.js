@@ -141,6 +141,7 @@ ensureCollection('sites', {
     'status',
     'region',
     'keys',
+    'identitySecret',
     'createdAt',
   ],
   properties: {
@@ -190,10 +191,19 @@ ensureCollection('sites', {
 
     verifiedAt: dateOrNull,
 
+    // Server-only secret for daily visitor salts (HMAC). Copied into the site's KV entry for the
+    // collector, never sent to a browser, never returned by the public API.
+    identitySecret: {
+      bsonType: 'string',
+      minLength: 32,
+      maxLength: 128,
+    },
+
     // Keys live inside the site document so rotation/revocation is atomic.
     // Multiple active keys are allowed during zero-downtime rotation.
     keys: {
       bsonType: 'array',
+      minItems: 1,
       items: {
         bsonType: 'object',
         required: ['id', 'publicKey', 'createdAt', 'status'],
@@ -237,10 +247,8 @@ database.memberships.createIndex(
 
 database.memberships.createIndex({ userId: 1, tenantId: 1 });
 
-database.sites.createIndex(
-  { _id: 1 },
-  { unique: true },
-);
+// No index on sites._id: MongoDB creates the _id index itself, it is always unique, and passing
+// { unique: true } for it is rejected by the server.
 database.sites.createIndex(
   { 'keys.publicKey': 1 },
   { unique: true },

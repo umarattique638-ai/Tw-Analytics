@@ -6,33 +6,38 @@ import type { PropValue } from './types';
 export const WIRE_VERSION = 1 as const;
 
 /**
- * First pageview emitted by the tracker.
+ * Bit flags carried in `f`.
+ *
+ * FLAG_FIRST_PAGEVIEW: the first pageview this tracker instance emitted on this page load.
+ * It is NOT "first visit ever" (that cannot be known without client storage, see STAGE-1 D7).
  */
 export const FLAG_FIRST_PAGEVIEW = 1;
 
 /**
- * Compact browser event payload.
+ * Compact browser event payload, wire v1 (FROZEN 2026-10-07, append-only from here on).
  *
  * Required:
- *   s = site public key
- *   n = event name
- *   u = URL
- *   q = sequence number
- *   t = client-created timestamp
+ *   s  = site public key (tw_pub_ + 32 alphanumerics). Body or query string, never a header.
+ *   n  = event name, [a-z0-9_]{1,40}
+ *   u  = page URL (absolute http/https, <= 2048)
+ *   q  = per-page-load sequence number, starts at 1 (capture-rate signal)
+ *   t  = client CREATED time, unix ms
+ *   v  = tracker version (PLAN 4 invariant 9: sent on every hit)
  *
  * Optional:
- *   v  = tracker version (required by PLAN §4 invariant 9)
- *   r  = referrer
- *   e  = engagement milliseconds
- *   rt = route template
- *   w  = viewport width
- *   i  = insert/idempotency ID
- *   x  = reserved numeric extension
- *   f  = flags
- *   p  = custom properties
+ *   r  = referrer (query, fragment and credentials are stripped server-side)
+ *   e  = engaged (visible AND focused) milliseconds since the previous event
+ *   rt = route template, e.g. /blog/[slug]
+ *   w  = viewport width in CSS px
+ *   i  = insert id (client idempotency key, <= 64 chars). Duplicates within 7 days are dropped
+ *        by the consumer (STAGE-1 D5).
+ *   x  = client SENT time, unix ms. With `t` it gives the clock-skew correction
+ *        occurred = received - (x - t)   (PLAN 8.2).
+ *   f  = flags bitmask, see FLAG_*
+ *   p  = custom properties, <= 25 keys, key <= 40 chars, value string(<=255)|number|boolean
  *
- * The index signature is intentional:
- * unknown future fields must not break older collectors.
+ * Unknown future fields are accepted and kept in `extra` (invariant 7: the client may be a
+ * cached script we cannot update). Never rename, re-type or tighten an existing field.
  */
 export interface WirePayload {
   s: string;
@@ -40,8 +45,8 @@ export interface WirePayload {
   u: string;
   q: number;
   t: number;
-
   v: number;
+
   r?: string;
   e?: number;
   rt?: string;
@@ -75,6 +80,12 @@ export const WIRE_FIELDS = [
 ] as const;
 
 export type WireField = (typeof WIRE_FIELDS)[number];
+
+/** Fields a GET /e.gif pixel may carry as query parameters (everything except the `p` object). */
+export const PIXEL_FIELDS = ['s', 'n', 'u', 'q', 't', 'v', 'r', 'e', 'rt', 'w', 'i', 'x', 'f'] as const;
+
+/** Pixel fields that are numbers on the wire (query strings are text and are converted). */
+export const PIXEL_NUMERIC_FIELDS = ['q', 't', 'v', 'e', 'w', 'x', 'f'] as const;
 
 /**
  * Checks whether a field belongs to the currently known
