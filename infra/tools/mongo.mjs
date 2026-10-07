@@ -172,7 +172,8 @@ async function verify() {
 
   if (failed > 0) {
     console.log(`\nFAILED: ${failed} check(s). The MongoDB schema is NOT verified.`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   console.log('\nOK: every control-plane rule holds on this MongoDB server (scratch database dropped).');
 }

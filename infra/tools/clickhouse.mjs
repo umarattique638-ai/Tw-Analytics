@@ -82,8 +82,7 @@ async function check() {
 async function apply(reset) {
   const s = await check();
   if (s.old && !reset) {
-    console.error('Refusing to apply on top of the old schema: CREATE TABLE IF NOT EXISTS would silently keep the old tables.');
-    process.exit(1);
+    throw new Error('refusing to apply on top of the old schema: CREATE TABLE IF NOT EXISTS would silently keep the old tables. Run: pnpm db:clickhouse:reset');
   }
   if (reset && s.exists) {
     console.log(`DROP DATABASE ${DATABASE} ...`);
@@ -111,9 +110,11 @@ try {
   else if (command === 'user') await user();
   else {
     console.error('usage: clickhouse.mjs check | apply [--reset] | user');
-    process.exit(2);
+    process.exitCode = 2;
   }
 } catch (error) {
   console.error(`FAILED: ${error.message}`);
-  process.exit(1);
+  // exitCode instead of process.exit(): exiting while fetch sockets are still closing crashes Node on
+  // Windows ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)").
+  process.exitCode = 1;
 }
