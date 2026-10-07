@@ -8,10 +8,12 @@ Cloud-only web analytics: one hosted collector, four install surfaces. Read in t
 4. `docs/contract/STAGE-1.md` - the frozen contract and the decisions D1-D13 / amendments A1-A3.
 5. `docs/TESTING.md` - how to test Stages 1-3 against ClickHouse Cloud and your local MongoDB.
 
-Status (2026-10-07): Stage 1 frozen, Stage 2 (collector) and Stage 3 (consumer + storage) done and proven
-end to end on the Workers runtime with a real ClickHouse. Cloudflare free features only.
+Status (2026-10-07): Stage 1 frozen, Stage 2 (collector) and Stage 3 (consumer + storage) done, proven
+end to end on the owner's Windows machine against ClickHouse Cloud and local MongoDB. Cloudflare free
+features only. Next: Stage 4 (tracker).
 
-Requires Node 22+ and pnpm 9 (`corepack enable`).
+Requires Node 22+ and pnpm 9 (`npm install -g pnpm@9.15.0`). On Windows also the Microsoft Visual C++
+Redistributable x64 (https://aka.ms/vs/17/release/vc_redist.x64.exe), or the local Workers runtime crashes.
 
 ```
 pnpm install
