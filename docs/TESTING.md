@@ -1,4 +1,4 @@
-# Testing Stages 1–4 on your computer
+# Testing Stages 1–5 on your computer
 
 Real systems, no mocks: **ClickHouse Cloud** (online) and **your local MongoDB** (the one you open in
 MongoDB Compass). Cloudflare Workers, Queues, KV, R2 and Durable Objects run locally inside workerd
@@ -230,3 +230,76 @@ Navigation API, once without it (the older-browser path). Expected: `Tests 3 pas
 
 To try an app by hand (folder: `ttw\examples\vite-react`): `pnpm dev`, then open the printed address.
 Without `VITE_TW_KEY` / `VITE_TW_API` it renders but sends nothing.
+
+
+---
+
+## 8. Stage 5 — sign up, add a site, install, verify (the API + dashboard)
+
+`ttw` = `C:\Users\Umar\Downloads\ttw\ttw`. Every command says its folder.
+
+### 8.1 One-time setup
+
+1. **MongoDB replica set** (done 2026-10-08): `mongod.cfg` has `replication: replSetName: rs0`,
+   `rs.initiate(...)` ran once, and `.env` has `TW_MONGO_URL=mongodb://localhost:27017/?replicaSet=rs0`.
+2. **Schema update** (adds `sessions` and `users.name`, STAGE-1 A5):
+   ```powershell
+   # folder: ttw
+   pnpm db:mongo
+   pnpm verify:mongo      # 16 PASS (2 new session checks), "transactions available"
+   ```
+3. **ClickHouse read-only user** for the first-pageview check: put a new strong password in `.env` as
+   `TW_CH_READ_PASSWORD=` (12+ chars, upper, lower, digit, special), then
+   ```powershell
+   # folder: ttw
+   pnpm db:clickhouse:reader
+   ```
+4. **Cloudflare API token** (free) so the API can write sites into the collector's KV:
+   Cloudflare dashboard → top right profile → **My Profile** → **API Tokens** → **Create Token** →
+   **Create Custom Token** → name `tailwatch-api-kv` → Permissions: **Account | Workers KV Storage | Edit**
+   → Account Resources: your account → **Continue to summary** → **Create Token** → copy it (shown once).
+   In `.env`:
+   ```
+   TW_COLLECTOR_URL=https://tailwatch-collector.umarattique638.workers.dev
+   CF_ACCOUNT_ID=a4f0ab5a55729cc4acfc9cb056904a95
+   CF_KV_NAMESPACE_ID=0878a2b0f1c148148ec8dbe73cac767c
+   CF_API_TOKEN=<the token>
+   ```
+   Never paste the token in chat.
+
+### 8.2 Tests
+
+```powershell
+# folder: ttw
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm live:api      # the API on YOUR MongoDB (scratch database, dropped after): 7 passed
+pnpm e2e:api       # signup -> site -> snippet -> verify -> first pageview, in Chromium: 2 passed
+```
+
+### 8.3 The real thing (BUILD-ORDER Stage 5 done-when)
+
+1. Start the API + dashboard:
+   ```powershell
+   # folder: ttw
+   pnpm app
+   ```
+   It prints `TailWatch API + dashboard: http://localhost:8788` and no WARNING lines. Keep it running.
+2. Open http://localhost:8788 → **Sign up** (any e-mail) → **Add your site**:
+   domain `tailwatch-demo.umarattique638.workers.dev`, timezone `Asia/Karachi` → **Add site**.
+3. **Install** step → Script tag → **Copy**.
+4. Be the customer: open `apps\demo\public\shop\index.html`, paste the snippet on the empty line between
+   `<!-- TAILWATCH SNIPPET START -->` and `<!-- TAILWATCH SNIPPET END -->`, save, then
+   ```powershell
+   # folder: ttw\apps\demo
+   npx wrangler deploy
+   ```
+5. Back in the dashboard → **I added it** → Page to check:
+   `https://tailwatch-demo.umarattique638.workers.dev/shop/` → **Run check**: 7 green ticks.
+6. Wait one minute (KV, STAGE-1 D8), then open `https://tailwatch-demo.umarattique638.workers.dev/shop/` in an
+   Incognito window. Within ~10 s the verify screen says **First pageview received**.
+7. **Finish and go to dashboard.** Nobody touched a database: that is Stage 5 done.
+
+If something is off: `pnpm --filter @tailwatch/api resync` rewrites every site's KV entry from MongoDB.

@@ -36,6 +36,7 @@ const LOCAL_SITE = { ...FIXTURE_SITE, id: 124, publicKey: LOCAL_KEY, allowedHost
 export const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Hit = {
+  siteId: number;
   createdAt: number;
   name: string;
   path: string;
@@ -53,6 +54,10 @@ export interface Stack {
   /** Waits for at least `minimum` accepted events, then settles to catch duplicates. */
   events(minimum: number, settleMs?: number, timeoutMs?: number): Promise<Hit[]>;
   drops(): Promise<string[]>;
+  /** Everything queued so far, no waiting (events + drop messages with their site). */
+  snapshot(): Promise<{ events: Hit[]; drops: { siteId: number; reason: string; detail?: string }[] }>;
+  /** The collector's SITE_CONFIG namespace: the control-plane API writes here in the onboarding e2e. */
+  siteConfig: { put(name: string, value: string): Promise<void>; delete(name: string): Promise<void> };
   clear(): Promise<void>;
   close(): Promise<void>;
 }
@@ -160,6 +165,17 @@ export async function startStack(): Promise<Stack> {
     },
     async drops() {
       return (await messages()).filter((m) => m.type === 'drop').map((m) => m.reason);
+    },
+    async snapshot() {
+      const all = await messages();
+      return {
+        events: all.filter((m) => m.type === 'event').map((m) => m.event as Hit),
+        drops: all.filter((m) => m.type === 'drop').map((m) => ({ siteId: m.siteId, reason: m.reason, detail: m.detail })),
+      };
+    },
+    siteConfig: {
+      put: async (name, value) => void (await kv.put(name, value)),
+      delete: async (name) => void (await kv.delete(name)),
     },
     async clear() {
       const sink = await mf.getKVNamespace('SINK', 'sink');

@@ -6,6 +6,7 @@
  *   node tools/clickhouse.mjs apply            apply infra/clickhouse/001_contract.sql to `tailwatch`
  *   node tools/clickhouse.mjs apply --reset    DROP DATABASE tailwatch first (old schema from the first attempt)
  *   node tools/clickhouse.mjs user             apply 002_insert_user.sql (needs TW_CH_INSERT_PASSWORD)
+ *   node tools/clickhouse.mjs reader           apply 003_read_user.sql (needs TW_CH_READ_PASSWORD)
  *
  * Reads the repository-root .env: TW_CH_URL, TW_CH_USER, TW_CH_PASSWORD (an admin, e.g. `default` on Cloud).
  * Never prints a password.
@@ -103,13 +104,23 @@ async function user() {
   console.log('Next: cd apps/consumer && npx wrangler secret put CLICKHOUSE_PASSWORD   (paste the same password)');
 }
 
+async function reader() {
+  const password = required('TW_CH_READ_PASSWORD');
+  for (const statement of statements('003_read_user.sql', { REPLACE_WITH_A_LONG_RANDOM_PASSWORD: password })) {
+    await sql(statement);
+  }
+  console.log('OK: read-only user tw_read exists (SELECT on the tailwatch tables).');
+  console.log('The control-plane API uses it: TW_CH_READ_USER=tw_read and TW_CH_READ_PASSWORD in .env.');
+}
+
 const [command, ...args] = process.argv.slice(2);
 try {
   if (command === 'check') await check();
   else if (command === 'apply') await apply(args.includes('--reset'));
   else if (command === 'user') await user();
+  else if (command === 'reader') await reader();
   else {
-    console.error('usage: clickhouse.mjs check | apply [--reset] | user');
+    console.error('usage: clickhouse.mjs check | apply [--reset] | user | reader');
     process.exitCode = 2;
   }
 } catch (error) {

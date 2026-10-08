@@ -12,25 +12,8 @@
   pre { background: rgba(127,127,127,.12); padding: .75rem; overflow-x: auto; }
   button { font: inherit; padding: .4rem .9rem; }
 </style>
-<script>
-  /*
-   * The site key comes from ?key=tw_pub_... once and is remembered in this browser, so the same
-   * page works for any site you register. A real customer page simply has the script tag:
-   *   <script async src="https://COLLECTOR/tw.js?id=tw_pub_..."><\/script>
-   */
-  (function () {
-    var COLLECTOR = 'https://tailwatch-collector.umarattique638.workers.dev';
-    var q = new URLSearchParams(location.search).get('key');
-    try { if (q) localStorage.setItem('tw_demo_key', q); q = q || localStorage.getItem('tw_demo_key'); } catch (e) {}
-    window.tw = window.tw || function () { (tw.q = tw.q || []).push(arguments); };
-    if (!q) return;
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = COLLECTOR + '/tw.js?id=' + encodeURIComponent(q);
-    document.head.appendChild(s);
-  })();
-</script>
-</head>
+<script>window.tw=window.tw||function(){(tw.q=tw.q||[]).push(arguments)}</script>
+<script async fetchpriority="low" src="https://tailwatch-collector.umarattique638.workers.dev/tw.js?id=tw_pub_tFQYBqxqbNaZBCDoHodxDlxe5J00tROH"></script></head>
 <body>
 <h1>TailWatch demo shop</h1>
 <nav>

@@ -330,6 +330,17 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
     f. One event per request (the collector takes one payload per body). PLAN 8.1's "halve the batch" is therefore "sendBeacon refused -> fetch without keepalive".
     g. "Real page on a real domain": apps/demo, a static Worker on its own workers.dev host (free), registered as a customer site.
     h. npm package: `api` is required until a domain exists (no default endpoint baked into a package).
+13. DECIDED 2026-10-08 (Stage 5, owner: "one backend, single source of truth, served everywhere; follow PLAN and BUILD-ORDER"):
+    a. ONE backend: apps/api (Hono, REST, /api/v1) = PLAN 2.1 "one API serving wp-admin + cloud dashboard + mobile app". Every rule lives there: domain normalisation, allowed hosts, keys, KV sync, snippets, verifier; Stage 6 adds the Query API to it. The dashboard (apps/web), the WordPress plugin (Phase 6) and a mobile app are thin clients. Dashboard auth = HttpOnly session cookie; the same session works as `Authorization: Bearer` for non-browser clients.
+    b. Runs on Node for now (it must reach the owner's local MongoDB, which a Cloudflare Worker cannot). Hono also runs on Workers, so moving it later is a deployment change, not a rewrite. Hosting decision (and MongoDB Atlas vs self-run) before public launch.
+    c. Passwords: scrypt N=2^17 r=8 p=1 (OWASP minimum, Node standard library). Sessions: 30 days, only the SHA-256 of the token is stored. Login answers identically for unknown e-mail and wrong password; per-e-mail rate limit 10/15 min. CSRF: writes must be same-origin JSON.
+    d. Not in Stage 5: Google login, password reset and e-mail verification (they need an OAuth app and an e-mail service). The owner's design had the buttons; they are hidden until those exist.
+    e. KV sync: MongoDB is written first (source of truth), then KV. A KV failure is reported to the user ("Retry activation") and `pnpm --filter @tailwatch/api resync` rebuilds every KV entry from MongoDB. One KV entry per ACTIVE key; rotation = add key (both work) then revoke old (deleted from KV).
+    f. Deleting a site revokes its keys and hides it; collected data stays. Re-adding the same domain restores the same site id (history comes back) with a fresh key and secret.
+    g. Site ids from the API start at 101 (counter floor): ids 1 and 2 are the owner's hand-made test sites already in ClickHouse.
+    h. Verifier: TailwatchVerifier/1.0 (already an edge drop: verification_agent), fetches only the site's own hosts, refuses private addresses (SSRF), follows up to 5 redirects, reads at most 2 MB. Checks = BUILD-ORDER ⑤ table + CSP. Passive check = events in the last 30 min from ClickHouse via read-only user tw_read; the first pageview sets sites.verifiedAt.
+    i. retentionDays for a new site: 395 (13 months), until plans define it (PLAN 10, Phase 3).
+    j. The dashboard is the owner's design (apps/web). Stage 5 screens are live; Live traffic / Events / Suspicious / Reports show labelled sample data until Stage 6.
 
 
 ---------------------------------------------------------------------------------------------------------
@@ -365,6 +376,10 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 - (Stage 4.5) Next.js 16 refuses a second `next dev` in the same folder ("Another next dev server is already running"). Kill the whole process group after a test (Windows: taskkill /T).
 - (Stage 4.5) A Miniflare started from another package's folder needs modulesRoot, or workerd fails with "can't use '..' to break out of starting directory".
 - (Stage 4.5) A hash router rewrites `/` to `/#/` right after load. Under A4 a missing or plain fragment is the root route `#/`, so that rewrite is not a second pageview.
+- (Stage 5) @hono/node-server serveStatic `root` is resolved against the working directory: pass a cwd-relative path, not an absolute Windows path.
+- (Stage 5, owner's run) The verifier counted a snippet quoted inside a JS comment of an inline <script> (the demo root page) as a real one: "different site key" + "script failed". Text inside <script>...</script> is now ignored.
+- (Stage 5) Field labels and the password show/hide button both match getByLabel('Password'): tests use exact labels.
+- (Stage 5, owner's run) In .env an unquoted # starts a comment: a password `abc#123` was read as `abc` and ClickHouse refused it. Quote such values.
 - (Stage 1) Stage 2's commit had accidentally truncated docs/contract/STAGE-1.md from 118 to 14 lines. Check `git diff --stat` before committing docs.
 
 ---------------------------------------------------------------------------------------------------------
@@ -375,7 +390,7 @@ Accounts / infra (Stage 0):
 - [x] Cloudflare account, Workers, Queues, KV usable (workers.dev address in use)
 - [x] ClickHouse Cloud service (region il-central-1) - old tables from the first attempt still exist
 - [x] R2 activated on the account (bucket tailwatch-raw is created at first deploy)
-- [x] MongoDB: owner's local server (Compass), decision 2026-10-07. [ ] single-node replica set before Stage 5 (transactions)
+- [x] MongoDB: owner's local server (Compass), decision 2026-10-07. [x] single-node replica set rs0 (2026-10-08, verify:mongo: transactions available)
 - [x] Session store: Durable Objects (SQLite), free plan (STAGE-1 D4)
 - [ ] Domains: cdn. in. app. api. (+ in-staging.)
 - [ ] GitHub repo with CI running
@@ -388,7 +403,7 @@ Stage 1 contract: FROZEN 2026-10-07 (docs/contract/STAGE-1.md) [x] wire v1 | [x]
 Stage 2 collector: DONE 2026-10-07 [x] owner's Windows: e2e fixtures, queue, never-5xx pass on workerd (after VC++ redist) [x] every fixture returns its code (Node + workerd) | [x] never 5xx | [x] messages land in the queue (workerd local Queue) | [x] latency on workerd: collector adds ~3 ms at the median | [ ] real deploy + p99 measured on the deployed Worker
 LIVE 2026-10-08: collector + consumer deployed on the owner's Cloudflare Free account (umarattique638.workers.dev), R2 tailwatch-raw, queues tailwatch-events(+dlq), KV SITE_CONFIG, ClickHouse Cloud user tw_insert. First internet hit -> ClickHouse Cloud row (live-test-5/6).
 Stage 3 storage + consumer: DONE 2026-10-07 [x] owner's Windows + ClickHouse Cloud 26.6: live 6/6, pipeline e2e 5/5, first row in 2.40 s [x] schema applied to the owner's ClickHouse Cloud 26.6 | [x] live suite on Cloud: sessions/rollup/replay/UInt64 pass (row-equality failure was a test JSON-reading bug, fixed) | [x] fixtures in -> exact rows out (real ClickHouse) | [x] session metrics right inside ClickHouse | [x] rollup = raw GROUP BY | [x] replay -> no duplicates (tokens + Durable Object de-dup) | [x] R2 holds the raw file (workerd) | [x] milestone: HTTP pageview -> ClickHouse row in ~1.1 s | [ ] real deploy (R2 bucket, queues, DO migration, ClickHouse user)
-Stage 4 tracker: 4.0 deploy [x] | 4.1-4.3 core + browser + CDN build [x] owner's Windows: all tests pass; LIVE 2026-10-08: tw.js served by the collector, demo site (site 2) -> 16 correct rows in ClickHouse Cloud, seq 1-16 with no gap, no duplicate pageview, engagement on tab switch, signup props | 4.4 adapters [x] @tailwatch/react, @tailwatch/next, @tailwatch/vue, @tailwatch/svelte (svelte: no example app yet) | 4.5 done-when [x] in the sandbox: Next.js 16 App Router (Navigation API and fallback), Vite 8 + React Router 7, Vue + hash router, all in dev/StrictMode: exactly one pageview per navigation incl. the first [ ] owner's Windows run of e2e:frameworks    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
+Stage 4 tracker: 4.0 deploy [x] | 4.1-4.3 core + browser + CDN build [x] owner's Windows: all tests pass; LIVE 2026-10-08: tw.js served by the collector, demo site (site 2) -> 16 correct rows in ClickHouse Cloud, seq 1-16 with no gap, no duplicate pageview, engagement on tab switch, signup props | 4.4 adapters [x] @tailwatch/react, @tailwatch/next, @tailwatch/vue, @tailwatch/svelte (svelte: no example app yet) | 4.5 done-when [x] in the sandbox: Next.js 16 App Router (Navigation API and fallback), Vite 8 + React Router 7, Vue + hash router, all in dev/StrictMode: exactly one pageview per navigation incl. the first [ ] owner's Windows run of e2e:frameworks    Stage 5 control plane: DONE 2026-10-08 [x] sandbox: API 40 unit + verifier tests, onboarding e2e in Chromium [x] owner's Windows: typecheck/test/build, live:api 7/7 on local MongoDB rs0, e2e:api 2/2 [x] LIVE done-when: the owner signed up at http://localhost:8788, added tailwatch-demo.umarattique638.workers.dev (site 101), pasted the snippet, verifier 7/7 green, first pageview arrived on the verify screen, dashboard opened. Nobody touched a database.    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
 
 Leftovers from the first attempt that still exist online. OWNER ORDERED DELETION on 2026-10-05 (delete order: consumer Worker first, then collector, testsite, queues, KV, then the ClickHouse database). Tick when done:
 - [ ] Workers: tailwatch-consumer (first: it is still consuming the queue), tailwatch-collector, tailwatch-testsite

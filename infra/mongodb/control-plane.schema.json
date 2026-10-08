@@ -101,6 +101,11 @@
             "minLength": 3,
             "maxLength": 320
           },
+          "name": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
           "passwordHash": {
             "bsonType": "string",
             "maxLength": 512
@@ -284,6 +289,34 @@
         },
         "additionalProperties": false
       }
+    },
+    "sessions": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "userId",
+          "createdAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the session token. The token itself is only ever in the user's cookie."
+          },
+          "userId": {
+            "bsonType": "objectId"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "expiresAt": {
+            "bsonType": "date"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "indexes": [
@@ -348,6 +381,21 @@
       "keys": {
         "status": 1,
         "createdAt": -1
+      }
+    },
+    {
+      "collection": "sessions",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "expireAfterSeconds": 0
+      }
+    },
+    {
+      "collection": "sessions",
+      "keys": {
+        "userId": 1
       }
     }
   ]

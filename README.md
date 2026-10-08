@@ -10,7 +10,8 @@ Cloud-only web analytics: one hosted collector, four install surfaces. Read in t
 
 Status (2026-10-08): Stage 1 frozen, Stages 2-3 done and deployed (Cloudflare Free). Stage 4 tracker:
 tw.js live and proven on a real page; React/Next/Vue/Svelte adapters; Next.js, Vite and hash-router
-apps record exactly one pageview per navigation in dev/StrictMode. Next: Stage 5 (control plane).
+apps record exactly one pageview per navigation in dev/StrictMode. Stage 5: one API + the dashboard
+(signup, add site, snippet, verify, first pageview): `pnpm app` -> http://localhost:8788.
 
 Install on a site (script tag):
 
@@ -40,6 +41,8 @@ pnpm --filter @tailwatch/collector dev   # wrangler dev, then open http://localh
 | `infra/` | ClickHouse DDL + insert user, MongoDB control-plane schema |
 | `packages/core` | tracker engine: payload, de-dup guard, debounce, engagement, sequence, consent, retry (Stage 4) |
 | `packages/browser` | browser platform: `tw.js` CDN build (<= 3 KB gzip, enforced) + npm `init()` (Stage 4) |
+| `apps/api` | THE backend (REST /api/v1): auth, sites, keys, KV sync, snippets, verifier; Stage 6 queries |
+| `apps/web` | dashboard (React): talks only to apps/api |
 | `packages/react`, `next`, `vue`, `svelte` | framework adapters: start the tracker once (StrictMode-safe), `useTailwatch()` / `track()` |
 | `apps/demo` | static demo site on its own workers.dev host: the "real page" of Stage 4 |
 | `examples/` | Next.js App Router, Vite React SPA, Vue hash-router apps + `e2e` (Stage 4 done-when) |

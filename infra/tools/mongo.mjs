@@ -164,6 +164,17 @@ async function verify() {
       if (doc?.keys.find((k) => k.id === 'k1')?.status !== 'revoked') throw new Error('rotation did not stick');
     });
 
+    // Stage 5 (STAGE-1 A5)
+    await check('a session is stored by token hash only; anything else is refused', async () => {
+      const sessions = db.collection('sessions');
+      await sessions.insertOne({ _id: 'a'.repeat(64), userId, createdAt: now, expiresAt: new Date(now.getTime() + 60_000) });
+      await refused(VALIDATION, () => sessions.insertOne({ _id: 'raw-token-not-a-hash', userId, createdAt: now, expiresAt: now }));
+    });
+    await check('expired sessions are removed by a TTL index', async () => {
+      const ttl = (await db.collection('sessions').indexes()).find((i) => i.key?.expiresAt === 1);
+      if (ttl?.expireAfterSeconds !== 0) throw new Error('no TTL index on sessions.expiresAt');
+    });
+
     printReplicaSetAdvice((await topology(client)).replicaSet);
   } finally {
     await db.dropDatabase().catch(() => undefined);

@@ -98,6 +98,12 @@ ensureCollection('users', {
       minLength: 3,
       maxLength: 320,
     },
+    // Stage 5 (STAGE-1 A5): display name from signup ("Good evening, Umar").
+    name: {
+      bsonType: 'string',
+      minLength: 1,
+      maxLength: 120,
+    },
     passwordHash: {
       bsonType: 'string',
       maxLength: 512,
@@ -232,6 +238,24 @@ ensureCollection('sites', {
   additionalProperties: false,
 });
 
+// Stage 5 (STAGE-1 A5): dashboard login sessions. _id = SHA-256 of the cookie token, so a database
+// dump never contains a usable session. MongoDB's TTL monitor deletes expired sessions.
+ensureCollection('sessions', {
+  bsonType: 'object',
+  required: ['_id', 'userId', 'createdAt', 'expiresAt'],
+  properties: {
+    _id: {
+      bsonType: 'string',
+      pattern: '^[0-9a-f]{64}$',
+      description: "SHA-256 of the session token. The token itself is only ever in the user's cookie.",
+    },
+    userId: { bsonType: 'objectId' },
+    createdAt: date,
+    expiresAt: date,
+  },
+  additionalProperties: false,
+});
+
 database.users.createIndex(
   { emailNormalized: 1 },
   {
@@ -259,6 +283,8 @@ database.sites.createIndex(
 );
 database.sites.createIndex({ tenantId: 1, status: 1 });
 database.tenants.createIndex({ status: 1, createdAt: -1 });
+database.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+database.sessions.createIndex({ userId: 1 });
 
 database.counters.updateOne(
   { _id: 'site_id' },

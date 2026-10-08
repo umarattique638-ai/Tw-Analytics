@@ -1,0 +1,27 @@
+{
+  "name": "@tailwatch/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude \"test/e2e/**\" --exclude \"test/live/**\"",
+    "build": "node scripts/build.mjs",
+    "start": "node dist/server.mjs",
+    "resync": "node dist/server.mjs --resync",
+    "live": "vitest run test/live",
+    "e2e": "pnpm --filter @tailwatch/collector build && pnpm --filter @tailwatch/web build && pnpm build && vitest run test/e2e"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.4",
+    "hono": "4.13.13",
+    "mongodb": "^7.7.0",
+    "@tailwatch/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.28.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

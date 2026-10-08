@@ -9,7 +9,8 @@
     "ch:user": "node tools/clickhouse.mjs user",
     "mongo:apply": "node tools/mongo.mjs apply",
     "mongo:verify": "node tools/mongo.mjs verify",
-    "ch:reset": "node tools/clickhouse.mjs apply --reset"
+    "ch:reset": "node tools/clickhouse.mjs apply --reset",
+    "ch:reader": "node tools/clickhouse.mjs reader"
   },
   "dependencies": {
     "mongodb": "^7.7.0"

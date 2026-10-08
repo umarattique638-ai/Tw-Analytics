@@ -27,20 +27,24 @@ jobs:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: ci-only-password
           CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1'
-      mongodb:
-        image: mongo:7
-        ports: ['27017:27017']
     env:
       TW_CH_URL: http://127.0.0.1:8123
       TW_CH_USER: default
       TW_CH_PASSWORD: ci-only-password
-      TW_MONGO_URL: mongodb://127.0.0.1:27017
+      # Single-node replica set: Stage 5 signup uses a transaction (same setup as the owner's machine).
+      TW_MONGO_URL: mongodb://127.0.0.1:27017/?replicaSet=rs0
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: start MongoDB as a single-node replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 60); do docker exec mongo mongosh --quiet --eval 'db.runCommand({ping:1}).ok' && break; sleep 2; done
+          docker exec mongo mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
+          for i in $(seq 60); do docker exec mongo mongosh --quiet --eval 'rs.status().myState' | grep -q '^1$' && break; sleep 1; done
       - name: wait for ClickHouse
         run: for i in $(seq 60); do curl -sf http://127.0.0.1:8123/ping && exit 0; sleep 2; done; exit 1
       - run: pnpm verify:mongo
@@ -51,3 +55,6 @@ jobs:
       - run: pnpm e2e:frameworks
       - run: pnpm --filter @tailwatch/consumer live
       - run: pnpm --filter @tailwatch/consumer e2e
+      # Stage 5: the API on the real MongoDB replica set, then onboarding through the dashboard in Chromium.
+      - run: pnpm live:api
+      - run: pnpm e2e:api
