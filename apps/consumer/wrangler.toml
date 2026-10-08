@@ -7,7 +7,7 @@ compatibility_date = "2026-09-01"
 [vars]
 # Replace with your ClickHouse HTTPS endpoint. The PASSWORD is a secret, not a var:
 #   pnpm --filter @tailwatch/consumer exec wrangler secret put CLICKHOUSE_PASSWORD
-CLICKHOUSE_URL = "https://REPLACE_ME.clickhouse.cloud:8443"
+CLICKHOUSE_URL = "https://b7ei32cr8f.il-central-1.aws.clickhouse.cloud:8443"
 # A dedicated user with INSERT on events, sessions, dropped_hits and rollup_15m_pages only, never `default`.
 CLICKHOUSE_USER = "tw_insert"
 CLICKHOUSE_DATABASE = "tailwatch"
