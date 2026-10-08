@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { Row } from '../../data/dashboardMock';
+import type { Row } from './types';
 
 const tick = { fontSize: 11, fill: '#94a3b8' };
 const tooltipStyle = {
@@ -41,7 +41,8 @@ export function VisitorsChart({ data }: { data: { date: string; visitors: number
 /* ---------- Traffic sources donut ---------- */
 const SOURCE_COLORS = ['#14b8a6', '#8b5cf6', '#f59e0b', '#3b82f6', '#94a3b8'];
 
-export function SourcesDonut({ sources, total }: { sources: { name: string; value: number }[]; total: number }) {
+export function SourcesDonut({ sources, total, caption = 'Unique visitors' }: { sources: { name: string; value: number }[]; total: number; caption?: string }) {
+  if (sources.length === 0) return <p className="py-10 text-center text-sm text-slate-400">No sessions in this period yet.</p>;
   return (
     <div>
       <div className="relative mx-auto size-40">
@@ -54,7 +55,7 @@ export function SourcesDonut({ sources, total }: { sources: { name: string; valu
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 grid place-content-center text-center">
           <span className="text-lg font-semibold tabular-nums text-slate-900 dark:text-white">{total.toLocaleString()}</span>
-          <span className="text-[10px] text-slate-400">Unique visitors</span>
+          <span className="text-[10px] text-slate-400">{caption}</span>
         </div>
       </div>
       <ul className="mt-5 grid gap-2">

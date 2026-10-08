@@ -1,4 +1,4 @@
-# Testing Stages 1–5 on your computer
+# Testing Stages 1–6 on your computer
 
 Real systems, no mocks: **ClickHouse Cloud** (online) and **your local MongoDB** (the one you open in
 MongoDB Compass). Cloudflare Workers, Queues, KV, R2 and Durable Objects run locally inside workerd
@@ -303,3 +303,23 @@ pnpm e2e:api       # signup -> site -> snippet -> verify -> first pageview, in C
 7. **Finish and go to dashboard.** Nobody touched a database: that is Stage 5 done.
 
 If something is off: `pnpm --filter @tailwatch/api resync` rewrites every site's KV entry from MongoDB.
+
+
+---
+
+## 9. Stage 6 — the dashboard on real data
+
+```powershell
+# folder: ttw
+pnpm install
+pnpm --filter @tailwatch/api test   # includes: docs/QUERIES.md equals the code
+pnpm live:api                        # MongoDB 7 + Query API on YOUR ClickHouse Cloud with known rows (DST too): 17 passed
+pnpm e2e:api                         # onboarding + dashboard pages in Chromium: 3 passed
+pnpm app                             # http://localhost:8788
+```
+
+`live:api` creates a scratch database `tw_stats_<number>` in ClickHouse Cloud, inserts known events,
+checks every dashboard number against hand-computed values, and drops it again.
+
+Then open the dashboard. Every number is real (Live traffic, Events, Suspicious activity, Reports → Export CSV).
+To check any number yourself, copy its query from `docs/QUERIES.md` into the ClickHouse SQL console.

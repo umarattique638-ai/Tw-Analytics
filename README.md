@@ -12,6 +12,7 @@ Status (2026-10-08): Stage 1 frozen, Stages 2-3 done and deployed (Cloudflare Fr
 tw.js live and proven on a real page; React/Next/Vue/Svelte adapters; Next.js, Vite and hash-router
 apps record exactly one pageview per navigation in dev/StrictMode. Stage 5: one API + the dashboard
 (signup, add site, snippet, verify, first pageview): `pnpm app` -> http://localhost:8788.
+Stage 6: the dashboard runs on real data only (Query API, every query in `docs/QUERIES.md`).
 
 Install on a site (script tag):
 

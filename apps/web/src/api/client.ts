@@ -77,3 +77,53 @@ export const api = {
   status: (id: number) => call<Status>('GET', `/sites/${id}/status`),
   verify: (id: number, url?: string) => call<VerifyResult>('POST', `/sites/${id}/verify`, { url }),
 };
+
+// ------------------------------------------------------------------ Stage 6: Query API (/stats)
+
+export type RangeKey = 'today' | '7d' | '30d';
+export interface Range { key: RangeKey; tz: string; from: string; to: string; days: number; hourly: boolean; prev: { from: string; to: string } }
+export interface Bar { label: string; value: number }
+export interface Overview {
+  range: Range;
+  kpis: {
+    visitors: number;
+    visitorsEstimated: boolean;
+    sessions: number;
+    pageviews: number;
+    bounceRate: number | null;
+    previous: { visitors: number; sessions: number; pageviews: number; bounceRate: number | null };
+  };
+  series: { bucket: string; label: string; visitors: number; sessions: number; pageviews: number }[];
+  sources: { name: string; sessions: number }[];
+  referrers: Bar[];
+  pages: Bar[];
+  countries: Bar[];
+  devices: Bar[];
+  browsers: Bar[];
+  capture: { received: number; expected: number; rate: number | null };
+  drops: { reason: string; hits: number; detail: string; last: number }[];
+}
+export interface Live {
+  now: number;
+  active: number;
+  minutes: { minute: number; visitors: number }[];
+  events: { name: string; path: string; country: string; at: number }[];
+}
+export interface EventsReport {
+  range: Range;
+  events: { name: string; kind: 'automatic' | 'custom'; events: number; last: number; firstSeen: number; isNew: boolean }[];
+  highCardinality: { name: string; key: string; distinctValues: number }[];
+}
+export interface DropsReport {
+  range: Range;
+  rows: { reason: string; detail: string; country: string; asn: number; hits: number; last: number }[];
+}
+
+export const stats = {
+  overview: (id: number, range: RangeKey) => call<Overview>('GET', `/sites/${id}/stats/overview?range=${range}`),
+  live: (id: number) => call<Live>('GET', `/sites/${id}/stats/live`),
+  events: (id: number, range: RangeKey) => call<EventsReport>('GET', `/sites/${id}/stats/events?range=${range}`),
+  drops: (id: number, range: RangeKey) => call<DropsReport>('GET', `/sites/${id}/stats/drops?range=${range}`),
+  allowHost: (id: number, host: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/allowed-hosts`, { host }),
+  exportUrl: (id: number, range: RangeKey) => `/api/v1/sites/${id}/export.csv?range=${range}`,
+};

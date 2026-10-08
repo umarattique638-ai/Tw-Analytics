@@ -73,7 +73,7 @@ export default function AuthLayout() {
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
               <div className="flex items-end justify-between gap-6">
                 <div>
-                  <p className="text-sm font-medium text-slate-400">Capture rate</p>
+                  <p className="text-sm font-medium text-slate-400">Capture rate <span className="text-xs text-slate-500">(example)</span></p>
                   <p className="mt-1 text-3xl font-bold tabular-nums">91.4%</p>
                 </div>
                 <div className="flex h-12 items-end gap-1.5" aria-hidden="true">

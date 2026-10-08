@@ -20,7 +20,7 @@ export default function FinishSetup({ site }: { site: Site }) {
         <div className="mt-7 flex flex-wrap items-center gap-3">
           <Button onClick={() => navigate('/install')} className="gap-2"><Code className="size-4" /> Get the snippet</Button>
           <Button variant="ghost" onClick={() => navigate('/verify')} className="gap-2"><ShieldCheck className="size-4" /> Verify the install</Button>
-          <Button variant="ghost" onClick={() => navigate('/dashboard', { state: { preview: true } })}>Preview a demo dashboard</Button>
+          <Button variant="ghost" onClick={() => navigate('/dashboard', { state: { skipSetup: true } })}>Open the dashboard anyway</Button>
         </div>
       </div>
     </div>

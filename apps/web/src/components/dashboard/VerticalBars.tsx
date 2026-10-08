@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { Row } from '../../data/dashboardMock';
+import type { Row } from './types';
 
 type Props = {
   rows: Row[];

@@ -13,16 +13,17 @@ export interface AnalyticsReader {
   recent(siteId: number, minutes: number): Promise<RecentActivity>;
 }
 
-export class ClickHouseReader implements AnalyticsReader {
+/** Minimal ClickHouse HTTP client: parameterised queries ({name:Type}), JSON rows, UInt64 as strings. */
+export class ClickHouseClient {
   constructor(
     private readonly url: string,
     private readonly user: string,
     private readonly password: string,
-    private readonly database = 'tailwatch',
+    readonly database = 'tailwatch',
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  private async query<T>(sql: string, params: Record<string, string | number>): Promise<T[]> {
+  async query<T>(sql: string, params: Record<string, string | number>): Promise<T[]> {
     const qs = new URLSearchParams({
       default_format: 'JSON',
       output_format_json_quote_64bit_integers: '1',
@@ -39,17 +40,21 @@ export class ClickHouseReader implements AnalyticsReader {
     if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${text.slice(0, 300)}`);
     return (JSON.parse(text) as { data: T[] }).data;
   }
+}
+
+export class ClickHouseReader implements AnalyticsReader {
+  constructor(private readonly ch: ClickHouseClient) {}
 
   async recent(siteId: number, minutes: number): Promise<RecentActivity> {
-    const db = this.database;
-    const [summary] = await this.query<{ events: string; pageviews: string; last_at: string; last_name: string; last_path: string }>(
+    const db = this.ch.database;
+    const [summary] = await this.ch.query<{ events: string; pageviews: string; last_at: string; last_name: string; last_path: string }>(
       `SELECT count() AS events, countIf(name = 'pageview') AS pageviews,
               max(received_at) AS last_at, argMax(name, received_at) AS last_name, argMax(pathname, received_at) AS last_path
          FROM ${db}.events
         WHERE site_id = {site:UInt64} AND received_at >= now64(3) - toIntervalMinute({minutes:UInt32})`,
       { site: siteId, minutes },
     );
-    const drops = await this.query<{ reason: string; hits: string; detail: string }>(
+    const drops = await this.ch.query<{ reason: string; hits: string; detail: string }>(
       `SELECT reason, sum(hits) AS hits, any(detail) AS detail
          FROM ${db}.dropped_hits
         WHERE site_id = {site:UInt64} AND at >= now64(3) - toIntervalMinute({minutes:UInt32})

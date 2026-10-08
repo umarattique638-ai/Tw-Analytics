@@ -19,6 +19,8 @@ import type { SiteConfigSink } from './kv';
 import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from './passwords';
 import { newIdentitySecret, newKeyId, newPublicKey, newSessionToken, sha256Hex } from './secrets';
 import { snippetsFor } from './snippets';
+import { RANGE_KEYS, resolveRange } from './stats';
+import type { RangeKey, StatsReader } from './stats';
 import { DuplicateError } from './store/types';
 import type { ControlStore, KeyDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
 import { VerifyInputError, runActiveCheck } from './verifier';
@@ -28,6 +30,8 @@ export interface Deps {
   store: ControlStore;
   kv: SiteConfigSink;
   analytics: AnalyticsReader;
+  /** Query API (Stage 6). Null when ClickHouse is not configured for the API. */
+  stats?: StatsReader | null;
   config: ApiConfig;
   now?: () => Date;
   verifier?: VerifierOptions;
@@ -436,6 +440,78 @@ export function createApp(deps: Deps) {
       if (error instanceof VerifyInputError) throw new HttpError(400, 'invalid_url', error.message);
       throw error;
     }
+  });
+
+  // ---------------------------------------------------------------- Stage 6: Query API
+
+  const statsFor = () => {
+    if (!deps.stats) throw new HttpError(503, 'analytics_unavailable', 'Reports are not configured: set TW_CH_URL and TW_CH_READ_PASSWORD for the API.');
+    return deps.stats;
+  };
+  const rangeOf = (c: Ctx, site: SiteDoc) => {
+    const key = (c.req.query('range') ?? '7d') as RangeKey;
+    if (!RANGE_KEYS.includes(key)) throw new HttpError(400, 'invalid_range', `range is one of ${RANGE_KEYS.join(', ')}.`);
+    return resolveRange(key, site.timezone, now());
+  };
+  const reading = async <T>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      console.error(JSON.stringify({ tw: 'stats_failed', message: error instanceof Error ? error.message : String(error) }));
+      throw new HttpError(503, 'analytics_unavailable', 'We could not read your analytics right now. Try again in a moment.');
+    }
+  };
+
+  app.get('/sites/:id/stats/overview', async (c) => {
+    const site = await loadSite(c);
+    const range = rangeOf(c, site);
+    return c.json(await reading(() => statsFor().overview(site._id, range)));
+  });
+
+  app.get('/sites/:id/stats/live', async (c) => {
+    const site = await loadSite(c);
+    return c.json(await reading(() => statsFor().live(site._id, now())));
+  });
+
+  app.get('/sites/:id/stats/events', async (c) => {
+    const site = await loadSite(c);
+    const range = rangeOf(c, site);
+    return c.json(await reading(() => statsFor().events(site._id, range, now())));
+  });
+
+  app.get('/sites/:id/stats/drops', async (c) => {
+    const site = await loadSite(c);
+    const range = rangeOf(c, site);
+    return c.json(await reading(() => statsFor().drops(site._id, range)));
+  });
+
+  /** One row per local day (or hour for today): the same numbers as the chart. */
+  app.get('/sites/:id/export.csv', async (c) => {
+    const site = await loadSite(c);
+    const range = rangeOf(c, site);
+    const o = await reading(() => statsFor().overview(site._id, range));
+    const lines = [range.hourly ? 'hour_start_utc,local_hour,visitors,sessions,pageviews' : 'date,visitors,sessions,pageviews'];
+    for (const r of o.series) {
+      lines.push(range.hourly ? `${new Date(Number(r.bucket) * 1000).toISOString()},${r.label},${r.visitors},${r.sessions},${r.pageviews}` : `${r.bucket},${r.visitors},${r.sessions},${r.pageviews}`);
+    }
+    c.header('content-type', 'text/csv; charset=utf-8');
+    c.header('content-disposition', `attachment; filename="${site.domain}-${range.from}-${range.to}.csv"`);
+    return c.body(lines.join('\n') + '\n');
+  });
+
+  /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */
+  app.post('/sites/:id/allowed-hosts', async (c) => {
+    const site = await loadSite(c);
+    const b = await body(c);
+    const host = str(b.host).trim().toLowerCase().replace(/\.$/, '');
+    if (!/^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(host) || host.length > 253) {
+      throw new HttpError(400, 'invalid_host', 'Enter a host name like shop.example.com.');
+    }
+    if (site.allowedHosts.includes(host)) return c.json({ site: siteView(site), sync: { ok: true } });
+    if (site.allowedHosts.length >= 50) throw new HttpError(409, 'too_many_hosts', 'A site can accept at most 50 hosts.');
+    const updated = await patchSite(c, site, { allowedHosts: [...site.allowedHosts, host] });
+    return c.json({ site: siteView(updated), sync: await sync(updated) });
   });
 
   return app;

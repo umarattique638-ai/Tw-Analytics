@@ -12,10 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { ClickHouseReader, UnconfiguredReader } from './analytics';
+import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './analytics';
 import { createApp } from './app';
 import { defaultConfig } from './config';
 import { CloudflareKv, UnconfiguredKv, syncSite } from './kv';
+import { StatsReader } from './stats';
 import { MongoStore } from './store/mongo';
 
 const rootEnv = fileURLToPath(new URL('../../../.env', import.meta.url));
@@ -51,10 +52,11 @@ const kv =
   env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID && env.CF_API_TOKEN
     ? new CloudflareKv(env.CF_ACCOUNT_ID, env.CF_KV_NAMESPACE_ID, env.CF_API_TOKEN)
     : new UnconfiguredKv();
-const analytics =
+const clickhouse =
   env.TW_CH_URL && env.TW_CH_READ_PASSWORD
-    ? new ClickHouseReader(env.TW_CH_URL, env.TW_CH_READ_USER || 'tw_read', env.TW_CH_READ_PASSWORD)
-    : new UnconfiguredReader();
+    ? new ClickHouseClient(env.TW_CH_URL, env.TW_CH_READ_USER || 'tw_read', env.TW_CH_READ_PASSWORD)
+    : null;
+const analytics = clickhouse ? new ClickHouseReader(clickhouse) : new UnconfiguredReader();
 
 if (process.argv.includes('--resync')) {
   let failed = 0;
@@ -72,7 +74,7 @@ if (process.argv.includes('--resync')) {
   process.exitCode = failed ? 1 : 0;
 } else {
   const server = new Hono();
-  server.route('/', createApp({ store, kv, analytics, config }));
+  server.route('/', createApp({ store, kv, analytics, stats: clickhouse ? new StatsReader(clickhouse) : null, config }));
 
   // The dashboard (apps/web, built). Any other path gets index.html: the dashboard routes in the browser.
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));

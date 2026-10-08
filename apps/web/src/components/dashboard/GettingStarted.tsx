@@ -60,9 +60,6 @@ export default function GettingStarted() {
           <Button onClick={() => navigate('/sites/new')} className="gap-2">
             Add your site <ArrowRight className="size-4" />
           </Button>
-          <Button variant="ghost" onClick={() => navigate('/dashboard', { state: { preview: true } })}>
-            Preview a demo dashboard
-          </Button>
         </div>
 
         <ul className={`mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-200 pt-6 text-[13px] dark:border-slate-800 ${muted}`}>
