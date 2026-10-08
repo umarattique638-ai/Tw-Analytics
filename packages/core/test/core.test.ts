@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE, LIMITS, WIRE_FIELDS, validate } from '@tailwatch/contract';
+import { FLAG_AUTOMATION, FLAG_UA_MISMATCH, FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE, LIMITS, WIRE_FIELDS, validate } from '@tailwatch/contract';
 import { BROWSER_UA, FIXTURE_SITE, SITE } from '../../contract/fixtures/payloads';
 import {
   DEBOUNCE_MS,
@@ -163,6 +163,34 @@ describe('pageviews: exactly one per navigation (invariants 10, 11)', () => {
       ['https://example.com/#/home', FLAG_FIRST_PAGEVIEW | FLAG_HASH_ROUTE],
       ['https://example.com/#/settings', FLAG_HASH_ROUTE],
     ]);
+  });
+
+  it('an automated page (webdriver) still sends, every hit flagged, and the edge drops it as bot:automation (A6)', () => {
+    const p = page();
+    p.env.automated = () => true;
+    const t = p.start();
+    t.page();
+    t.track('signup');
+    expect(p.sent.map((s) => s.body.f)).toEqual([FLAG_FIRST_PAGEVIEW | FLAG_AUTOMATION, FLAG_AUTOMATION]);
+    const out = validate(new Headers({ 'user-agent': BROWSER_UA }), p.sent[0]!.raw, { receivedAt: Date.now(), site: FIXTURE_SITE });
+    expect(out).toMatchObject({ kind: 'drop', reason: 'bot', detail: 'automation' });
+  });
+
+  it('a spoofed UA (JS engine contradicts it) is flagged for the consumer, not dropped at the edge', () => {
+    const p = page();
+    p.env.uaMismatch = () => true;
+    p.start().page();
+    expect(p.sent[0]!.body.f).toBe(FLAG_FIRST_PAGEVIEW | FLAG_UA_MISMATCH);
+    const out = validate(new Headers({ 'user-agent': BROWSER_UA }), p.sent[0]!.raw, { receivedAt: Date.now(), site: FIXTURE_SITE });
+    expect(out.kind).toBe('accept');
+  });
+
+  it('a normal page carries no automation flag', () => {
+    const p = page();
+    p.env.automated = () => false;
+    p.env.uaMismatch = () => false;
+    p.start().page();
+    expect(p.sent[0]!.body.f).toBe(FLAG_FIRST_PAGEVIEW);
   });
 
   it('bfcache restore (force) sends a pageview for the same URL, not marked first', () => {

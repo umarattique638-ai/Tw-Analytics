@@ -33,6 +33,15 @@ export const KEY = FIXTURE_SITE.publicKey;
  */
 export const LOCAL_KEY = 'tw_pub_LOCALHOSTDEVSITE0000000000000001';
 const LOCAL_SITE = { ...FIXTURE_SITE, id: 124, publicKey: LOCAL_KEY, allowedHosts: ['localhost', '*.localhost'] };
+/**
+ * Stage 7: a Playwright Chromium says navigator.webdriver = true, and the tracker flags that (STAGE-1 A6),
+ * so the edge drops it as bot:automation. These suites stand in for a PERSON using the site, so they
+ * switch the automation markers off. The bot suite (apps/consumer/test/e2e/puppeteer95) does the opposite.
+ */
+export const HUMAN_BROWSER = {
+  ignoreDefaultArgs: ['--enable-automation'],
+  args: ['--disable-blink-features=AutomationControlled'],
+};
 export const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Hit = {
@@ -134,7 +143,8 @@ export async function startStack(): Promise<Stack> {
 
   const browser = await chromium.launch({
     executablePath: process.env.TW_CHROME_PATH || undefined,
-    args: ['--host-resolver-rules=MAP *.example.com 127.0.0.1', '--enable-features=BackForwardCache'],
+    ...HUMAN_BROWSER,
+    args: ['--host-resolver-rules=MAP *.example.com 127.0.0.1', '--enable-features=BackForwardCache', ...HUMAN_BROWSER.args],
   });
 
   const messages = async () => {

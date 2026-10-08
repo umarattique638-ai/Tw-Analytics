@@ -224,8 +224,11 @@ describe('tracker in Chromium -> collector on workerd', { timeout: 30_000 }, () 
   });
 
   it('the demo site (apps/demo) records what its page says it should', async () => {
+    // The page may carry the owner's REAL snippet (site 101's key, the live collector): point it at this
+    // test's collector and site, whatever key and loader it has.
     html = readFileSync(fileURLToPath(new URL('../../../demo/public/index.html', import.meta.url)), 'utf8')
-      .replace('https://tailwatch-collector.umarattique638.workers.dev', collector);
+      .replaceAll('https://tailwatch-collector.umarattique638.workers.dev', collector)
+      .replace(/tw_pub_[A-Za-z0-9]{32}/g, KEY);
     const { page, close } = await open(`/?key=${KEY}`);
     await events(1);
     const click = async (role: 'link' | 'button', name: string) => {

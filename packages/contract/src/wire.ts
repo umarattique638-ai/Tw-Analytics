@@ -20,6 +20,21 @@ export const FLAG_FIRST_PAGEVIEW = 1;
 export const FLAG_HASH_ROUTE = 2;
 
 /**
+ * FLAG_AUTOMATION (STAGE-1 A6, Stage 7): the page is driven by automation software
+ * (navigator.webdriver, PhantomJS, Nightmare, Cypress). Unlike Plausible the tracker still SENDS the
+ * hit, so the edge can drop it with an itemised reason (bot / automation) the customer can see.
+ */
+export const FLAG_AUTOMATION = 4;
+
+/**
+ * FLAG_UA_MISMATCH (STAGE-1 A6, Stage 7): the JavaScript engine contradicts the User-Agent string:
+ * a Chromium engine (navigator.userAgentData present) whose brand list is EMPTY (the UA was overridden
+ * without metadata, as Puppeteer's page.setUserAgent does) or names a headless brand. Decided in the
+ * CONSUMER (strong signal js_ua_mismatch), never at the edge.
+ */
+export const FLAG_UA_MISMATCH = 8;
+
+/**
  * Compact browser event payload, wire v1 (FROZEN 2026-10-07, append-only from here on).
  *
  * Required:

@@ -7,11 +7,12 @@
  * plus e (engaged ms), f (flags), r (first pageview only), rt, p when present.
  */
 import { normalizeUrl } from '@tailwatch/contract/url';
-import { FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE } from '@tailwatch/contract/wire';
+import { FLAG_AUTOMATION, FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE, FLAG_UA_MISMATCH } from '@tailwatch/contract/wire';
 
 /** Sent as `v` on every hit (invariant 9). Bump on every released tracker change.
- *  1 = 2026-10-08 first deploy. 2 = first pageview carries no engagement; A4 root route; SSR-safe init. */
-export const TRACKER_VERSION = 2;
+ *  1 = 2026-10-08 first deploy. 2 = first pageview carries no engagement; A4 root route; SSR-safe init.
+ *  3 = Stage 7: FLAG_AUTOMATION and FLAG_UA_MISMATCH (A6) on every hit of an automated / spoofed page. */
+export const TRACKER_VERSION = 3;
 /** = LIMITS.maxBodyBytes (asserted by a test; not imported, to keep the bundle small). */
 export const MAX_BODY_BYTES = 32_768;
 /** SPA route changes settle for this long before a pageview is sent (PLAN 6.1). */
@@ -45,6 +46,13 @@ export interface Env {
   id(): string;
   send: Send;
   warn(message: string): void;
+  /**
+   * STAGE-1 A6: the page is driven by automation software (navigator.webdriver and friends). Read once.
+   * The hits are still SENT, flagged, so the drop is itemised for the site owner instead of invisible.
+   */
+  automated?(): boolean;
+  /** STAGE-1 A6: the JS engine contradicts the User-Agent string (spoofed UA). Read once. */
+  uaMismatch?(): boolean;
 }
 
 export interface Config {
@@ -80,6 +88,7 @@ type Hit = Record<string, unknown>;
 
 export function createTracker(config: Config, env: Env): Tracker {
   const hashFlag = config.hashRouting ? FLAG_HASH_ROUTE : 0;
+  const flags = hashFlag | (env.automated?.() ? FLAG_AUTOMATION : 0) | (env.uaMismatch?.() ? FLAG_UA_MISMATCH : 0);
   let consent: Consent = config.consent ?? 'granted';
   let seq = 0;
   let first = true;
@@ -152,7 +161,7 @@ export function createTracker(config: Config, env: Env): Tracker {
     const e = takeEngaged();
     const h: Hit = { s: config.key, n, u, t: env.now(), v: TRACKER_VERSION, i: env.id(), w: env.width(), ...extra };
     if (e) h.e = e;
-    if (hashFlag) h.f = ((h.f as number) | 0) | hashFlag;
+    if (flags) h.f = ((h.f as number) | 0) | flags;
     return h;
   };
 

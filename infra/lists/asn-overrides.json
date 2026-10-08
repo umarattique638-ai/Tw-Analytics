@@ -1,0 +1,29 @@
+{
+  "_doc": "TailWatch's own edits to the datacentre ASN list. 'never' wins over everything: these ASNs carry real people (home/business ISPs, Apple iCloud Private Relay, Cloudflare WARP, corporate secure-web gateways) and must never be dropped as datacentre traffic, even if a future upstream list adds them. 'add' = well-known clouds missing upstream. Every entry has a reason; review on each `pnpm lists:update`.",
+  "never": [
+    { "asn": 13335, "name": "Cloudflare", "reason": "WARP + iCloud Private Relay egress (real users)" },
+    { "asn": 209242, "name": "Cloudflare London", "reason": "WARP egress (real users)" },
+    { "asn": 36183, "name": "Akamai Private Relay", "reason": "iCloud Private Relay egress (real users)" },
+    { "asn": 20940, "name": "Akamai International", "reason": "Private Relay / CDN egress (real users)" },
+    { "asn": 16625, "name": "Akamai Technologies", "reason": "Private Relay / CDN egress (real users)" },
+    { "asn": 54113, "name": "Fastly", "reason": "iCloud Private Relay egress (real users)" },
+    { "asn": 53813, "name": "Zscaler", "reason": "corporate secure web gateway (employees browsing)" },
+    { "asn": 62044, "name": "Zscaler Switzerland", "reason": "corporate secure web gateway (employees browsing)" },
+    { "asn": 55256, "name": "Netskope", "reason": "corporate secure web gateway (employees browsing)" },
+    { "asn": 36290, "name": "The Cable of St. Kitts", "reason": "residential cable ISP (upstream lists it)" },
+    { "asn": 394330, "name": "LTD Broadband", "reason": "rural residential ISP (upstream lists it)" },
+    { "asn": 4323, "name": "TW Telecom (Lumen)", "reason": "business ISP: office workers (upstream lists it)" }
+  ],
+  "add": [
+    { "asn": 396982, "name": "Google Cloud Platform", "reason": "cloud" },
+    { "asn": 8987, "name": "Amazon Data Services Ireland", "reason": "cloud" },
+    { "asn": 31898, "name": "Oracle Cloud", "reason": "cloud" },
+    { "asn": 37963, "name": "Alibaba Cloud (Hangzhou)", "reason": "cloud" },
+    { "asn": 132203, "name": "Tencent Cloud", "reason": "cloud" },
+    { "asn": 135377, "name": "UCloud HK", "reason": "cloud" },
+    { "asn": 197540, "name": "netcup", "reason": "hosting" },
+    { "asn": 46606, "name": "Unified Layer", "reason": "hosting" },
+    { "asn": 26496, "name": "GoDaddy", "reason": "hosting" },
+    { "asn": 40021, "name": "Contabo US", "reason": "hosting" }
+  ]
+}

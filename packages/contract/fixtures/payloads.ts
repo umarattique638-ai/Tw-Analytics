@@ -26,6 +26,18 @@ export const BASE = Date.UTC(2026, 8, 30, 12, 0, 0);
 export const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+/**
+ * Every header a real Chrome 126 on Windows sends with the tracker's POST (Stage 7). The consumer's
+ * headless scoring treats a "Chrome" without client hints and without Accept-Language as a script.
+ */
+export const BROWSER_HEADERS: Readonly<Record<string, string>> = {
+  'user-agent': BROWSER_UA,
+  'accept-language': 'en-US,en;q=0.9',
+  'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+};
+
 /** Fixture-only client address. Used ONLY inside the hash computation, never stored. */
 export const FIXTURE_IP = '203.0.113.7';
 
@@ -225,7 +237,7 @@ export function fixtureBody(fixture: ContractFixture): string {
 
 /** The request headers a fixture produces (lower-case names; `null` means "absent"). */
 export function fixtureHeaders(fixture: ContractFixture): Record<string, string> {
-  const merged: Record<string, string | null> = { 'user-agent': BROWSER_UA, ...fixture.headers };
+  const merged: Record<string, string | null> = { ...BROWSER_HEADERS, ...fixture.headers };
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(merged)) if (v !== null) out[k.toLowerCase()] = v;
   return out;

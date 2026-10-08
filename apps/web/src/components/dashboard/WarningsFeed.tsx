@@ -1,5 +1,5 @@
 import Panel from './Panel';
-import { ago, dropLabel, num } from '../../lib/format';
+import { ago, dropDetail, dropLabel, num } from '../../lib/format';
 
 const tone: Record<string, string> = {
   bot: 'text-rose-700 dark:text-rose-400',
@@ -21,7 +21,7 @@ export default function WarningsFeed({ items }: { items: { reason: string; hits:
                 {dropLabel(w.reason)}
               </span>
               <div className="min-w-0">
-                <span className="break-words font-mono text-[13px]">{w.detail || '—'}</span>
+                <span className="break-words text-[13px]" title={w.detail}>{dropDetail(w.reason, w.detail) || '—'}</span>
                 <small className="block text-xs text-slate-500 dark:text-slate-400">{num(w.hits)} hits · last {ago(w.last)}</small>
               </div>
             </li>

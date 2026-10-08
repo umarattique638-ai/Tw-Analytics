@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import {
+  BROWSER_HEADERS,
   BROWSER_UA,
   FIXTURE_SITE,
   contractFixtures,
@@ -141,7 +142,7 @@ describe('Stage 3 milestone on workerd: HTTP in, correct ClickHouse rows out', (
     const started = Date.now();
     const res = await post(
       JSON.stringify({ s: FIXTURE_SITE.publicKey, n: 'pageview', u: 'https://Example.com/hello/?utm_source=e2e#x', q: 1, t: Date.now(), v: 1, i: 'milestone-1', w: 1280 }),
-      { 'user-agent': BROWSER_UA },
+      { ...BROWSER_HEADERS },
       { country: 'PK', asn: 17557 },
     );
     expect(res.status).toBe(204);
@@ -167,9 +168,9 @@ describe('Stage 3 milestone on workerd: HTTP in, correct ClickHouse rows out', (
 
   it('a tracker retry of the same insert id gives still exactly one row (Durable Object de-dup)', async () => {
     const body = JSON.stringify({ s: FIXTURE_SITE.publicKey, n: 'pageview', u: 'https://example.com/hello', q: 1, t: Date.now(), v: 1, i: 'milestone-1' });
-    expect((await post(body, { 'user-agent': BROWSER_UA })).status).toBe(204);
+    expect((await post(body, { ...BROWSER_HEADERS })).status).toBe(204);
     // Send a marker after it, so we know the retry has been processed when the marker is there.
-    await post(JSON.stringify({ s: FIXTURE_SITE.publicKey, n: 'pageview', u: 'https://example.com/after', q: 2, t: Date.now(), v: 1, i: 'marker-1' }), { 'user-agent': BROWSER_UA });
+    await post(JSON.stringify({ s: FIXTURE_SITE.publicKey, n: 'pageview', u: 'https://example.com/after', q: 2, t: Date.now(), v: 1, i: 'marker-1' }), { ...BROWSER_HEADERS });
     await until(() => one(`SELECT count() FROM ${db}.events WHERE insert_id = 'marker-1'`), (n) => n > 0);
     expect(await one(`SELECT count() FROM ${db}.events WHERE insert_id = 'milestone-1'`)).toBe(1);
   });

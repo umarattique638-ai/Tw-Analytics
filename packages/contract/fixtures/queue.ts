@@ -1,7 +1,7 @@
 import { deriveVisitorHashes, validate } from '../src';
 import type { EventQueueMessage, HeaderReader, ValidatedEvent } from '../src';
 import {
-  BROWSER_UA,
+  BROWSER_HEADERS,
   FIXTURE_IP,
   FIXTURE_RECEIVED_AT,
   FIXTURE_SITE,
@@ -78,7 +78,7 @@ export function sessionQueueMessages(): EventQueueMessage[] {
     });
     const event = mustAccept(
       `session_${index}`,
-      validate(headerReader({ 'user-agent': BROWSER_UA }), body, { receivedAt: e.t, site: FIXTURE_SITE }),
+      validate(headerReader({ ...BROWSER_HEADERS }), body, { receivedAt: e.t, site: FIXTURE_SITE }),
     );
     return { v: 1, type: 'event', event, visitor: { hash: String(1000 + n), prevHash: String(2000 + n) } };
   });

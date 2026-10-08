@@ -1,5 +1,11 @@
 import type { DropReason } from './outcome';
+import { DATACENTRE_ASN_LIST } from './lists/datacentre-asns.generated';
 
+/**
+ * EDGE bot checks (PLAN 2.4): cheap and unambiguous only, single-digit ms. Everything debatable
+ * (the full 843-regex bots.yml pass, headless scoring, referrer spam) is decided in the consumer,
+ * where it is itemised with its reason (apps/consumer/src/precision).
+ */
 
 export const VERIFIER_UA = /^TailwatchVerifier\//;
 
@@ -13,17 +19,12 @@ export const UA_DENYLIST: readonly RegExp[] = [
   /googlebot|bingbot|ahrefsbot|semrushbot|yandexbot|baiduspider|duckduckbot|applebot|gptbot|claudebot|ccbot|petalbot|dotbot|mj12bot/i,
 ];
 
-export const DATACENTRE_ASNS: ReadonlySet<number> = new Set([
-  14618, 16509, 
-  8075,
-  14061, 
-  24940, 
-  16276, 
-  63949,
-  20473, 
-  396982, 
-  45102,
-]);
+/**
+ * Datacentre / hosting ASNs (Stage 7): brianhama/bad-asn-list (MIT) + our additions, minus our
+ * never-drop list (iCloud Private Relay, WARP, corporate gateways, residential ISPs the upstream lists).
+ * Source and review process: infra/lists/SOURCES.md. O(1) per request.
+ */
+export const DATACENTRE_ASNS: ReadonlySet<number> = new Set(DATACENTRE_ASN_LIST);
 
 export interface BotVerdict { reason: Extract<DropReason, 'bot' | 'verification_agent'>; detail: string }
 

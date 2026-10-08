@@ -10,9 +10,15 @@
     "mongo:apply": "node tools/mongo.mjs apply",
     "mongo:verify": "node tools/mongo.mjs verify",
     "ch:reset": "node tools/clickhouse.mjs apply --reset",
-    "ch:reader": "node tools/clickhouse.mjs reader"
+    "ch:reader": "node tools/clickhouse.mjs reader",
+    "lists:generate": "node tools/lists.mjs generate",
+    "lists:check": "node tools/lists.mjs check",
+    "lists:update": "node tools/lists.mjs update"
   },
   "dependencies": {
     "mongodb": "^7.7.0"
+  },
+  "devDependencies": {
+    "yaml": "2.6.1"
   }
 }

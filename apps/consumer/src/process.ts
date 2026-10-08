@@ -3,12 +3,15 @@ import type { DropQueueMessage, EventQueueMessage, QueueMessage } from '@tailwat
 import { batchToken } from './core/batch';
 import { advanceRecord, chTime, eventRow, sessionRows } from './core/rows';
 import type { DroppedRow, EventRow, SessionRecord, SessionRow } from './core/rows';
+import { precisionVerdict } from './precision';
 
 /**
  * Consumer batch processing, in the exact order of PLAN 3.1 step 3:
  *
  *   (a) R2 archive of the untransformed batch      <- FIRST, before anything else
- *   (b) classify + enrich in memory; drops are recorded WITH A REASON, never discarded
+ *   (b) classify + enrich in memory; drops are recorded WITH A REASON, never discarded.
+ *       Stage 7: the precision pass (bots.yml, headless scoring, referrer spam, src/precision) runs per
+ *       event after the de-dup check, and a flagged visitor stays quarantined for the session window.
  *   (c) load session state and de-dup markers (Durable Object, STAGE-1 D4), drop duplicates (D5)
  *   (d) ClickHouse INSERT INTO events          (one batch, explicit dedup token)
  *   (e) ClickHouse INSERT INTO sessions        (cancel + new row, VersionedCollapsingMergeTree)
@@ -92,6 +95,8 @@ export interface BatchResult {
   poison: number;
   ignored: number;
   sessionsStarted: number;
+  /** Events the precision pass dropped (Stage 7), also included in dropsRecorded. */
+  precisionDrops: number;
   archiveKey: string | null;
 }
 
@@ -170,7 +175,7 @@ async function archiveKey(messages: readonly InboundMessage[]): Promise<string> 
 }
 
 export async function processBatch(messages: readonly InboundMessage[], ports: Ports, options: Options): Promise<BatchResult> {
-  const result: BatchResult = { events: 0, duplicates: 0, dropsRecorded: 0, poison: 0, ignored: 0, sessionsStarted: 0, archiveKey: null };
+  const result: BatchResult = { events: 0, duplicates: 0, dropsRecorded: 0, poison: 0, ignored: 0, sessionsStarted: 0, precisionDrops: 0, archiveKey: null };
   if (messages.length === 0) return result;
   const now = ports.now();
 
@@ -235,6 +240,39 @@ export async function processBatch(messages: readonly InboundMessage[], ports: P
 
     // Today's hash first, then yesterday's: a visit that crosses UTC midnight is one session.
     const prev = lookup(siteId, msg.visitor.hash) ?? lookup(siteId, msg.visitor.prevHash);
+
+    // Stage 7 precision pass. A visitor already quarantined keeps its first verdict.
+    const verdict = prev?.quarantine ?? precisionVerdict(msg.event);
+    if (verdict) {
+      const e = msg.event;
+      dropItems.push({ siteId, at: e.receivedAt, reason: verdict.reason, detail: verdict.detail, country: e.country ?? '', asn: e.asn ?? 0 });
+      result.precisionDrops += 1;
+      processedKeys.push({ siteId, key });
+      // Referrer spam only carries its referrer on the FIRST hit; remember the verdict for this visitor
+      // (same 30 min sliding TTL as a session) so its later hits are dropped too. Bot and headless verdicts
+      // are NOT remembered: they are recomputed on every hit anyway, and a visitor hash (IP + UA) can be
+      // shared by real people behind one carrier/office address (Stage 7 review). The session itself is
+      // NOT advanced: nothing of a dropped event reaches a count.
+      if (verdict.reason !== 'referrer_spam') continue;
+      let record: SessionRecord | null = null;
+      let visitor = msg.visitor.hash;
+      if (prev) {
+        record = { ...prev, quarantine: { reason: verdict.reason, detail: verdict.detail } };
+        visitor = prev.state.visitor;
+      } else {
+        try {
+          record = { ...advanceRecord(null, msg).record, quarantine: { reason: verdict.reason, detail: verdict.detail } };
+        } catch {
+          record = null; // an unreadable time: the drop is still itemised, there is just no quarantine
+        }
+      }
+      if (record) {
+        cache.set(`${siteId}:${visitor}`, record);
+        dirty.set(`${siteId}:${visitor}`, { siteId, visitor, record });
+      }
+      continue;
+    }
+
     try {
       const adv = advanceRecord(prev, msg);
       // Build everything first, then push: a throw must never leave half an event behind.

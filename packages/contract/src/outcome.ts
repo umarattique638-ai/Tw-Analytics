@@ -16,6 +16,8 @@ export interface EdgeMeta {
   country?: string;
   asn?: number;
   asOrganization?: string;
+  /** The request arrived over HTTPS (Stage 7: client hints only exist on secure connections). */
+  https?: boolean;
 }
 
 export interface HeaderReader {
@@ -31,6 +33,24 @@ export type DropReason =
   | 'identity_unavailable';
 
 export type NoopReason = 'duplicate';
+
+/**
+ * Request headers the consumer's headless scoring needs (STAGE-1 A6). Low-entropy only, used for the
+ * verdict and never stored as a column. Present on every event from a Stage 7+ collector; absent on
+ * older queued messages (the consumer then skips the header-based signals).
+ */
+export interface ClientHints {
+  /** Sec-CH-UA, e.g. `"Chromium";v="141", "Google Chrome";v="141"`. */
+  chUa?: string;
+  /** Sec-CH-UA-Platform, e.g. `"Windows"`. */
+  chPlatform?: string;
+  /** Sec-CH-UA-Mobile: `?0` / `?1`. */
+  chMobile?: string;
+  /** An Accept-Language header was sent (every real browser sends one). */
+  lang: boolean;
+  /** The hit reached us over HTTPS (browsers send Sec-CH-UA only on secure connections). */
+  https: boolean;
+}
 
 export interface ValidatedEvent {
   siteId: number;
@@ -57,6 +77,7 @@ export interface ValidatedEvent {
   country?: string;
   asn?: number;
   asOrganization?: string;
+  hints?: ClientHints;
 }
 
 export interface AcceptOutcome {

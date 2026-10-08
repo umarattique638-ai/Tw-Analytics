@@ -1,6 +1,6 @@
 /**
- * Baseline enrichment (PLAN 3.1 b). Deliberately small: the full bots.yml pass,
- * headless scoring and device-detector-grade parsing belong to Stage 7.
+ * Baseline enrichment (PLAN 3.1 b). Deliberately small. The Stage 7 bot verdicts (bots.yml, headless
+ * scoring, referrer spam) live in src/precision and run BEFORE this, on every event.
  * Everything here is a pure function of its inputs.
  */
 

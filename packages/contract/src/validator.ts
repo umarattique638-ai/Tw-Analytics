@@ -16,6 +16,7 @@ import {
 import type { PropValue } from './types';
 
 import {
+  FLAG_AUTOMATION,
   FLAG_HASH_ROUTE,
   isKnownWireField,
 } from './wire';
@@ -23,6 +24,7 @@ import {
 import type { WirePayload } from './wire';
 
 import type {
+  ClientHints,
   DropReason,
   EdgeMeta,
   HeaderReader,
@@ -730,6 +732,23 @@ function cleanExtra(
   return extra;
 }
 
+const hint = (headers: HeaderReader, name: string): string | undefined => {
+  const v = headers.get(name);
+  return v ? stripControlChars(v).slice(0, 256) : undefined;
+};
+
+/** STAGE-1 A6: the few request headers the consumer's headless scoring needs. Never stored. */
+function clientHints(headers: HeaderReader, edge: EdgeMeta): ClientHints {
+  const out: ClientHints = { lang: !!headers.get('accept-language'), https: edge.https !== false };
+  const chUa = hint(headers, 'sec-ch-ua');
+  const chPlatform = hint(headers, 'sec-ch-ua-platform');
+  const chMobile = hint(headers, 'sec-ch-ua-mobile');
+  if (chUa !== undefined) out.chUa = chUa;
+  if (chPlatform !== undefined) out.chPlatform = chPlatform;
+  if (chMobile !== undefined) out.chMobile = chMobile;
+  return out;
+}
+
 export function checkWire(
   headers: HeaderReader,
   parsed: Extract<
@@ -812,6 +831,11 @@ export function checkWire(
       edge,
       bot.detail,
     );
+  }
+
+  // STAGE-1 A6: the browser itself says it is driven by automation software. Unambiguous -> edge.
+  if (((payload.f ?? 0) & FLAG_AUTOMATION) !== 0) {
+    return drop('bot', edge, 'automation');
   }
 
   const timeResult =
@@ -914,6 +938,7 @@ export function checkWire(
             edge.asOrganization,
           )
         : undefined,
+    hints: clientHints(headers, edge),
   };
 
   return {

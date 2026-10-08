@@ -88,9 +88,29 @@ if (process.argv.includes('--resync')) {
 
   const port = Number(env.TW_API_PORT || 8788);
   const hostname = env.TW_API_HOST || '127.0.0.1';
-  serve({ fetch: server.fetch, port, hostname }, () => {
+  const listening = serve({ fetch: server.fetch, port, hostname }, () => {
     console.log(`TailWatch API + dashboard: ${publicUrl}`);
     if (kv instanceof UnconfiguredKv) console.log('  WARNING: Cloudflare KV not configured (CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID, CF_API_TOKEN): new sites will not activate.');
     if (analytics instanceof UnconfiguredReader) console.log('  WARNING: ClickHouse read user not configured (TW_CH_READ_PASSWORD): the first-pageview check cannot run.');
   });
+  listening.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(portInUseMessage(port));
+      process.exit(1);
+    }
+    throw error;
+  });
+}
+
+/** What to do when the port is taken: almost always an older `pnpm app` still running. */
+export function portInUseMessage(port: number): string {
+  return [
+    ``,
+    `Port ${port} is already in use: TailWatch (or something else) is already running there.`,
+    `  - If it is an older TailWatch window, go to it and press Ctrl+C, then run pnpm app again.`,
+    `  - Or stop whatever holds the port (Windows PowerShell):`,
+    `      Get-NetTCPConnection -LocalPort ${port} | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`,
+    `  - Or use another port: set TW_API_PORT=8789 in the root .env (and TW_PUBLIC_URL to match).`,
+    ``,
+  ].join('\n');
 }

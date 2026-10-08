@@ -125,3 +125,9 @@ describe('wire contract', () => {
     expect(WIRE_FIELDS).toHaveLength(14);
   });
 });
+describe('STAGE-1 A6 flags (Stage 7)', () => {
+  it('bit values are frozen', async () => {
+    const w = await import('../src/wire');
+    expect([w.FLAG_FIRST_PAGEVIEW, w.FLAG_HASH_ROUTE, w.FLAG_AUTOMATION, w.FLAG_UA_MISMATCH]).toEqual([1, 2, 4, 8]);
+  });
+});

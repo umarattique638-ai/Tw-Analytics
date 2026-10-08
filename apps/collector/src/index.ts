@@ -214,7 +214,9 @@ async function readSiteConfig(env: Env, publicKey: string): Promise<SiteConfig |
 
 function edgeMeta(request: Request, site: SiteConfig | null, receivedAt: number): EdgeMeta {
   const cf = (request as Request & { cf?: { country?: string; asn?: number; asOrganization?: string } }).cf;
-  return { receivedAt, site, country: cf?.country, asn: cf?.asn, asOrganization: cf?.asOrganization };
+  // https: browsers send client hints (Sec-CH-UA) only over TLS; the consumer's headless scoring needs to know.
+  const https = request.url.startsWith('https:');
+  return { receivedAt, site, country: cf?.country, asn: cf?.asn, asOrganization: cf?.asOrganization, https };
 }
 
 async function allowed(limiter: RateLimitBinding | undefined, key: string): Promise<boolean> {

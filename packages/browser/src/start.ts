@@ -31,7 +31,15 @@ export interface Api {
 export const NOOP: Api = { page() {}, track() {}, consent() {} };
 const OPT_OUT = 'tw_disable';
 
-type Win = Window & { __tw?: Api; navigation?: EventTarget };
+type Win = Window & {
+  __tw?: Api;
+  navigation?: EventTarget;
+  /** Automation globals (PhantomJS, Nightmare, Cypress): STAGE-1 A6. */
+  _phantom?: unknown;
+  callPhantom?: unknown;
+  __nightmare?: unknown;
+  Cypress?: unknown;
+};
 
 /** Visitor opt-out (PLAN 8.1): ?tw_disable=1 sets it permanently, ?tw_disable=0 clears it. */
 function optedOut(): boolean {
@@ -109,6 +117,15 @@ export function start(o: Options): Api {
     id,
     send: transport(o.api),
     warn: (m) => console.warn(m),
+    // Same signals Plausible checks, but we send + flag instead of going silent (STAGE-1 A6).
+    automated: () => !!(navigator.webdriver || w._phantom || w.callPhantom || w.__nightmare || w.Cypress),
+    uaMismatch: () => {
+      // Only Chromium has userAgentData, and a real one always lists its brands. An EMPTY list is what a UA
+      // override without metadata leaves (Puppeteer's setUserAgent); a headless brand speaks for itself.
+      // Deliberately NOT "UA lacks Chrome": TVs, WebView2/Electron apps and UA-switcher extensions do that.
+      const d = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData;
+      return !!d && (!d.brands.length || d.brands.some((b) => /headless/i.test(b.brand)));
+    },
   });
 
   const api: Api = {

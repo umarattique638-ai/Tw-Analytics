@@ -7,7 +7,7 @@ import RangeSelect from '../components/dashboard/RangeSelect';
 import { stats } from '../api/client';
 import type { RangeKey } from '../api/client';
 import { useSession } from '../api/session';
-import { ago, countryName, dropLabel, num } from '../lib/format';
+import { ago, countryName, dropDetail, dropLabel, num } from '../lib/format';
 import { usePoll } from '../lib/usePoll';
 import { useRange } from '../lib/useRange';
 
@@ -85,7 +85,8 @@ export default function SuspiciousPage() {
             </ul>
           )}
           <p className="mt-5 border-t border-slate-100 pt-4 text-[13px] leading-relaxed text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            Dropped hits never count in your stats. If one of your own hosts was dropped, allow it and its hits count from then on.
+            Dropped hits never count in your stats. Bots are recognised by the 843-entry known-bot list, headless-browser
+            checks, datacentre networks and the referrer-spam list. If one of your own hosts was dropped, allow it and its hits count from then on.
           </p>
         </Panel>
 
@@ -112,9 +113,9 @@ export default function SuspiciousPage() {
                 <li key={`${d.reason}-${d.detail}-${d.country}-${d.asn}-${i}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
                   <span className={`w-36 flex-none rounded-md px-2 py-1 text-center text-xs font-semibold ${toneOf(d.reason).badge}`}>{dropLabel(d.reason)}</span>
                   <div className="min-w-0 flex-1 basis-56">
-                    <p className="truncate font-mono text-[13px] font-medium text-slate-800 dark:text-slate-100">{d.detail || '—'}</p>
+                    <p className="truncate text-[13px] font-medium text-slate-800 dark:text-slate-100" title={d.detail}>{dropDetail(d.reason, d.detail) || '—'}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {countryName(d.country)}{d.asn ? ` · AS${d.asn}` : ''} · {ago(d.last)}
+                      <span className="font-mono">{d.detail || '—'}</span> · {countryName(d.country)}{d.asn ? ` · AS${d.asn}` : ''} · {ago(d.last)}
                     </p>
                   </div>
                   <span className="w-20 flex-none text-right text-sm font-semibold tabular-nums">{num(d.hits)} hits</span>

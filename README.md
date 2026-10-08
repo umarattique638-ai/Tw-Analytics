@@ -13,6 +13,8 @@ tw.js live and proven on a real page; React/Next/Vue/Svelte adapters; Next.js, V
 apps record exactly one pageview per navigation in dev/StrictMode. Stage 5: one API + the dashboard
 (signup, add site, snippet, verify, first pageview): `pnpm app` -> http://localhost:8788.
 Stage 6: the dashboard runs on real data only (Query API, every query in `docs/QUERIES.md`).
+Stage 7: precision. Full Matomo bots.yml (843) + headless scoring + referrer spam in the consumer, a reviewed
+datacentre ASN list at the edge, every drop itemised. Plausible's Puppeteer test: **0 of 95** (`pnpm e2e:precision`).
 
 Install on a site (script tag):
 

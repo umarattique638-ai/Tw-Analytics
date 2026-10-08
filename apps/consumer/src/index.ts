@@ -123,6 +123,7 @@ export async function handleQueue(batch: QueueBatchLike, env: Env, overrides: Ov
       poison: result.poison,
       ignored: result.ignored,
       sessions_started: result.sessionsStarted,
+      precision_drops: result.precisionDrops,
     });
   } catch (error) {
     const delaySeconds = retryDelaySeconds(attempts);

@@ -80,8 +80,10 @@ export type QueueMessage =
 /**
  * Reasons the CONSUMER records in dropped_hits, in addition to the edge DropReason values.
  * consumer_invalid = a queued message the consumer could not use (itemised, never silent).
+ * referrer_spam    = the referrer is on the referrer-spam list (Stage 7); detail = the listed domain.
+ * The consumer also records `bot` (detail bots_yml:<name> or headless:<signals>), see apps/consumer/src/precision.
  */
-export type ConsumerDropReason = 'consumer_invalid';
+export type ConsumerDropReason = 'consumer_invalid' | 'referrer_spam';
 
 /**
  * De-duplication key for one event (STAGE-1 D5).

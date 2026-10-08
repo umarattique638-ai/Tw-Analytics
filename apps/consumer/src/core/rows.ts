@@ -83,6 +83,14 @@ export interface SessionRecord {
   device: string;
   browser: string;
   os: string;
+  /**
+   * Stage 7 sessionisation hardening: set when the consumer dropped one of this visitor's hits as
+   * referrer spam (only the first hit of a visit carries the referrer). Every later event of the same
+   * visitor inside the session window is dropped with the same itemised reason, so the spam visit cannot
+   * leak its follow-up events (engagement, SPA navigations) into the counts. Lives exactly as long as the
+   * session record (30 min sliding).
+   */
+  quarantine?: { reason: string; detail: string };
 }
 
 export interface Enriched {

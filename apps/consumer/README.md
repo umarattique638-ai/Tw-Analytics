@@ -19,6 +19,22 @@ Any outage (R2, Durable Object, ClickHouse) throws, and the handler retries the 
 backoff (15 s, 30 s, 60 s … capped at 15 min). After `max_retries` the queue moves it to the DLQ.
 Nothing in the log can carry request data: only counts and error codes (invariant 12).
 
+## Precision pass (`src/precision/`) — Stage 7
+
+Runs on every event after the de-dup check, before sessions. Every verdict becomes a `dropped_hits` row:
+
+| Reason | Detail | Rule |
+|---|---|---|
+| `bot` | `bots_yml:<name>` | Matomo device-detector `bots.yml`, all 843 entries, applied exactly like device-detector (one combined regex, ~0.05 ms per human UA), + `OWN` patterns for gaps the corpus found |
+| `bot` | `headless:<signals>` | `headless.ts`: client hints vs User-Agent, Accept-Language, 800 px, tracker flag `FLAG_UA_MISMATCH`. One strong or two weak signals |
+| `referrer_spam` | `<domain>` | Matomo referrer-spam list, the domain and its subdomains |
+
+A flagged visitor is quarantined for the session window (`SessionRecord.quarantine`), so its later hits
+are dropped with the same reason. Lists are generated from `infra/lists` (`pnpm lists:generate`); never
+edit `lists/*.generated.ts`. Tests: `test/precision.test.ts` + the labelled corpus `test/corpus/bots-corpus.json`
+(add a row for every false positive or miss ever found), and ⭐ `test/e2e/puppeteer95.e2e.test.ts`
+(`pnpm e2e:precision`). Live: `scripts/bots-live.mjs` (`pnpm bots:live`).
+
 ## Session + de-dup store (`src/state/`) — STAGE-1 D4, D5
 
 - `store.ts`: plain SQLite logic (tables `sessions`, `dedupe`, TTL columns, bounded sweeps). Runs in the

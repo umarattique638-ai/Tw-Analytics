@@ -1,0 +1,26 @@
+{
+  "matomo-bots.yml": {
+    "repo": "matomo-org/device-detector",
+    "path": "regexes/bots.yml",
+    "commit": "e83ce7a97f05d8ee3e1eee7ea77a73b3bdfebd9a",
+    "licence": "LGPL-3.0-or-later",
+    "fetched": "2026-10-08",
+    "sha256": "05278d5c4d800a3afa3436291f60a5a44312b9cb47e90e1c6f71c0aaffa588dd"
+  },
+  "matomo-referrer-spam.txt": {
+    "repo": "matomo-org/referrer-spam-list",
+    "path": "spammers.txt",
+    "commit": "eaaa5eaa6990be274fb560488a155459f735318d",
+    "licence": "Public domain",
+    "fetched": "2026-10-08",
+    "sha256": "640a63e8324b441c5f22240308e3925cea57464ffaafe6174cfd46c3925c6751"
+  },
+  "bad-asn-list.csv": {
+    "repo": "brianhama/bad-asn-list",
+    "path": "bad-asn-list.csv",
+    "commit": "b825d2e0e09684842599b75881fc76cb42f0e8c6",
+    "licence": "MIT",
+    "fetched": "2026-10-08",
+    "sha256": "0af8e58dc07ba070a10c9083a1a9f5c9fc76be35fab32bb6d144e72caa20a252"
+  }
+}

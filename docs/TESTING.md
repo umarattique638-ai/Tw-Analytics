@@ -323,3 +323,42 @@ checks every dashboard number against hand-computed values, and drops it again.
 
 Then open the dashboard. Every number is real (Live traffic, Events, Suspicious activity, Reports → Export CSV).
 To check any number yourself, copy its query from `docs/QUERIES.md` into the ClickHouse SQL console.
+
+## 10. Stage 7 — precision (bots)
+
+```powershell
+# folder: ttw
+pnpm install
+pnpm lists:check          # the bot / spam / ASN modules match infra/lists
+pnpm --filter @tailwatch/consumer test   # includes the labelled corpus: 0 false positives, 0 misses
+pnpm e2e:precision        # ⭐ Plausible's Puppeteer test on YOUR ClickHouse Cloud: "TailWatch counted 0 of 95"
+```
+
+`e2e:precision` runs 95 real Puppeteer sessions (+10 stealth) through tw.js → collector → queue → consumer
+→ a scratch database `tw_p95_<number>` in ClickHouse Cloud, prints a table of what was dropped and why,
+and drops the database again. It needs the Chromium from Stage 4 (`playwright-core install chromium`).
+
+### Live, against your real demo site
+
+Deploy the new consumer FIRST, then the collector (the collector serves the new tw.js v3):
+
+```powershell
+# folder: ttw\apps\consumer
+pnpm exec wrangler deploy
+# folder: ttw\apps\collector
+pnpm run deploy
+# folder: ttw   (do not open the demo site yourself while this runs)
+pnpm bots:live
+```
+
+`bots:live` sends 95 Puppeteer sessions from your PC to the demo site (site 101), waits for the
+pipeline, then asks ClickHouse (read-only user) what was counted. PASS = `TailWatch counted 0 of 95`.
+The drops then show up, itemised, on the dashboard's **Suspicious activity** page.
+
+### Updating the lists (every few weeks)
+
+```powershell
+# folder: ttw
+pnpm lists:update   # prints what was added/removed upstream — READ IT (a new ASN that is a home ISP? add it to infra/lists/asn-overrides.json "never")
+pnpm --filter @tailwatch/consumer test
+```

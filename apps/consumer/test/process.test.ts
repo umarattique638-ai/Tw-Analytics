@@ -276,3 +276,60 @@ describe('drops are itemised, poison does not break the batch', () => {
     expect(rowsOf(h, 'dropped_hits')[0]).toMatchObject({ site_id: 9, reason: 'consumer_invalid', detail: 'bad_event_shape' });
   });
 });
+
+describe('Stage 7: precision pass + session quarantine', () => {
+  const GOOGLEBOT = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+  const HINTS = { chUa: '"Chromium";v="126", "Google Chrome";v="126"', chPlatform: '"Windows"', chMobile: '?0', lang: true, https: true };
+
+  it('a bots.yml match is itemised in dropped_hits with the bot name, nothing reaches events or sessions', async () => {
+    const h = harness();
+    const r = await processBatch([ev({ userAgent: GOOGLEBOT, country: 'US', asn: 15169 })], h.ports, OPT);
+    expect(r).toMatchObject({ events: 0, precisionDrops: 1, dropsRecorded: 1, sessionsStarted: 0 });
+    expect(rowsOf(h, 'events')).toEqual([]);
+    expect(rowsOf(h, 'sessions')).toEqual([]);
+    expect(rowsOf(h, 'dropped_hits')).toEqual([
+      expect.objectContaining({ site_id: 7, reason: 'bot', detail: 'bots_yml:Googlebot', country_code: 'US', asn: 15169, hits: 1 }),
+    ]);
+  });
+
+  it('referrer spam is its own reason, with the listed domain', async () => {
+    const h = harness();
+    await processBatch([ev({ referrer: 'https://www.semalt.com/', hints: HINTS })], h.ports, OPT);
+    expect(rowsOf(h, 'dropped_hits')[0]).toMatchObject({ reason: 'referrer_spam', detail: 'semalt.com' });
+  });
+
+  it('a flagged visitor stays dropped for the session window: its follow-up events never leak into counts', async () => {
+    const h = harness();
+    // Hit 1 carries the spam referrer; hits 2-3 (SPA navigation, engagement) carry none.
+    await processBatch([ev({ referrer: 'https://semalt.com/', hints: HINTS })], h.ports, OPT);
+    await processBatch(
+      [ev({ seq: 2, path: '/b', occurredAt: T + 5_000, hints: HINTS }, undefined, 'm2'), ev({ seq: 3, name: 'engagement', occurredAt: T + 9_000, engagementMs: 4000, hints: HINTS }, undefined, 'm3')],
+      h.ports,
+      OPT,
+    );
+    expect(rowsOf(h, 'events')).toEqual([]);
+    const drops = rowsOf(h, 'dropped_hits');
+    expect(drops.reduce((n, d) => n + d.hits, 0)).toBe(3);
+    expect(new Set(drops.map((d) => `${d.reason}:${d.detail}`))).toEqual(new Set(['referrer_spam:semalt.com']));
+  });
+
+  it('another visitor on the same site is not affected by the quarantine', async () => {
+    const h = harness();
+    await processBatch([ev({ userAgent: GOOGLEBOT })], h.ports, OPT);
+    const r = await processBatch([ev({ hints: HINTS }, { hash: 'V9', prevHash: 'V8' }, 'm2')], h.ports, OPT);
+    expect(r.events).toBe(1);
+  });
+
+  it('a tracker retry of a dropped hit is a duplicate, not a second drop (insert_id de-dup covers drops too)', async () => {
+    const h = harness();
+    await processBatch([ev({ userAgent: GOOGLEBOT, insertId: 'abc' })], h.ports, OPT);
+    const r = await processBatch([ev({ userAgent: GOOGLEBOT, insertId: 'abc' }, undefined, 'm-retry')], h.ports, OPT);
+    expect(r).toMatchObject({ duplicates: 1, precisionDrops: 0 });
+  });
+
+  it('a real browser (with hints) is untouched', async () => {
+    const h = harness();
+    const r = await processBatch([ev({ hints: HINTS, referrer: 'https://www.google.com/' })], h.ports, OPT);
+    expect(r).toMatchObject({ events: 1, precisionDrops: 0, dropsRecorded: 0 });
+  });
+});

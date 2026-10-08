@@ -18,6 +18,8 @@ const DROP_TEXT: Record<string, string> = {
   verification_agent: 'Install checks (never counted)',
   gpc: 'Visitors with Global Privacy Control on (respected, not counted)',
   identity_unavailable: 'Hits could not be attributed',
+  referrer_spam: 'Hits from referrer-spam domains (filtered)',
+  consumer_invalid: 'Hits that could not be read',
 };
 
 export default function VerifyPage() {

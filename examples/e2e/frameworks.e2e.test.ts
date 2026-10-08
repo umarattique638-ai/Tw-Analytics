@@ -107,7 +107,10 @@ async function journey(host: string, port: number, route: (p: string) => string,
 
   expect(errors).toEqual([]);
   expect(await stack.drops()).toEqual([]);
-  expect(got.map((e) => [e.name, e.path, e.flags])).toEqual([
+  // Bit 8 (FLAG_UA_MISMATCH, Stage 7) is set because the tracker correctly sees a HEADLESS Chromium
+  // (navigator.userAgentData names HeadlessChrome). The consumer would drop these; this suite checks
+  // pageview counting per framework, so that one bit is masked out here and tested in the precision suites.
+  expect(got.map((e) => [e.name, e.path, e.flags & ~8])).toEqual([
     ['pageview', route('/'), flagsFirst],
     ['pageview', route('/about'), flagsNext],
     ['pageview', route('/blog/hello'), flagsNext],

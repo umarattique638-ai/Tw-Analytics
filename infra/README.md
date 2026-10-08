@@ -23,3 +23,11 @@ Tools (read the root .env, see .env.example):
 - `pnpm db:check`, `pnpm db:clickhouse`, `pnpm db:clickhouse:reset`, `pnpm db:clickhouse:user` → `tools/clickhouse.mjs`
 - `pnpm db:mongo`, `pnpm verify:mongo` → `tools/mongo.mjs` (applies control-plane.schema.json, the same
   validators and indexes as the mongosh script; `verify` proves every rule on the real server)
+
+## Bot, spam and datacentre lists (`lists/`, Stage 7)
+
+Vendored upstream data, pinned to a commit — sources, licences and the LGPL note in `lists/SOURCES.md`.
+`tools/lists.mjs`: `generate` (offline, deterministic), `check` (CI: generated modules up to date),
+`update` (download the newest upstream, print the diff for review, regenerate). Our own edits live in
+`lists/asn-overrides.json`: `never` = networks with real people (iCloud Private Relay, WARP, corporate
+gateways, misfiled ISPs), `add` = clouds missing upstream. Every entry has a reason.
