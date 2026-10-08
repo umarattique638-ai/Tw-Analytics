@@ -16,6 +16,7 @@ import {
 import type { PropValue } from './types';
 
 import {
+  FLAG_HASH_ROUTE,
   isKnownWireField,
 } from './wire';
 
@@ -748,7 +749,11 @@ export function checkWire(
    * a tenant-existence oracle.
    */
   const normalized =
-    normalizeUrl(payload.u);
+    normalizeUrl(
+      payload.u,
+      undefined,
+      ((payload.f ?? 0) & FLAG_HASH_ROUTE) !== 0,
+    );
 
   if (!normalized) {
     return reject(

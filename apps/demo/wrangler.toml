@@ -1,0 +1,10 @@
+# Stage 4 done-when: "a real page on a real domain produces correct rows".
+# A static demo site on its own workers.dev host (no Worker code, static assets only: free).
+# It is a CUSTOMER site as far as TailWatch is concerned: its host must be in a site's allowedHosts.
+name = "tailwatch-demo"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./public"
+# Every unknown path returns index.html, so reloading /pricing works like a real SPA host.
+not_found_handling = "single-page-application"

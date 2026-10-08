@@ -1,4 +1,4 @@
-# Testing Stages 1–3 on your computer
+# Testing Stages 1–4 on your computer
 
 Real systems, no mocks: **ClickHouse Cloud** (online) and **your local MongoDB** (the one you open in
 MongoDB Compass). Cloudflare Workers, Queues, KV, R2 and Durable Objects run locally inside workerd
@@ -140,3 +140,75 @@ Stage 4 (tracker). Stages 1–3 are not edited again except by the append-only r
 Still open after this, by design (they need a real Cloudflare deploy, not a test):
 the deployed collector's p99, the Free-plan CPU per consumer batch, and whether the Rate Limiting
 binding exists on the Free plan. Deploy steps: `apps/consumer/README.md`, end of the file.
+
+
+---
+
+## 7. Stage 4 — the tracker (tw.js)
+
+Every command says the folder it runs in. `ttw` = your project folder (`C:\Users\Umar\Downloads\ttw\ttw`).
+
+### 7.1 Tests on your computer (nothing deployed)
+
+```powershell
+# folder: ttw
+pnpm install
+pnpm --filter @tailwatch/collector exec playwright-core install chromium   # once: a test Chromium (~150 MB, free)
+pnpm --filter @tailwatch/browser build      # prints the tw.js size; FAILS over 3072 B gzip
+pnpm --filter @tailwatch/core test          # engine: 23 tests
+pnpm e2e:collector                          # collector fixtures + the tracker in a real Chromium
+```
+
+`e2e:collector` must end with `Test Files 2 passed`. The tracker file proves, in a real browser against
+the collector on workerd: one first pageview, text/plain with no preflight, exactly one pageview per SPA
+navigation (Navigation API and the fallback), hash routes, script loaded twice, consent unknown/granted/
+denied, opt-out, the engagement beacon on leaving, back navigation, localhost skipped, and the demo page.
+
+Instead of the download you can use your installed Chrome or Edge:
+`$env:TW_CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'` (same terminal), then `pnpm e2e:collector`.
+
+### 7.2 Deploy tw.js (the collector serves it)
+
+```powershell
+# folder: ttw
+pnpm --filter @tailwatch/collector run deploy
+```
+
+The output must say `Read 2 files from the assets directory`. Check:
+`https://tailwatch-collector.umarattique638.workers.dev/tw.js` opens a small JavaScript file in the browser.
+
+### 7.3 A real page on a real domain
+
+1. Deploy the demo site (static files only, free):
+   ```powershell
+   # folder: ttw\apps\demo
+   npx wrangler deploy
+   ```
+   It prints `https://tailwatch-demo.umarattique638.workers.dev`.
+2. Register it as a site (id 2) whose allowed host is that address:
+   ```powershell
+   # folder: ttw\apps\collector
+   $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.ToCharArray()
+   $key = 'tw_pub_' + (-join (1..32 | ForEach-Object { $chars | Get-Random }))
+   $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+   $secret = ($b | ForEach-Object { $_.ToString('x2') }) -join ''
+   @{ id = 2; publicKey = $key; allowedHosts = @('tailwatch-demo.umarattique638.workers.dev'); live = $true; region = 'in'; identitySecret = $secret } | ConvertTo-Json -Compress | Set-Content -Encoding ascii site.json
+   npx wrangler kv key put "site:$key" --path site.json --namespace-id 0878a2b0f1c148148ec8dbe73cac767c --remote
+   Remove-Item site.json
+   $key
+   ```
+   The last line prints the key. It is a PUBLIC key (it sits in every page), so it is fine to keep it.
+3. **Wait one minute** (KV propagation, STAGE-1 D8).
+4. In Chrome open `https://tailwatch-demo.umarattique638.workers.dev/?key=` followed by the key.
+   Click: **Pricing**, **Sort by price**, **Docs**, **Sign up**. Then switch to another tab for a moment.
+5. After ~10 s, in the ClickHouse Cloud SQL console:
+   ```sql
+   SELECT timestamp, name, pathname, seq, engagement_ms, is_session_start, props
+   FROM tailwatch.events WHERE site_id = 2 ORDER BY timestamp;
+   ```
+   Expected: `pageview /` (seq 1, session start), `pageview /pricing`, `pageview /docs`, `signup /docs`
+   with `{'plan':'pro'}`, and an `engagement` row with engagement_ms > 0 when you switched tabs.
+   **No** row for "Sort by price" (same page, only a filter changed).
+
+If no rows: an ad blocker may block the collector (that is the "beacon blocked" case PLAN 7 talks
+about; try a window without extensions), or the minute in step 3 was not over.

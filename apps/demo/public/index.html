@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TailWatch demo shop</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 640px; margin: 2rem auto; padding: 0 16px; line-height: 1.5; }
+  nav a { margin-right: 1rem; }
+  code, pre { font-size: .85rem; }
+  pre { background: rgba(127,127,127,.12); padding: .75rem; overflow-x: auto; }
+  button { font: inherit; padding: .4rem .9rem; }
+</style>
+<script>
+  /*
+   * The site key comes from ?key=tw_pub_... once and is remembered in this browser, so the same
+   * page works for any site you register. A real customer page simply has the script tag:
+   *   <script async src="https://COLLECTOR/tw.js?id=tw_pub_..."><\/script>
+   */
+  (function () {
+    var COLLECTOR = 'https://tailwatch-collector.umarattique638.workers.dev';
+    var q = new URLSearchParams(location.search).get('key');
+    try { if (q) localStorage.setItem('tw_demo_key', q); q = q || localStorage.getItem('tw_demo_key'); } catch (e) {}
+    window.tw = window.tw || function () { (tw.q = tw.q || []).push(arguments); };
+    if (!q) return;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = COLLECTOR + '/tw.js?id=' + encodeURIComponent(q);
+    document.head.appendChild(s);
+  })();
+</script>
+</head>
+<body>
+<h1>TailWatch demo shop</h1>
+<nav>
+  <a href="/" data-spa>Home</a>
+  <a href="/pricing" data-spa>Pricing</a>
+  <a href="/docs/" data-spa>Docs</a>
+</nav>
+<main>
+  <h2 id="title"></h2>
+  <p id="body"></p>
+  <button id="sort">Sort by price (replaceState)</button>
+  <button id="signup">Sign up (custom event)</button>
+</main>
+<h3>What should happen</h3>
+<pre id="status"></pre>
+<script>
+  var pages = {
+    '/': ['Home', 'First load: one pageview with the first-pageview flag.'],
+    '/pricing': ['Pricing', 'SPA navigation (pushState): one pageview, after a 50 ms settle.'],
+    '/docs': ['Docs', '"/docs/" is stored as "/docs" (trailing slash normalised).'],
+  };
+  function render() {
+    var p = location.pathname.replace(/\/+$/, '') || '/';
+    var c = pages[p] || ['Not found', ''];
+    document.getElementById('title').textContent = c[0];
+    document.getElementById('body').textContent = c[1] + (location.search ? ' Sorting only changed a non-allowlisted query with replaceState: NO new pageview.' : '');
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-spa]');
+    if (!a) return;
+    e.preventDefault();
+    history.pushState({}, '', a.getAttribute('href'));
+    render();
+  });
+  addEventListener('popstate', render);
+  document.getElementById('sort').onclick = function () { history.replaceState({}, '', location.pathname + '?sort=price'); render(); };
+  document.getElementById('signup').onclick = function () { tw('track', 'signup', { plan: 'pro' }); };
+  render();
+  var key = null; try { key = localStorage.getItem('tw_demo_key'); } catch (e) {}
+  document.getElementById('status').textContent = key
+    ? 'Tracking with ' + key + '\nSwitch tabs or close the page to send an "engagement" beacon.'
+    : 'No site key. Open this page once with ?key=tw_pub_...';
+</script>
+</body>
+</html>

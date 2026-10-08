@@ -1,497 +1,232 @@
-import { WIRE_VERSION, FLAG_FIRST_PAGEVIEW } from '@tailwatch/contract';
-import type { PropValue } from '@tailwatch/contract';
+/**
+ * @tailwatch/core: the tracker engine. No DOM access here; the platform (browser, tests, a future
+ * React Native port) supplies an Env. Everything PLAN 8.1 says about *what* is sent lives here, so
+ * every channel (CDN script, npm, framework adapters) behaves identically (invariant 10).
+ *
+ * Wire: contract v1 (packages/contract/src/wire.ts). Every hit carries s n u q t v i x w,
+ * plus e (engaged ms), f (flags), r (first pageview only), rt, p when present.
+ */
+import { normalizeUrl } from '@tailwatch/contract/url';
+import { FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE } from '@tailwatch/contract/wire';
 
-export type ConsentState = 'unknown' | 'granted' | 'denied';
+/** Sent as `v` on every hit (invariant 9). Bump on every released tracker change. */
+export const TRACKER_VERSION = 1;
+/** = LIMITS.maxBodyBytes (asserted by a test; not imported, to keep the bundle small). */
+export const MAX_BODY_BYTES = 32_768;
+/** SPA route changes settle for this long before a pageview is sent (PLAN 6.1). */
+export const DEBOUNCE_MS = 50;
+/** A hide-flush sends a separate `engagement` hit only when at least this much is unsent. */
+export const ENGAGEMENT_FLUSH_MIN_MS = 1_000;
+/** Hits kept in memory while consent is unknown or the network is down. Oldest dropped first. */
+export const MAX_BUFFER = 100;
+/** Retry delay after a 429 / network failure (the collector's Retry-After is 10 s). */
+export const RETRY_MS = 10_000;
 
-export interface TrackerConfig {
-  site: string;
-  endpoint: string;
-  version?: number;
-  autoPageview?: boolean;
-  hashRouting?: boolean;
-  allowLocal?: boolean;
-  allowIframe?: boolean;
-  disabled?: boolean;
-  debug?: boolean;
-}
+export type Consent = 'unknown' | 'granted' | 'denied';
+export type Props = Record<string, string | number | boolean>;
 
-export interface EventPayload {
-  s: string;
-  n: string;
-  u: string;
-  q: number;
-  t: number;
-  v: number;
-  r?: string;
-  e?: number;
-  rt?: string;
-  w?: number;
-  i?: string;
-  f?: number;
-  p?: Record<string, PropValue>;
-}
+/**
+ * Delivers one body. `hide` = the page is going away (sendBeacon territory).
+ * Resolves true when the hit is done with (delivered, or rejected for good: 4xx other than 429),
+ * false when it should be retried (offline, network error, 429).
+ */
+export type Send = (body: string, hide: boolean) => Promise<boolean>;
 
-export interface CoreEnvironment {
+export interface Env {
   now(): number;
-  url(): string;
+  href(): string;
   referrer(): string;
-  viewportWidth(): number;
-  isVisible(): boolean;
-  isFocused(): boolean;
-  randomId(): string;
-  isOnline(): boolean;
-  onOnline(fn: () => void): () => void;
-  onVisibility(fn: () => void): () => void;
-  onFocus(fn: () => void): () => void;
-  onPageShow(fn: (persisted: boolean) => void): () => void;
+  width(): number;
+  /** Visible AND focused (PLAN 8.1: an unfocused visible tab does not accrue engagement). */
+  active(): boolean;
+  online(): boolean;
+  /** Insert id, unique per hit, <= 64 chars. */
+  id(): string;
+  send: Send;
+  warn(message: string): void;
 }
 
-export type Send = (
-  payload: EventPayload,
-  reason: 'pageview' | 'event' | 'flush'
-) => Promise<boolean> | boolean;
+export interface Config {
+  key: string;
+  hashRouting?: boolean;
+  /** Default 'granted'. 'unknown' = buffer until consent('granted'|'denied'). */
+  consent?: Consent;
+}
+
+export interface PageOptions {
+  /** Defaults to the current location. */
+  url?: string;
+  /** Route template, e.g. /blog/[slug]. */
+  rt?: string;
+  /** Send even if the URL did not change (bfcache restore). */
+  force?: boolean;
+}
 
 export interface Tracker {
-  pageview(url?: string): boolean;
-  track(name: string, props?: Record<string, PropValue>): boolean;
-  setConsent(state: ConsentState): void;
-  getConsent(): ConsentState;
-  flush(): Promise<void>;
-  destroy(): void;
+  page(options?: PageOptions): void;
+  track(name: string, props?: Props): void;
+  consent(state: Consent): void;
+  /** Visibility or focus changed. */
+  activity(): void;
+  /** Page hidden / pagehide: stop the clock, ship what is pending with the beacon. */
+  hide(): void;
+  /** Network back: retry what failed. */
+  flush(): void;
 }
 
-const DEFAULT_VERSION = WIRE_VERSION;
-const MAX_PAYLOAD_BYTES = 32 * 1024;
-const DEFAULT_ENDPOINT = '/e';
+/** A hit before dispatch. q and x are assigned when it is actually sent. */
+type Hit = Record<string, unknown>;
 
-export function normalizeNavigationUrl(input: string): string {
-  try {
-    const u = new URL(input, 'https://tailwatch.invalid');
-    const host = u.hostname.toLowerCase();
+export function createTracker(config: Config, env: Env): Tracker {
+  const hashFlag = config.hashRouting ? FLAG_HASH_ROUTE : 0;
+  let consent: Consent = config.consent ?? 'granted';
+  let seq = 0;
+  let first = true;
+  let lastPage: string | undefined;
+  let pending: PageOptions | undefined;
+  let debounce: ReturnType<typeof setTimeout> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Waiting for consent. */
+  let held: Hit[] = [];
+  /** Dispatched (q assigned) but not delivered. */
+  let retry: Hit[] = [];
+  let engaged = 0;
+  let since = env.active() ? env.now() : 0;
 
-    let pathname = u.pathname || '/';
+  const tick = () => {
+    const now = env.now();
+    if (since) engaged += now - since;
+    return now;
+  };
+  const takeEngaged = () => {
+    since = since && tick();
+    const e = engaged;
+    engaged = 0;
+    return e;
+  };
 
-    if (pathname.length > 1 && pathname.endsWith('/')) {
-      pathname = pathname.slice(0, -1);
-    }
+  const cap = (list: Hit[], hit: Hit) => {
+    list.push(hit);
+    if (list.length > MAX_BUFFER) list.shift();
+  };
 
-    const allowed = new URLSearchParams();
+  const scheduleRetry = () => {
+    retryTimer ??= setTimeout(() => {
+      retryTimer = undefined;
+      flush(false);
+    }, RETRY_MS);
+  };
 
-    for (const [k, v] of u.searchParams) {
-      const key = k.toLowerCase();
-
-      if (
-        key.startsWith('utm_') ||
-        key === 'gclid' ||
-        key === 'fbclid'
-      ) {
-        allowed.set(key, v);
-      }
-    }
-
-    const query = [...allowed.entries()].sort(([a], [b]) =>
-      a.localeCompare(b)
+  const deliver = (hit: Hit, hide: boolean) => {
+    if (!env.online()) return cap(retry, hit), scheduleRetry();
+    hit.x = env.now();
+    const body = JSON.stringify(hit);
+    // Bytes, not UTF-16 units: a body over the collector's cap would be a 413, so never send it.
+    if (new Blob([body]).size > MAX_BODY_BYTES) return env.warn(`[tailwatch] event "${hit.n}" over 32 KB, dropped`);
+    env.send(body, hide).then(
+      (done) => done || (cap(retry, hit), scheduleRetry()),
+      () => (cap(retry, hit), scheduleRetry()),
     );
+  };
 
-    return `${u.protocol.toLowerCase()}//${host}${pathname}${
-      query.length ? `?${new URLSearchParams(query)}` : ''
-    }`;
-  } catch {
-    return input.split('#', 1)[0];
-  }
-}
+  const dispatch = (hit: Hit, hide = false) => {
+    // q is per page load and counts DISPATCHED hits only, so a gap means a lost beacon,
+    // never a hit we chose not to send (consent).
+    hit.q = ++seq;
+    deliver(hit, hide);
+  };
 
-export function resolveConfig(
-  input: Partial<TrackerConfig> & { site: string },
-  locationUrl = ''
-): TrackerConfig {
-  const source = locationUrl ? new URL(locationUrl) : null;
+  const flush = (hide: boolean) => {
+    const again = retry;
+    retry = [];
+    again.forEach((hit) => deliver(hit, hide));
+  };
 
-  const site =
-    input.site ||
-    source?.searchParams.get('tw_site') ||
-    '';
+  const emit = (hit: Hit, hide = false) => {
+    if (consent === 'granted') dispatch(hit, hide);
+    else if (consent === 'unknown') cap(held, hit);
+  };
 
-  const endpoint =
-    input.endpoint ||
-    source?.searchParams.get('tw_endpoint') ||
-    DEFAULT_ENDPOINT;
+  const make = (n: string, u: string, extra: Hit): Hit => {
+    const e = takeEngaged();
+    const h: Hit = { s: config.key, n, u, t: env.now(), v: TRACKER_VERSION, i: env.id(), w: env.width(), ...extra };
+    if (e) h.e = e;
+    if (hashFlag) h.f = ((h.f as number) | 0) | hashFlag;
+    return h;
+  };
+
+  /** The contract's own normaliser: the client never sends a query parameter the server would strip. */
+  const norm = (href: string) => normalizeUrl(href, undefined, !!hashFlag)?.href;
+
+  const sendPage = (o: PageOptions, hide = false) => {
+    const u = norm(o.url ?? env.href());
+    if (!u) return; // not http(s): file://, about:blank, ...
+    // The single de-dup guard (invariant 10): StrictMode double effects, replaceState noise,
+    // trailing slashes and non-allowlisted query changes all normalise to the same key.
+    if (u === lastPage && !o.force) return;
+    lastPage = u;
+    const extra: Hit = {};
+    if (o.rt) extra.rt = o.rt;
+    if (first) {
+      first = false;
+      extra.f = FLAG_FIRST_PAGEVIEW;
+      const r = env.referrer().split(/[?#]/)[0];
+      if (r) extra.r = r;
+    }
+    emit(make('pageview', u, extra), hide);
+  };
+
+  const firePending = (hide = false) => {
+    clearTimeout(debounce);
+    debounce = undefined;
+    const o = pending;
+    pending = undefined;
+    if (o) sendPage(o, hide);
+  };
 
   return {
-    site,
-    endpoint,
-    version: input.version ?? DEFAULT_VERSION,
-    autoPageview: input.autoPageview ?? true,
-    hashRouting: input.hashRouting ?? false,
-    allowLocal: input.allowLocal ?? false,
-    allowIframe: input.allowIframe ?? false,
-    disabled: input.disabled ?? false,
-    debug: input.debug ?? false,
-  };
-}
+    page(o = {}) {
+      // The first pageview goes immediately (PLAN 8.1: get it out before a bounce);
+      // route changes settle for DEBOUNCE_MS, last one wins.
+      if (first) return sendPage(o);
+      pending = o;
+      clearTimeout(debounce);
+      debounce = setTimeout(firePending, DEBOUNCE_MS);
+    },
 
-function isLocalUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
+    track(name, props) {
+      const u = norm(env.href());
+      if (!u) return;
+      emit(make(name, u, props && Object.keys(props).length ? { p: props } : {}));
+    },
 
-    return (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '::1' ||
-      host.endsWith('.localhost')
-    );
-  } catch {
-    return false;
-  }
-}
+    consent(state) {
+      consent = state;
+      const list = held;
+      held = [];
+      if (state === 'granted') list.forEach((h) => dispatch(h));
+    },
 
-function bytes(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
-}
+    activity() {
+      if (since) tick();
+      since = env.active() ? env.now() : 0;
+    },
 
-export function createTracker(
-  configInput: TrackerConfig,
-  env: CoreEnvironment,
-  send: Send
-): Tracker {
-  const config = {
-    ...configInput,
-    version: configInput.version ?? DEFAULT_VERSION,
-  };
-
-  let sequence = 0;
-  let consent: ConsentState = 'granted';
-  let lastNavigation = '';
-  let pending: EventPayload[] = [];
-  let destroyed = false;
-  let firstPageview = true;
-
-  let engagementStarted =
-    env.isVisible() && env.isFocused()
-      ? env.now()
-      : null;
-
-  let engagementMs = 0;
-
-  const unsubscribers: Array<() => void> = [];
-
-  const blocked = (): boolean => {
-    if (destroyed || config.disabled || !config.site) {
-      return true;
-    }
-
-    const url = env.url();
-
-    if (!config.allowLocal && isLocalUrl(url)) {
-      return true;
-    }
-
-    return false;
-  };
-
-  const stopEngagement = () => {
-    if (engagementStarted !== null) {
-      engagementMs += Math.max(
-        0,
-        env.now() - engagementStarted
-      );
-
-      engagementStarted = null;
-    }
-  };
-
-  const startEngagement = () => {
-    if (
-      engagementStarted === null &&
-      env.isVisible() &&
-      env.isFocused()
-    ) {
-      engagementStarted = env.now();
-    }
-  };
-
-  const makePayload = (
-    name: string,
-    url: string,
-    props?: Record<string, PropValue>
-  ): EventPayload => {
-    sequence += 1;
-
-    const payload: EventPayload = {
-      s: config.site,
-      n: name,
-      u: url,
-      q: sequence,
-      t: env.now(),
-      v: config.version ?? DEFAULT_VERSION,
-      r: env.referrer(),
-      e: engagementMs,
-      w: env.viewportWidth(),
-      i: env.randomId(),
-    };
-
-    if (firstPageview && name === 'pageview') {
-      payload.f = FLAG_FIRST_PAGEVIEW;
-    }
-
-    if (props && Object.keys(props).length) {
-      payload.p = props;
-    }
-
-    engagementMs = 0;
-
-    return payload;
-  };
-
-  const enqueue = (
-    payload: EventPayload,
-    reason: 'pageview' | 'event' | 'flush'
-  ): boolean => {
-    const encoded = JSON.stringify(payload);
-
-    if (bytes(encoded) > MAX_PAYLOAD_BYTES) {
-      if (config.debug) {
-        console.warn(
-          '[tailwatch] payload exceeds 32 KiB and was dropped'
-        );
+    hide() {
+      firePending(true);
+      if (since) tick();
+      since = 0;
+      if (engaged >= ENGAGEMENT_FLUSH_MIN_MS) {
+        const u = norm(env.href());
+        if (u) emit(make('engagement', u, {}), true);
       }
+      if (consent === 'granted') flush(true);
+    },
 
-      return false;
-    }
-
-    if (consent === 'unknown') {
-      pending.push(payload);
-      return true;
-    }
-
-    if (consent === 'denied') {
-      return false;
-    }
-
-    if (!env.isOnline()) {
-      pending.push(payload);
-      return true;
-    }
-
-    const result = send(payload, reason);
-
-    if (result instanceof Promise) {
-      void result.then(ok => {
-        if (!ok) {
-          pending.push(payload);
-        }
-      });
-
-      return true;
-    }
-
-    if (!result) {
-      pending.push(payload);
-    }
-
-    return result;
-  };
-
-  const pageview = (
-    url = env.url(),
-    force = false
-  ): boolean => {
-    if (blocked()) {
-      return false;
-    }
-
-    const normalized = normalizeNavigationUrl(url);
-
-    if (
-      !force &&
-      normalized === lastNavigation
-    ) {
-      return false;
-    }
-
-    lastNavigation = normalized;
-
-    const payload = makePayload(
-      'pageview',
-      url
-    );
-
-    const sent = enqueue(
-      payload,
-      'pageview'
-    );
-
-    firstPageview = false;
-
-    return sent;
-  };
-
-  const track = (
-    name: string,
-    props?: Record<string, PropValue>
-  ): boolean => {
-    if (blocked() || !name) {
-      return false;
-    }
-
-    return enqueue(
-      makePayload(
-        name,
-        env.url(),
-        props
-      ),
-      'event'
-    );
-  };
-
-  const flush = async () => {
-    if (
-      consent !== 'granted' ||
-      !env.isOnline() ||
-      !pending.length
-    ) {
-      return;
-    }
-
-    const items = pending;
-    pending = [];
-
-    for (const payload of items) {
-      const ok = await send(
-        payload,
-        'flush'
-      );
-
-      if (!ok) {
-        pending.push(payload);
-      }
-    }
-  };
-
-  const setConsent = (
-    state: ConsentState
-  ) => {
-    consent = state;
-
-    if (state === 'denied') {
-      pending = [];
-    }
-
-    if (state === 'granted') {
-      void flush();
-    }
-  };
-
-  const flushEngagement = () => {
-    if (engagementMs <= 0) {
-      return;
-    }
-
-    if (pending.length) {
-      const last =
-        pending[pending.length - 1]!;
-
-      last.e =
-        (last.e ?? 0) +
-        engagementMs;
-
-      engagementMs = 0;
-
-      return;
-    }
-
-    const payload =
-      makePayload(
-        'engagement',
-        env.url()
-      );
-
-    void enqueue(
-      payload,
-      'event'
-    );
-  };
-
-  const onVisibility = () => {
-    if (
-      env.isVisible() &&
-      env.isFocused()
-    ) {
-      startEngagement();
-    } else {
-      stopEngagement();
-
-      if (!env.isVisible()) {
-        flushEngagement();
-      }
-    }
-
-    if (!env.isVisible()) {
-      void flush();
-    }
-  };
-
-  const onFocus = () => {
-    if (
-      env.isVisible() &&
-      env.isFocused()
-    ) {
-      startEngagement();
-    } else {
-      stopEngagement();
-
-      if (!env.isVisible()) {
-        flushEngagement();
-      }
-    }
-  };
-
-  unsubscribers.push(
-    env.onOnline(() => void flush())
-  );
-
-  unsubscribers.push(
-    env.onVisibility(onVisibility)
-  );
-
-  unsubscribers.push(
-    env.onFocus(onFocus)
-  );
-
-  unsubscribers.push(
-    env.onPageShow(persisted => {
-      if (persisted) {
-        pageview(
-          env.url(),
-          true
-        );
-      }
-    })
-  );
-
-  return {
-    pageview,
-    track,
-    setConsent,
-    getConsent: () => consent,
-    flush,
-
-    destroy: () => {
-      destroyed = true;
-      stopEngagement();
-
-      for (
-        const unsubscribe
-        of unsubscribers
-      ) {
-        unsubscribe();
-      }
-
-      unsubscribers.length = 0;
+    flush() {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      flush(false);
     },
   };
 }
-
-export {
-  MAX_PAYLOAD_BYTES
-};

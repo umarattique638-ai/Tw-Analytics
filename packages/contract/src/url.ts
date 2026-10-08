@@ -11,7 +11,23 @@ export const DEFAULT_QUERY_ALLOWLIST = [
 ] as const;
 
 
-export function normalizeUrl(input: string, allow: readonly string[] = DEFAULT_QUERY_ALLOWLIST): NormalizedUrl | null {
+/**
+ * A hash route is a fragment that starts with `#/` or `#!/` (hash routers: Vue `createWebHashHistory`,
+ * React Router `HashRouter`, Angular `useHash`). Only kept when the hit carries FLAG_HASH_ROUTE
+ * (STAGE-1 A4). Its own `?query` is dropped and its trailing slash removed, like the path's.
+ */
+function hashRoute(hash: string): string {
+  const m = /^#!?(\/[^?]*)/.exec(hash);
+  if (!m) return '';
+  const route = m[1]!.length > 1 ? m[1]!.replace(/\/+$/, '') || '/' : '/';
+  return `#${hash[1] === '!' ? '!' : ''}${route}`;
+}
+
+export function normalizeUrl(
+  input: string,
+  allow: readonly string[] = DEFAULT_QUERY_ALLOWLIST,
+  keepHashRoute = false,
+): NormalizedUrl | null {
   let u: URL;
   try {
     u = new URL(input);
@@ -32,7 +48,12 @@ export function normalizeUrl(input: string, allow: readonly string[] = DEFAULT_Q
   const query = new URLSearchParams(kept).toString();
 
   const authority = u.port ? `${host}:${u.port}` : host;
-  return { href: `${u.protocol}//${authority}${path}${query ? `?${query}` : ''}`, host, path };
+  const hash = keepHashRoute ? hashRoute(u.hash) : '';
+  return {
+    href: `${u.protocol}//${authority}${path}${query ? `?${query}` : ''}${hash}`,
+    host,
+    path: path + hash,
+  };
 }
 
 export function hostAllowed(host: string, allowed: readonly string[]): boolean {

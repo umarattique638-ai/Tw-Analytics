@@ -321,6 +321,15 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 11. OWNER DECISION 2026-10-07: development and testing use ClickHouse CLOUD (online) and the owner's LOCAL MongoDB (opened in Compass). Settings live in the git-ignored root .env (see .env.example); docs/TESTING.md is the step-by-step test guide; `pnpm verify:stages` runs every Stage 1-3 check against them.
 9. OWNER RULE 2026-10-07: use Cloudflare FREE features only (no paid add-ons). Free-plan limits and their consequences: docs/contract/CLOUDFLARE-VERIFICATION.md and STAGE-1 D9. R2 is activated on the account.
 10. Drop-reason header (STAGE-1 D2): production sends no x-tw-dropped header (existence oracle); EXPOSE_DROP_REASON="true" only in dev/staging.
+12. DECIDED 2026-10-08 (Stage 4, owner: "follow PLAN and BUILD-ORDER, where they are silent do what is best"):
+    a. No domain yet (tailwatch.com is not owned). tw.js is served by the collector itself through Workers static assets (free), so the script tag is `https://tailwatch-collector.<account>.workers.dev/tw.js?id=tw_pub_...` and the default endpoint is the script's own origin + `/e`. Moving to cdn./in. later is a DNS + one-line change; `data-api` already overrides the endpoint.
+    b. Consent default = granted (PLAN 6.1: Tier A is "always on"). `data-consent="required"` (CDN) / `consent: 'unknown'` (npm) starts in unknown = buffer, send nothing, until `tw('consent','granted'|'denied')` (PLAN 10.5).
+    c. Hash routers: opt-in `data-hash` / `hashRouting: true`, carried on the wire as FLAG_HASH_ROUTE (STAGE-1 A4).
+    d. The client sends the URL already normalised by the contract's own normalizeUrl, so a non-allowlisted query parameter (often PII: ?email=) never leaves the browser. Referrer: query and fragment stripped on the client too.
+    e. `engagement` is sent as its own hit on hide only when >= 1 s is unsent; less is carried on the next hit. Keeps queue ops down (Free plan: 10k/day).
+    f. One event per request (the collector takes one payload per body). PLAN 8.1's "halve the batch" is therefore "sendBeacon refused -> fetch without keepalive".
+    g. "Real page on a real domain": apps/demo, a static Worker on its own workers.dev host (free), registered as a customer site.
+    h. npm package: `api` is required until a domain exists (no default endpoint baked into a package).
 
 
 ---------------------------------------------------------------------------------------------------------
@@ -344,6 +353,13 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 - (Owner's Windows run) workerd (Miniflare e2e) crashed at start with an access violation / stack overflow: the known fix is the latest Microsoft Visual C++ Redistributable x64. The CI pipeline job runs the same e2e tests on Linux.
 - (Owner's Windows run) the in-process latency unit test gated on p99 and failed at 21.5 ms with a 1.2 ms median while pnpm ran packages in parallel. Unit tests gate on the median; p99 belongs to the deployed Worker.
 - (Owner's Windows run) workerd crashed until the Microsoft Visual C++ Redistributable x64 was installed (it was missing entirely) and the PC restarted. After that the collector e2e ran on Windows: fixtures, queue and never-5xx pass. Local latency on a laptop (median +21 ms over a no-op Worker right after reboot) is not a done-when; the deployed Worker's p99 and CPU time are.
+- (First real deploy, 2026-10-08) The Workers Rate Limiting binding IS accepted on the Free plan (wrangler 4.148 deployed both [[ratelimits]]): STAGE-1 VERIFY item 2 resolved.
+- (First real deploy) A password pasted by hand into `wrangler secret put` did not match tw_insert: every batch failed with clickhouse_http_403:code_516 (authentication) and was retried silently (Errors: 0 in the dashboard). Set secrets from .env with `wrangler secret bulk` instead of typing them.
+- (First real deploy) Without Workers Logs enabled the consumer's failure reason is invisible. Both wrangler.toml files now set [observability] enabled = true (Free plan: 200K events/day). `wrangler tail` timed out from the owner's network (ETIMEDOUT to 188.114.96.x); the dashboard Observability tab works.
+- (First real deploy) A site written to KV and hit within the same minute is dropped as not_found (STAGE-1 D8). Wait ~60 s after creating a site.
+- (Stage 4) Headless Chromium's User-Agent contains "HeadlessChrome" and the edge drops it as a bot, proved in the browser e2e. Browser tests present a normal Chrome UA; a test asserts the headless one IS dropped.
+- (Stage 4) Playwright request interception (page.route) sits in the path of sendBeacon during unload and made the engagement beacon flaky (2 of 3 runs lost). The e2e serves tw.js from a small front server instead; no interception anywhere.
+- (Stage 4) A `</script>` inside a JavaScript comment inside an inline <script> ends the element early (demo page). Write `<\/script>`.
 - (Stage 1) Stage 2's commit had accidentally truncated docs/contract/STAGE-1.md from 118 to 14 lines. Check `git diff --stat` before committing docs.
 
 ---------------------------------------------------------------------------------------------------------
@@ -365,8 +381,9 @@ Stage 0 done-when: pnpm build passes [x] | CI runs [ ] (needs the GitHub repo) |
 
 Stage 1 contract: FROZEN 2026-10-07 (docs/contract/STAGE-1.md) [x] wire v1 | [x] ClickHouse DDL (applied to ClickHouse 24.8) | [x] MongoDB schema: verify:mongo 14/14 PASS on the owner's local MongoDB 8.2 (2026-10-07) | [x] URL normalisation | [x] metric definitions | [x] 50 fixtures with exact outcomes | [x] 8 CF unknowns + free-plan limits re-verified 2026-10-07 | [x] two-people sessions test.
 Stage 2 collector: DONE 2026-10-07 [x] owner's Windows: e2e fixtures, queue, never-5xx pass on workerd (after VC++ redist) [x] every fixture returns its code (Node + workerd) | [x] never 5xx | [x] messages land in the queue (workerd local Queue) | [x] latency on workerd: collector adds ~3 ms at the median | [ ] real deploy + p99 measured on the deployed Worker
+LIVE 2026-10-08: collector + consumer deployed on the owner's Cloudflare Free account (umarattique638.workers.dev), R2 tailwatch-raw, queues tailwatch-events(+dlq), KV SITE_CONFIG, ClickHouse Cloud user tw_insert. First internet hit -> ClickHouse Cloud row (live-test-5/6).
 Stage 3 storage + consumer: DONE 2026-10-07 [x] owner's Windows + ClickHouse Cloud 26.6: live 6/6, pipeline e2e 5/5, first row in 2.40 s [x] schema applied to the owner's ClickHouse Cloud 26.6 | [x] live suite on Cloud: sessions/rollup/replay/UInt64 pass (row-equality failure was a test JSON-reading bug, fixed) | [x] fixtures in -> exact rows out (real ClickHouse) | [x] session metrics right inside ClickHouse | [x] rollup = raw GROUP BY | [x] replay -> no duplicates (tokens + Durable Object de-dup) | [x] R2 holds the raw file (workerd) | [x] milestone: HTTP pageview -> ClickHouse row in ~1.1 s | [ ] real deploy (R2 bucket, queues, DO migration, ClickHouse user)
-Stage 4 tracker: [ ] (packages/core + packages/browser exist as an unreviewed draft from earlier; not part of this pass)    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
+Stage 4 tracker: 4.0 deploy [x] | 4.1-4.3 core + browser + CDN build [x] in the sandbox (Chromium e2e 15/15, core 23/23, tw.js 2432 B gzip of 3072) [ ] owner's Windows run [ ] deployed /tw.js + demo site rows in ClickHouse Cloud | 4.4 adapters React/Next, Vue, Svelte [ ] | 4.5 done-when: Next.js App Router, Vite SPA, hash-router app, StrictMode [ ]    Stage 5 control plane: [ ]    Stage 6 dashboard: [ ]    Stage 7 precision: [ ]
 
 Leftovers from the first attempt that still exist online. OWNER ORDERED DELETION on 2026-10-05 (delete order: consumer Worker first, then collector, testsite, queues, KV, then the ClickHouse database). Tick when done:
 - [ ] Workers: tailwatch-consumer (first: it is still consuming the queue), tailwatch-collector, tailwatch-testsite

@@ -1,0 +1,51 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build # fails if tw.js is over the 3 KB gzip budget (invariant 13)
+
+  # Stage 1-3 done-when against real servers: MongoDB rules, the Workers runtime (Miniflare/workerd) and ClickHouse.
+  pipeline:
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        ports: ['8123:8123']
+        env:
+          # A password makes the image open the default user to the network (the port mapping);
+          # access management lets the tests create their throwaway INSERT-only user.
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ci-only-password
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1'
+      mongodb:
+        image: mongo:7
+        ports: ['27017:27017']
+    env:
+      TW_CH_URL: http://127.0.0.1:8123
+      TW_CH_USER: default
+      TW_CH_PASSWORD: ci-only-password
+      TW_MONGO_URL: mongodb://127.0.0.1:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: wait for ClickHouse
+        run: for i in $(seq 60); do curl -sf http://127.0.0.1:8123/ping && exit 0; sleep 2; done; exit 1
+      - run: pnpm verify:mongo
+      # Stage 4: the tracker runs in a real Chromium against the collector on workerd.
+      - run: pnpm --filter @tailwatch/collector exec playwright-core install --with-deps chromium
+      - run: pnpm --filter @tailwatch/collector e2e
+      - run: pnpm --filter @tailwatch/consumer live
+      - run: pnpm --filter @tailwatch/consumer e2e

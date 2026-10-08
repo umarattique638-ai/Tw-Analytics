@@ -38,3 +38,14 @@ namespace_id = "1002"
   [ratelimits.simple]
   limit = 100
   period = 10
+
+# Workers Logs (Free plan: 200K events/day). Without it a failing batch's reason is invisible.
+[observability]
+enabled = true
+
+# Stage 4: the tracker script, served from this Worker's own origin (PLAN 2.4: Workers static assets,
+# free and not counted as Worker requests). GET /tw.js is answered from these files without running
+# the Worker; /e, /e.gif and /health are not files, so they still reach the Worker.
+# Built by `pnpm --filter @tailwatch/browser build` (the collector's build/deploy scripts run it).
+[assets]
+directory = "../../packages/browser/dist/cdn"

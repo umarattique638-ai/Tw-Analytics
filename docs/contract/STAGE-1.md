@@ -147,6 +147,7 @@ The documents were silent or contradicted each other on these (PROJECT-NOTES §1
 | **A1** | 2026-10-07 | `rollup_15m_pages` gets `SETTINGS non_replicated_deduplication_window = 1000`, and every consumer insert sets `deduplicate_blocks_in_dependent_materialized_views = 1`. No column changed. | Stage 3 replay test on ClickHouse 24.8: the events table dropped the replayed block but the materialized view re-counted it into the rollup. |
 | **A2** | 2026-10-07 | `infra/clickhouse/002_insert_user.sql`: the consumer user needs column-level `SELECT(site_id, timestamp, pathname, visitor_hash, engagement_ms, name)` on `events`, because a materialized view runs with the inserting user's rights. | Stage 3 workerd pipeline test (ClickHouse error 497 with INSERT-only grants). |
 | **A3** | 2026-10-07 | Edge UA denylist also catches runtime default User-Agents (`undici`, `node`, `Deno/`, `Bun/`, `okhttp/`, `Java/`, `Apache-HttpClient/`). Bot lists are data, not wire contract. | Stage 2 workerd test. |
+| **A4** | 2026-10-08 | New flag bit `FLAG_HASH_ROUTE = 2` in `f`. When set, `normalizeUrl` keeps a `#/route` or `#!/route` fragment (its own `?query` dropped, trailing slash removed) and the stored `path` becomes e.g. `/#/settings`. Without the bit nothing changes. Append-only: `f` already accepted 0-255. | Stage 4: hash-router apps (PLAN 8.1 "Hash-only route change") would otherwise all be stored as `/`. |
 
 ## 10. What is still VERIFY (not assumed true)
 1. Prove the MongoDB rules on a real server: `pnpm verify:mongo` against the owner's local MongoDB
@@ -154,8 +155,7 @@ The documents were silent or contradicted each other on these (PROJECT-NOTES §1
    scratch database, applies the schema, checks all 14 rules and drops it. In the build environment the
    script was only run against a recording fake (MongoDB binaries could not be downloaded there).
    Transactions (Stage 5) additionally need the local server to run as a single-node replica set.
-2. Whether the Workers **Rate Limiting** binding is available on the Free plan. The collector works
-   without it (missing binding = allowed); if `wrangler deploy` rejects it, remove the two `[[ratelimits]]`
-   blocks.
+2. ~~Whether the Workers Rate Limiting binding is available on the Free plan.~~ RESOLVED 2026-10-08: yes,
+   the first real deploy accepted both `[[ratelimits]]` bindings on the Free plan.
 3. Consumer CPU per batch on the Free plan (10 ms) — measure after the first deploy; batch size follows.
 4. `request.cf.country` accuracy and per-isolate regex cost: measured later, never quoted as vendor facts.

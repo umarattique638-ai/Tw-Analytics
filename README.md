@@ -5,12 +5,17 @@ Cloud-only web analytics: one hosted collector, four install surfaces. Read in t
 1. `docs/PROJECT-NOTES.md` - the working notes: rules, checklists, decisions, status board. Start here.
 2. `docs/PLAN.md` - what we are building and why.
 3. `docs/BUILD-ORDER.md` - where to start, in what order, what the customer experiences.
-4. `docs/contract/STAGE-1.md` - the frozen contract and the decisions D1-D13 / amendments A1-A3.
-5. `docs/TESTING.md` - how to test Stages 1-3 against ClickHouse Cloud and your local MongoDB.
+4. `docs/contract/STAGE-1.md` - the frozen contract and the decisions D1-D13 / amendments A1-A4.
+5. `docs/TESTING.md` - how to test Stages 1-4 against ClickHouse Cloud and your local MongoDB.
 
-Status (2026-10-07): Stage 1 frozen, Stage 2 (collector) and Stage 3 (consumer + storage) done, proven
-end to end on the owner's Windows machine against ClickHouse Cloud and local MongoDB. Cloudflare free
-features only. Next: Stage 4 (tracker).
+Status (2026-10-08): Stage 1 frozen, Stages 2-3 done and deployed (Cloudflare Free). Stage 4.1-4.3
+(tracker: core, browser, tw.js served by the collector) built and tested in Chromium. Next: 4.4 adapters.
+
+Install on a site (script tag):
+
+```html
+<script async src="https://tailwatch-collector.<account>.workers.dev/tw.js?id=tw_pub_..."></script>
+```
 
 Requires Node 22+ and pnpm 9 (`npm install -g pnpm@9.15.0`). On Windows also the Microsoft Visual C++
 Redistributable x64 (https://aka.ms/vs/17/release/vc_redist.x64.exe), or the local Workers runtime crashes.
@@ -32,4 +37,6 @@ pnpm --filter @tailwatch/collector dev   # wrangler dev, then open http://localh
 | `apps/collector` | edge Worker `POST /e`, `GET /e.gif` (Stage 2) |
 | `apps/consumer` | Queue consumer + `SessionStateObject` Durable Object (Stage 3) |
 | `infra/` | ClickHouse DDL + insert user, MongoDB control-plane schema |
-| `packages/core`, `packages/browser` | tracker draft from an earlier session, not yet reviewed (Stage 4) |
+| `packages/core` | tracker engine: payload, de-dup guard, debounce, engagement, sequence, consent, retry (Stage 4) |
+| `packages/browser` | browser platform: `tw.js` CDN build (<= 3 KB gzip, enforced) + npm `init()` (Stage 4) |
+| `apps/demo` | static demo site on its own workers.dev host: the "real page" of Stage 4 |

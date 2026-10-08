@@ -14,6 +14,12 @@ export const WIRE_VERSION = 1 as const;
 export const FLAG_FIRST_PAGEVIEW = 1;
 
 /**
+ * FLAG_HASH_ROUTE (STAGE-1 A4): the site uses a hash router, so a `#/route` fragment in `u` is the
+ * page and is kept by normalizeUrl. Without the flag the fragment is dropped, as before.
+ */
+export const FLAG_HASH_ROUTE = 2;
+
+/**
  * Compact browser event payload, wire v1 (FROZEN 2026-10-07, append-only from here on).
  *
  * Required:
