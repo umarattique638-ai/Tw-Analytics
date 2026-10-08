@@ -9,8 +9,9 @@
 import { normalizeUrl } from '@tailwatch/contract/url';
 import { FLAG_FIRST_PAGEVIEW, FLAG_HASH_ROUTE } from '@tailwatch/contract/wire';
 
-/** Sent as `v` on every hit (invariant 9). Bump on every released tracker change. */
-export const TRACKER_VERSION = 1;
+/** Sent as `v` on every hit (invariant 9). Bump on every released tracker change.
+ *  1 = 2026-10-08 first deploy. 2 = first pageview carries no engagement; A4 root route; SSR-safe init. */
+export const TRACKER_VERSION = 2;
 /** = LIMITS.maxBodyBytes (asserted by a test; not imported, to keep the bundle small). */
 export const MAX_BODY_BYTES = 32_768;
 /** SPA route changes settle for this long before a pageview is sent (PLAN 6.1). */
@@ -170,6 +171,10 @@ export function createTracker(config: Config, env: Env): Tracker {
     if (first) {
       first = false;
       extra.f = FLAG_FIRST_PAGEVIEW;
+      // `e` is "engaged since the previous event"; the first pageview has none. Without this the
+      // millisecond between script start and this call showed up as engagement_ms = 1 (live run).
+      engaged = 0;
+      if (since) since = env.now();
       const r = env.referrer().split(/[?#]/)[0];
       if (r) extra.r = r;
     }

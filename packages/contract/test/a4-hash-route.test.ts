@@ -16,8 +16,10 @@ describe('A4 hash routes', () => {
     expect(n('https://a.com/?utm_source=x#/a')?.href).toBe('https://a.com/?utm_source=x#/a');
   });
 
-  it('ignores a plain anchor even with the flag', () => {
-    expect(normalizeUrl('https://a.com/docs#install', undefined, true)?.path).toBe('/docs');
+  it('with the flag, no fragment or a plain anchor is the root route (the router rewrites / to /#/)', () => {
+    expect(normalizeUrl('https://a.com/', undefined, true)?.href).toBe('https://a.com/#/');
+    expect(normalizeUrl('https://a.com/#/', undefined, true)?.href).toBe('https://a.com/#/');
+    expect(normalizeUrl('https://a.com/docs#install', undefined, true)?.path).toBe('/docs#/');
   });
 
   it('the validator applies the flag to the stored path', () => {

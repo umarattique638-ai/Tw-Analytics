@@ -28,7 +28,7 @@ export interface Api {
   consent(state: Consent): void;
 }
 
-const NOOP: Api = { page() {}, track() {}, consent() {} };
+export const NOOP: Api = { page() {}, track() {}, consent() {} };
 const OPT_OUT = 'tw_disable';
 
 type Win = Window & { __tw?: Api; navigation?: EventTarget };
@@ -91,6 +91,7 @@ function transport(api: string) {
 
 /** Starts tracking once per window. A second copy (script loaded twice, npm + CDN) is a no-op. */
 export function start(o: Options): Api {
+  if (typeof window === 'undefined') return NOOP; // server render (Next, Nuxt, SvelteKit): nothing to do
   const w = window as Win;
   if (w.__tw) return w.__tw;
   if (!o.key || !o.api || optedOut() || (isLocal() && !o.allowLocal) || (inIframe() && !o.allowIframe)) {
@@ -161,4 +162,9 @@ export function start(o: Options): Api {
   if ((doc as Document & { prerendering?: boolean }).prerendering) on(doc, 'prerenderingchange', boot);
   else boot();
   return api;
+}
+
+/** The running instance, or a no-op before init / on the server. Adapters' track() goes through this. */
+export function current(): Api {
+  return (typeof window !== 'undefined' && (window as Win).__tw) || NOOP;
 }

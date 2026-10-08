@@ -4,84 +4,33 @@ import type { AddressInfo } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
-import { chromium } from 'playwright-core';
-import type { Browser, Page } from 'playwright-core';
-import { BROWSER_UA, FIXTURE_SITE } from '../../../../packages/contract/fixtures/payloads';
+import type { Page } from 'playwright-core';
+import { BROWSER_UA, KEY, startStack, wait } from './harness';
+import type { Stack } from './harness';
 
 /**
  * Stage 4 done-when, in a real browser (Chromium via Playwright):
  *   real page -> tw.js -> collector on workerd (built bundle) -> Queue -> messages.
- *
- * The page lives on http://shop.example.com:<port> and the collector on
- * http://collector.example.com:<port> (both mapped to 127.0.0.1), so every hit is a real
- * cross-origin request, exactly like production. tw.js is the BUILT dist/cdn/tw.js.
- *
- * Needs a Chromium: in CI / locally run once
- *   pnpm --filter @tailwatch/collector exec playwright-core install chromium
- * or point TW_CHROME_PATH at an installed Chrome / Edge.
+ * The page lives on http://shop.example.com:<port>; see ./harness.ts for the rest of the stack.
  *
  * Run: pnpm --filter @tailwatch/collector e2e
  */
 
-const TW_JS = readFileSync(fileURLToPath(new URL('../../../../packages/browser/dist/cdn/tw.js', import.meta.url)), 'utf8');
-const KEY = FIXTURE_SITE.publicKey;
-
-const SINK = `
-export default {
-  async queue(batch, env) {
-    for (const m of batch.messages) {
-      await env.SINK.put(m.id, JSON.stringify(m.body));
-      m.ack();
-    }
-  },
-};`;
-
-let mf: Miniflare;
-/** Stands in for the deployed collector origin: /tw.js from the built file (Workers static assets
- *  in production), everything else forwarded to the Worker on workerd. No Playwright request
- *  interception anywhere: it would sit in the path of sendBeacon during unload and make it flaky. */
-let front: Server;
-let collector: string; // http://collector.example.com:<port>
+let stack: Stack;
+let collector: string;
 let site: Server;
 let shop: string; // http://shop.example.com:<port>
-let browser: Browser;
 let html = '';
 
-type Hit = { createdAt: number; name: string; path: string; flags: number; seq: number; engagementMs?: number; props: Record<string, unknown>; referrer?: string };
-
-async function events(minimum: number, settleMs = 600, timeoutMs = 10_000): Promise<Hit[]> {
-  const sink = await mf.getKVNamespace('SINK', 'sink');
-  const started = Date.now();
-  const read = async () => {
-    const { keys } = await sink.list();
-    const all = await Promise.all(keys.map(async (k) => JSON.parse((await sink.get(k.name))!)));
-    return all.filter((m) => m.type === 'event').map((m) => m.event as Hit).sort((a, b) => a.createdAt - b.createdAt || a.seq - b.seq);
-  };
-  for (;;) {
-    const got = await read();
-    if (got.length >= minimum || Date.now() - started > timeoutMs) {
-      // Settle: catch anything that would make the count WRONG (a duplicate), not just short.
-      await new Promise((r) => setTimeout(r, settleMs));
-      return read();
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
-
-async function drops(): Promise<string[]> {
-  const sink = await mf.getKVNamespace('SINK', 'sink');
-  const { keys } = await sink.list();
-  const all = await Promise.all(keys.map(async (k) => JSON.parse((await sink.get(k.name))!)));
-  return all.filter((m) => m.type === 'drop').map((m) => m.reason);
-}
+const events = (minimum: number, settleMs?: number) => stack.events(minimum, settleMs);
+const drops = () => stack.drops();
 
 const tag = (attrs = '', query = `?id=${KEY}`) => `<script async src="${collector}/tw.js${query}" ${attrs}></script>`;
 const doc = (head: string, body = '') => `<!doctype html><html><head><title>shop</title>${head}</head><body>${body}</body></html>`;
 
 /** Opens a page; collects every request it makes to the collector. */
 async function open(path: string, init?: string) {
-  const context = await browser.newContext({ userAgent: BROWSER_UA });
+  const context = await stack.browser.newContext({ userAgent: BROWSER_UA });
   const page = await context.newPage();
   if (init) await page.addInitScript(init);
   const requests: { method: string; type: string; contentType?: string }[] = [];
@@ -96,92 +45,31 @@ async function open(path: string, init?: string) {
 }
 
 const go = (page: Page, fn: string) => page.evaluate(fn);
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
-  mf = new Miniflare(
-    convertV4MiniflareOptions({
-      host: '127.0.0.1',
-      port: 0,
-      workers: [
-        {
-          name: 'collector',
-          modules: true,
-          scriptPath: fileURLToPath(new URL('../../dist/index.js', import.meta.url)),
-          compatibilityDate: '2026-09-01',
-          kvNamespaces: { SITE_CONFIG: 'site-config' },
-          queueProducers: { EVENTS: { queueName: 'tailwatch-events' } },
-          ratelimits: {
-            RATE_LIMITER: { namespace_id: '1001', simple: { limit: 100_000, period: 10 } },
-            RATE_LIMITER_IP: { namespace_id: '1002', simple: { limit: 100_000, period: 10 } },
-          },
-          bindings: { REGION: 'in', EXPOSE_DROP_REASON: 'true' },
-        },
-        {
-          name: 'sink',
-          modules: [{ type: 'ESModule', path: 'sink.mjs', contents: SINK }],
-          compatibilityDate: '2026-09-01',
-          kvNamespaces: { SINK: 'sink' },
-          queueConsumers: { 'tailwatch-events': { maxBatchSize: 100, maxBatchTimeout: 1 } },
-        },
-      ],
-    }),
-  );
-  const worker = await mf.ready;
-  front = createServer(async (req, res) => {
-    if (req.url?.startsWith('/tw.js')) {
-      res.writeHead(200, { 'content-type': 'application/javascript' });
-      return res.end(TW_JS);
-    }
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    const headers = new Headers();
-    for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string' && k !== 'host') headers.set(k, v);
-    headers.set('cf-connecting-ip', '198.51.100.7');
-    const r = await fetch(new URL(req.url ?? '/', worker), {
-      method: req.method,
-      headers,
-      body: chunks.length ? Buffer.concat(chunks) : undefined,
-    });
-    res.writeHead(r.status, Object.fromEntries([...r.headers].filter(([k]) => k !== 'content-encoding' && k !== 'content-length')));
-    res.end(Buffer.from(await r.arrayBuffer()));
-  });
-  await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
-  collector = `http://collector.example.com:${(front.address() as AddressInfo).port}`;
-  const kv = await mf.getKVNamespace('SITE_CONFIG', 'collector');
-  await kv.put(`site:${KEY}`, JSON.stringify(FIXTURE_SITE)); // allowedHosts: example.com, *.example.com
-
+  stack = await startStack();
+  collector = stack.collector;
   site = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(html);
   });
   await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve));
   shop = `http://shop.example.com:${(site.address() as AddressInfo).port}`;
-
-  browser = await chromium.launch({
-    executablePath: process.env.TW_CHROME_PATH || undefined,
-    args: ['--host-resolver-rules=MAP *.example.com 127.0.0.1', '--enable-features=BackForwardCache'],
-  });
 }, 120_000);
 
 afterAll(async () => {
-  await browser?.close();
   await new Promise((r) => site?.close(r));
-  await new Promise((r) => front?.close(r));
-  await mf?.dispose();
+  await stack?.close();
 });
 
-beforeEach(async () => {
-  const sink = await mf.getKVNamespace('SINK', 'sink');
-  for (const k of (await sink.list()).keys) await sink.delete(k.name);
-});
+beforeEach(() => stack.clear());
 
 // Headless Chromium says "HeadlessChrome" and the edge drops it as a bot (proved: x-tw-dropped: bot),
 // so every context presents the ordinary desktop Chrome UA the contract fixtures use.
 describe('tracker in Chromium -> collector on workerd', { timeout: 30_000 }, () => {
   it('headless Chromium itself is dropped as a bot (the edge rule works on a real browser)', async () => {
     html = doc(tag());
-    const context = await browser.newContext();
+    const context = await stack.browser.newContext();
     const page = await context.newPage();
     await page.goto(`${shop}/headless`);
     for (let i = 0; i < 50 && (await drops()).length === 0; i++) await wait(100);
@@ -361,7 +249,7 @@ describe('tracker in Chromium -> collector on workerd', { timeout: 30_000 }, () 
 
   it('does not track localhost unless data-allow-local', async () => {
     html = doc(tag());
-    const context = await browser.newContext({ userAgent: BROWSER_UA });
+    const context = await stack.browser.newContext({ userAgent: BROWSER_UA });
     const page = await context.newPage();
     let sent = 0;
     page.on('request', (r) => r.url().startsWith(`${collector}/e`) && sent++);

@@ -1,0 +1,13 @@
+{
+  "name": "@tailwatch/example-vue-hash",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite" },
+  "dependencies": {
+    "@tailwatch/vue": "workspace:*",
+    "vue": "3.5.43",
+    "vue-router": "4.6.4"
+  },
+  "devDependencies": { "vite": "8.3.3", "typescript": "^5.6.0" }
+}

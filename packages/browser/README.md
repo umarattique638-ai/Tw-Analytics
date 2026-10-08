@@ -41,6 +41,18 @@ Options: `key`, `api` (required), `hashRouting`, `consent` (`'granted'` default 
 (default `true`: first pageview + SPA route changes), `allowLocal`, `allowIframe`. Calling `init` twice
 (React StrictMode, HMR, a script tag on the same page) returns the first instance.
 
+## Frameworks
+
+| Package | Use |
+|---|---|
+| `@tailwatch/next` | `<TailwatchProvider siteKey=... api=...>` in `app/layout.tsx` (client module, works in a server layout) |
+| `@tailwatch/react` | same `<TailwatchProvider>` + `useTailwatch()` for Vite / CRA / React Router apps |
+| `@tailwatch/vue` | `app.use(TailWatch, { key, api, hashRouting })` + `useTailwatch()` / `this.$tw` |
+| `@tailwatch/svelte` | `tailwatch({ key, api })` in `+layout.svelte` or `main.ts`; `track()` |
+
+Adapters only start the tracker. Route changes are detected and de-duplicated in core, so no router
+wiring is needed, and StrictMode's double effect cannot double count. Working apps: `examples/`.
+
 ## What it guarantees (PLAN 4, 8.1)
 
 `text/plain` body, no preflight, no cookies, no storage except the opt-out flag · never `unload` /

@@ -1,0 +1,11 @@
+{
+  "name": "@tailwatch/react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.tsx" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@tailwatch/browser": "workspace:*" },
+  "peerDependencies": { "react": ">=17" },
+  "devDependencies": { "@types/react": "^19.0.0", "react": "^19.0.0", "typescript": "^5.6.0" }
+}

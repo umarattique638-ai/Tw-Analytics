@@ -2,3 +2,5 @@ packages:
   - "packages/*"
   - "apps/*"
   - "infra"
+  # Stage 4 done-when apps (Next.js App Router, Vite React SPA, Vue hash router) and their browser e2e.
+  - "examples/*"

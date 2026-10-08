@@ -1,0 +1,11 @@
+{
+  "name": "@tailwatch/vue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@tailwatch/browser": "workspace:*" },
+  "peerDependencies": { "vue": ">=3" },
+  "devDependencies": { "typescript": "^5.6.0", "vue": "^3.5.0" }
+}

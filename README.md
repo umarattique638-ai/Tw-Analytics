@@ -8,8 +8,9 @@ Cloud-only web analytics: one hosted collector, four install surfaces. Read in t
 4. `docs/contract/STAGE-1.md` - the frozen contract and the decisions D1-D13 / amendments A1-A4.
 5. `docs/TESTING.md` - how to test Stages 1-4 against ClickHouse Cloud and your local MongoDB.
 
-Status (2026-10-08): Stage 1 frozen, Stages 2-3 done and deployed (Cloudflare Free). Stage 4.1-4.3
-(tracker: core, browser, tw.js served by the collector) built and tested in Chromium. Next: 4.4 adapters.
+Status (2026-10-08): Stage 1 frozen, Stages 2-3 done and deployed (Cloudflare Free). Stage 4 tracker:
+tw.js live and proven on a real page; React/Next/Vue/Svelte adapters; Next.js, Vite and hash-router
+apps record exactly one pageview per navigation in dev/StrictMode. Next: Stage 5 (control plane).
 
 Install on a site (script tag):
 
@@ -39,4 +40,6 @@ pnpm --filter @tailwatch/collector dev   # wrangler dev, then open http://localh
 | `infra/` | ClickHouse DDL + insert user, MongoDB control-plane schema |
 | `packages/core` | tracker engine: payload, de-dup guard, debounce, engagement, sequence, consent, retry (Stage 4) |
 | `packages/browser` | browser platform: `tw.js` CDN build (<= 3 KB gzip, enforced) + npm `init()` (Stage 4) |
+| `packages/react`, `next`, `vue`, `svelte` | framework adapters: start the tracker once (StrictMode-safe), `useTailwatch()` / `track()` |
 | `apps/demo` | static demo site on its own workers.dev host: the "real page" of Stage 4 |
+| `examples/` | Next.js App Router, Vite React SPA, Vue hash-router apps + `e2e` (Stage 4 done-when) |

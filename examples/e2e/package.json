@@ -1,0 +1,10 @@
+{
+  "name": "@tailwatch/examples-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "pnpm --filter @tailwatch/collector build && vitest run"
+  },
+  "devDependencies": { "vitest": "^2.1.0", "typescript": "^5.6.0" }
+}

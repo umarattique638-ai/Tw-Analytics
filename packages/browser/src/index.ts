@@ -7,6 +7,6 @@
  *
  * Calling init twice (React StrictMode, HMR, a CDN tag on the same page) returns the first instance.
  */
-export { start as init } from './start';
+export { start as init, current } from './start';
 export type { Api, Options } from './start';
 export type { Consent, PageOptions, Props } from '@tailwatch/core';

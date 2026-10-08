@@ -15,12 +15,14 @@ export const DEFAULT_QUERY_ALLOWLIST = [
  * A hash route is a fragment that starts with `#/` or `#!/` (hash routers: Vue `createWebHashHistory`,
  * React Router `HashRouter`, Angular `useHash`). Only kept when the hit carries FLAG_HASH_ROUTE
  * (STAGE-1 A4). Its own `?query` is dropped and its trailing slash removed, like the path's.
+ * On a hash-router site any other fragment (none, or a plain `#anchor`) is the root route `#/`:
+ * the router itself rewrites `/` to `/#/` on load, and that must not become a second page.
  */
 function hashRoute(hash: string): string {
-  const m = /^#!?(\/[^?]*)/.exec(hash);
-  if (!m) return '';
-  const route = m[1]!.length > 1 ? m[1]!.replace(/\/+$/, '') || '/' : '/';
-  return `#${hash[1] === '!' ? '!' : ''}${route}`;
+  const m = /^#(!?)(\/[^?]*)/.exec(hash);
+  if (!m) return '#/';
+  const route = m[2]!.length > 1 ? m[2]!.replace(/\/+$/, '') || '/' : '/';
+  return `#${m[1]}${route}`;
 }
 
 export function normalizeUrl(

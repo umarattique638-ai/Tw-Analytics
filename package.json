@@ -18,6 +18,7 @@
     "e2e:collector": "pnpm --filter @tailwatch/collector e2e",
     "live:consumer": "pnpm --filter @tailwatch/consumer live",
     "e2e:consumer": "pnpm --filter @tailwatch/consumer e2e",
-    "verify:stages": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:mongo && pnpm db:check && pnpm e2e:collector && pnpm live:consumer && pnpm e2e:consumer"
+    "verify:stages": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:mongo && pnpm db:check && pnpm e2e:collector && pnpm live:consumer && pnpm e2e:consumer && pnpm e2e:frameworks",
+    "e2e:frameworks": "pnpm --filter @tailwatch/examples-e2e e2e"
   }
 }

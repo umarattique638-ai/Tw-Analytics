@@ -203,6 +203,17 @@ describe('pageviews: exactly one per navigation (invariants 10, 11)', () => {
 });
 
 describe('engagement: visible AND focused time', () => {
+  it('the first pageview never carries engagement (time before it belongs to no event)', () => {
+    const p = page();
+    const t = p.start();
+    vi.advanceTimersByTime(7); // script start -> first page() call (was sent as e = 1 live)
+    t.page();
+    vi.advanceTimersByTime(2_000);
+    t.track('x');
+    expect(p.sent[0]!.body.e).toBeUndefined();
+    expect(p.sent[1]!.body.e).toBe(2_000);
+  });
+
   it('counts only visible+focused time and ships it with the next event', () => {
     const p = page();
     const t = p.start();

@@ -1,0 +1,11 @@
+{
+  "name": "@tailwatch/next",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@tailwatch/react": "workspace:*" },
+  "peerDependencies": { "next": ">=13.4", "react": ">=18" },
+  "devDependencies": { "@types/react": "^19.0.0", "react": "^19.0.0", "typescript": "^5.6.0" }
+}
