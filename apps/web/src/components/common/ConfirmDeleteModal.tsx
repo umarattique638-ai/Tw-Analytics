@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 type Props = {
@@ -9,6 +10,13 @@ type Props = {
 };
 
 export default function ConfirmDeleteModal({ title, message, deleting, onCancel, onConfirm }: Props) {
+  // Escape closes it, like clicking outside.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !deleting && onCancel();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [deleting, onCancel]);
+
   return (
     <div className="fixed inset-0 z-[200] grid place-items-center p-4">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onCancel} />

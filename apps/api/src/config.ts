@@ -22,6 +22,8 @@ export interface ApiConfig {
    * invites, quotas) a public dashboard must not be open to everyone.
    */
   signupAllowlist: string[] | null;
+  /** Where the dashboard is reachable: links in e-mails (password reset) point here. */
+  publicUrl: string;
 }
 
 /** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty -> null (open). */
@@ -46,5 +48,6 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   scrypt: PRODUCTION_COST,
   verifierAllowPrivate: false,
   signupAllowlist: null,
+  publicUrl: 'http://localhost:8788',
   ...over,
 });

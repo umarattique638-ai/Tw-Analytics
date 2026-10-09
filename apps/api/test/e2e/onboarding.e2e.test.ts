@@ -134,28 +134,34 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     shopHtml = `<!doctype html><html><head><title>Shop</title>${snippet}</head><body><h1>Shop</h1></body></html>`;
     await page.getByRole('button', { name: 'I added it' }).click();
     await page.waitForURL('**/verify');
+    // The check starts by itself, against https://<domain>/ (this test shop listens on another port: it fails there)
+    await page.locator('[data-check="reach"][data-status="fail"]').waitFor();
     await expect.poll(() => page.getByText('Waiting for your first pageview').count()).toBe(1);
 
-    // ⑤ Active check against the real page
+    // ⑤ Active check against the real page: the steps turn green one after the other
     await page.getByLabel('Page to check').fill(`${shop}/`);
-    await page.getByRole('button', { name: 'Run check' }).click();
-    await page.locator('[data-check="csp"]').waitFor();
+    await page.getByRole('button', { name: 'Check again' }).click();
+    await page.locator('[data-check="csp"][data-status="pass"]').waitFor();
     const results = await page.locator('[data-check]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-check')}:${e.getAttribute('data-status')}`));
-    expect(results).toEqual(['reach:pass', 'present:pass', 'noscript:pass', 'once:pass', 'id:pass', 'script:pass', 'csp:pass']);
+    expect(results.slice(0, 7)).toEqual(['reach:pass', 'present:pass', 'noscript:pass', 'once:pass', 'id:pass', 'script:pass', 'csp:pass']);
+    expect(results[7]).toBe('pageview:running');
+    await snap(page, '4a-verify-waiting');
 
-    // ⑥ A visitor opens the shop: the first pageview shows up on the verify screen by itself
+    // ⑥ A visitor opens the shop: the first pageview shows up on the verify screen by itself,
+    //    every step is green, and the dashboard opens on its own.
     const visitor = await context.newPage();
     await visitor.goto(`${shop}/pricing`);
-    await page.getByTestId('first-pageview').waitFor({ timeout: 30_000 });
+    await page.locator('[data-check="pageview"][data-status="pass"]').waitFor({ timeout: 30_000 });
+    expect(await page.locator('[data-check="pageview"]').textContent()).toContain('/pricing');
+    await page.getByTestId('all-good').waitFor();
     await snap(page, '4-verify');
-    expect(await page.getByTestId('first-pageview').textContent()).toContain('/pricing');
 
     // The verifier's own visit was never counted: exactly one event, the visitor's pageview.
     const { events } = await stack.snapshot();
     expect(events.map((e) => [e.name, e.path])).toEqual([['pageview', '/pricing']]);
 
-    // Done: the dashboard opens for the verified site
-    await page.getByRole('button', { name: 'Finish and go to dashboard' }).click();
+    // Done: the dashboard opens by itself for the verified site
+    await page.waitForURL('**/dashboard', { timeout: 10_000 });
     await page.getByText(/Good (morning|afternoon|evening), Umar\./).waitFor();
     await snap(page, '5-dashboard');
     expect(errors).toEqual([]);
@@ -187,8 +193,9 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     await page.waitForURL('**/install');
     // The shop still carries the FIRST customer's snippet: wrong key for this account.
     await page.getByRole('button', { name: 'I added it' }).click();
+    await page.locator('[data-check="reach"][data-status="fail"]').waitFor(); // the automatic run, on https://<domain>/
     await page.getByLabel('Page to check').fill(`${shop}/`);
-    await page.getByRole('button', { name: 'Run check' }).click();
+    await page.getByRole('button', { name: 'Check again' }).click();
     await page.locator('[data-check="id"][data-status="fail"]').waitFor();
     expect(await page.locator('[data-check="id"]').textContent()).toContain('different site key');
     await context.close();

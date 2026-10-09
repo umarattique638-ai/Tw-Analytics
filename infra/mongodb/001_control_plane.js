@@ -256,6 +256,55 @@ ensureCollection('sessions', {
   additionalProperties: false,
 });
 
+ensureCollection('exports', {
+  bsonType: 'object',
+  required: ['_id', 'tenantId', 'siteId', 'range', 'from', 'to', 'timezone', 'filename', 'rows', 'bytes', 'csv', 'createdBy', 'createdAt', 'expiresAt'],
+  properties: {
+    _id: { bsonType: 'objectId' },
+    tenantId: { bsonType: 'objectId' },
+    siteId: numericId,
+    range: { enum: ['today', '7d', '30d'] },
+    from: { bsonType: 'string', maxLength: 40 },
+    to: { bsonType: 'string', maxLength: 40 },
+    timezone: { bsonType: 'string', maxLength: 64 },
+    filename: { bsonType: 'string', minLength: 1, maxLength: 300 },
+    rows: { bsonType: 'int', minimum: 0 },
+    bytes: { bsonType: 'int', minimum: 0 },
+    csv: {
+      bsonType: 'string',
+      maxLength: 1000000,
+      description: 'The CSV as downloaded (a few KB: one row per day or hour).',
+    },
+    createdBy: { bsonType: 'objectId' },
+    createdAt: date,
+    expiresAt: {
+      bsonType: 'date',
+      description: 'createdAt + 90 days. A TTL index deletes the report then.',
+    },
+  },
+  additionalProperties: false,
+});
+
+ensureCollection('password_resets', {
+  bsonType: 'object',
+  required: ['_id', 'userId', 'createdAt', 'expiresAt', 'usedAt'],
+  properties: {
+    _id: {
+      bsonType: 'string',
+      pattern: '^[0-9a-f]{64}$',
+      description: 'SHA-256 of the reset token. The token itself is only ever in the e-mailed link.',
+    },
+    userId: { bsonType: 'objectId' },
+    createdAt: date,
+    expiresAt: {
+      bsonType: 'date',
+      description: 'One hour after createdAt. A TTL index deletes the document later.',
+    },
+    usedAt: dateOrNull,
+  },
+  additionalProperties: false,
+});
+
 database.users.createIndex(
   { emailNormalized: 1 },
   {
@@ -285,6 +334,10 @@ database.sites.createIndex({ tenantId: 1, status: 1 });
 database.tenants.createIndex({ status: 1, createdAt: -1 });
 database.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.sessions.createIndex({ userId: 1 });
+database.exports.createIndex({ tenantId: 1, siteId: 1, createdAt: -1 });
+database.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+database.password_resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+database.password_resets.createIndex({ userId: 1 });
 
 database.counters.updateOne(
   { _id: 'site_id' },

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Long, ObjectId } from 'mongodb';
 import { violation } from './validate';
 import { DuplicateError } from './types';
-import type { ControlStore, MembershipDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { ControlStore, ExportDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /**
  * In-memory ControlStore for tests. It enforces the same rules the real MongoDB enforces:
@@ -39,6 +39,8 @@ export class MemoryStore implements ControlStore {
   memberships: MembershipDoc[] = [];
   sessions: SessionDoc[] = [];
   sites: SiteDoc[] = [];
+  exports: ExportDoc[] = [];
+  resets: PasswordResetDoc[] = [];
   counter = Long.fromNumber(0);
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -115,6 +117,59 @@ export class MemoryStore implements ControlStore {
   }
   async allSites() {
     return clone(this.sites);
+  }
+
+  async setPassword(userId: ObjectId, passwordHash: string, now: Date) {
+    const i = this.users.findIndex((u) => same(u._id, userId));
+    if (i < 0) return;
+    const next = { ...this.users[i]!, passwordHash, updatedAt: now };
+    check('users', next);
+    this.users[i] = next;
+  }
+  async deleteSessionsOf(userId: ObjectId) {
+    this.sessions = this.sessions.filter((s) => !same(s.userId, userId));
+  }
+  async createPasswordReset(reset: PasswordResetDoc) {
+    check('password_resets', reset);
+    if (this.resets.some((r) => r._id === reset._id)) throw new DuplicateError('other');
+    this.resets.push(clone(reset));
+  }
+  private liveReset(id: string, now: Date) {
+    return this.resets.find((r) => r._id === id && r.usedAt === null && r.expiresAt.getTime() > now.getTime());
+  }
+  async passwordReset(id: string, now: Date) {
+    return clone(this.liveReset(id, now) ?? null);
+  }
+  async usePasswordReset(id: string, now: Date) {
+    const r = this.liveReset(id, now);
+    if (!r) return null;
+    r.usedAt = now;
+    return clone(r);
+  }
+  async deletePasswordResetsOf(userId: ObjectId) {
+    this.resets = this.resets.filter((r) => !same(r.userId, userId));
+  }
+
+  async insertExport(doc: ExportDoc) {
+    check('exports', doc);
+    this.exports.push(clone(doc));
+  }
+  private liveExports(tenantId: ObjectId, siteId: number, now: Date) {
+    return this.exports.filter((e) => same(e.tenantId, tenantId) && e.siteId === siteId && e.expiresAt.getTime() > now.getTime());
+  }
+  async exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number) {
+    return clone(this.liveExports(tenantId, siteId, now).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit));
+  }
+  async exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date) {
+    return clone(this.liveExports(tenantId, siteId, now).find((e) => same(e._id, id)) ?? null);
+  }
+  async countExports(tenantId: ObjectId, siteId: number, now: Date) {
+    return this.liveExports(tenantId, siteId, now).length;
+  }
+  async deleteExport(tenantId: ObjectId, siteId: number, id: ObjectId) {
+    const before = this.exports.length;
+    this.exports = this.exports.filter((e) => !(same(e._id, id) && same(e.tenantId, tenantId) && e.siteId === siteId));
+    return this.exports.length < before;
   }
   async close() {}
 }

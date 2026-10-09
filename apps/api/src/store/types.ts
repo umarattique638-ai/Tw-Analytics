@@ -62,6 +62,34 @@ export interface SiteDoc {
   updatedAt: Date;
 }
 
+/** A CSV the user exported from Reports, kept so it can be downloaded again. Deleted 90 days after creation (TTL). */
+export interface ExportDoc {
+  _id: ObjectId;
+  tenantId: ObjectId;
+  siteId: number;
+  range: 'today' | '7d' | '30d';
+  /** The local dates (or hours for Today) the report covers, as the Query API resolved them. */
+  from: string;
+  to: string;
+  timezone: string;
+  filename: string;
+  rows: number;
+  bytes: number;
+  csv: string;
+  createdBy: ObjectId;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+/** A "forgot password" link. Only the SHA-256 of the token is stored; the token is in the e-mail. */
+export interface PasswordResetDoc {
+  _id: string;
+  userId: ObjectId;
+  createdAt: Date;
+  expiresAt: Date;
+  usedAt: Date | null;
+}
+
 export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret'>>;
 
 /** Thrown for a unique-index violation. `field` says which rule: shown to the user as a 409. */
@@ -99,6 +127,25 @@ export interface ControlStore {
   updateSite(tenantId: ObjectId, id: number, expectedUpdatedAt: Date, patch: SitePatch, now: Date): Promise<SiteDoc | null>;
   /** Every site, any tenant (KV resync). */
   allSites(): Promise<SiteDoc[]>;
+
+  /** New password: replaces the hash and ends every session of the user (all devices). */
+  setPassword(userId: ObjectId, passwordHash: string, now: Date): Promise<void>;
+  deleteSessionsOf(userId: ObjectId): Promise<void>;
+  createPasswordReset(reset: PasswordResetDoc): Promise<void>;
+  /** A reset that is unused and not expired at `now`, or null. */
+  passwordReset(id: string, now: Date): Promise<PasswordResetDoc | null>;
+  /** Marks the reset used; null if it was already used or has expired (one use only, race-safe). */
+  usePasswordReset(id: string, now: Date): Promise<PasswordResetDoc | null>;
+  /** Every outstanding reset of a user is cancelled (after a successful reset). */
+  deletePasswordResetsOf(userId: ObjectId): Promise<void>;
+
+  insertExport(doc: ExportDoc): Promise<void>;
+  /** Newest first, expired ones left out (the TTL monitor runs about once a minute). */
+  exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number): Promise<ExportDoc[]>;
+  exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date): Promise<ExportDoc | null>;
+  countExports(tenantId: ObjectId, siteId: number, now: Date): Promise<number>;
+  /** True if it existed. */
+  deleteExport(tenantId: ObjectId, siteId: number, id: ObjectId): Promise<boolean>;
 
   close(): Promise<void>;
 }

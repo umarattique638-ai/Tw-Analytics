@@ -372,6 +372,13 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
     f. Atlas copy done 2026-10-09 (pnpm db:mongo:copy): 1 account, 1 workspace, site 101 with its keys. Atlas user tw_app = readWriteAnyDatabase (the app); collMod (schema changes) needs an Atlas admin user.
 ---------------------------------------------------------------------------------------------------------
 
+17. DECIDED 2026-10-09 (owner: reports history, forgot password, smoother verify, dropdown fix; "where they are silent do what is best"):
+   a. Reports: every CSV the dashboard exports (Reports page and the dashboard's Export CSV) is saved in MongoDB `exports` (the CSV itself, a few KB) and listed with download + delete. `expiresAt = createdAt + 90 days` with a TTL index, and every read also filters `expiresAt > now` (the TTL monitor runs about once a minute). At most 200 saved reports per site. `GET /export.csv` stays as a direct, unsaved download for API clients.
+   b. Forgot password: `POST /auth/forgot` (same answer and at least 700 ms whether the e-mail exists or not; 3 per e-mail and 10 per address an hour), a random token whose SHA-256 is stored in `password_resets`, valid 60 minutes, one use. `POST /auth/reset` sets the password, ends every session of the user, cancels other links and signs this browser in.
+   c. E-mail over HTTPS, free providers only: Brevo (`TW_BREVO_API_KEY`, 300/day, sender verified in Brevo, a Gmail address works) or Resend (`TW_RESEND_API_KEY`, needs an own domain to reach other people), plus `TW_MAIL_FROM`. Locally without a key the e-mail is printed in the terminal; on a public server without a key reset answers 503 "not set up" (never pretends).
+   d. The API creates the indexes of the new collections itself at start (createIndex works for a readWrite user on Atlas); `pnpm db:mongo` adds the validators where an admin user is available.
+   e. Verify page: the check runs by itself, the steps turn green one by one, then "first pageview"; when everything passed the dashboard opens after 3 seconds (Stay here / Go now). An npm/framework install (no script tag) passes on the first pageview.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

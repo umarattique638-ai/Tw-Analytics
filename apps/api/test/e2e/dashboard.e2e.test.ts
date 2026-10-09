@@ -136,9 +136,22 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     expect(JSON.parse([...kv.entries.values()][0]!).allowedHosts).toContain('staging.realshop.test');
 
     await page.getByRole('link', { name: 'Reports' }).click();
-    const href = await page.getByTestId('export-csv').getAttribute('href');
-    const csv = await page.evaluate(async (u) => (await fetch(u!)).text(), href);
+    await page.getByText('No reports yet').waitFor();
+    // Every download is saved: it lands in the table, can be downloaded again, and deleted.
+    await page.getByRole('radio', { name: /Last 7 days/ }).click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('create-report').click()]);
+    expect(download.suggestedFilename()).toMatch(/^realshop\.test-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.csv$/);
+    const csv = readFileSync((await download.path())!, 'utf8');
     expect(csv.split('\n')[1]).toMatch(/^\d{4}-\d{2}-\d{2},4321,3456,98765$/);
+    await page.getByTestId('reports-table').waitFor();
+    expect(await page.locator('[data-report]').count()).toBe(1);
+    expect(await text()).toContain('in 90 days');
+    if (process.env.TW_SCREENSHOTS) await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/7-reports.png`, fullPage: true });
+    const again = await page.locator('[data-report] a[download]').getAttribute('href');
+    expect((await page.evaluate(async (u) => (await fetch(u!)).text(), again)).split('\n')[1]).toMatch(/,4321,3456,98765$/);
+    await page.getByRole('button', { name: /^Delete realshop/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+    await page.getByText('No reports yet').waitFor();
     expect(errors).toEqual([]);
   });
 });

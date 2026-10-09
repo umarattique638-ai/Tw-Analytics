@@ -7,7 +7,7 @@ import PageHeader from '../components/ui/PageHeader';
 import { muted } from '../components/ui/styles';
 import { api } from '../api/client';
 
-// "Continue with Google" and "Forgot password?" return once OAuth and e-mail sending exist (after Stage 5).
+// "Continue with Google" returns once OAuth exists. "Forgot password?" e-mails a reset link (/forgot-password).
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -41,6 +41,11 @@ export default function LoginPage() {
           name="password"
           autoComplete="current-password"
           placeholder="Enter your password"
+          labelRight={
+            <Link to="/forgot-password" className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Forgot password?
+            </Link>
+          }
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required

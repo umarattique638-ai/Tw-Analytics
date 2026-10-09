@@ -317,6 +317,125 @@
         },
         "additionalProperties": false
       }
+    },
+    "exports": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "tenantId",
+          "siteId",
+          "range",
+          "from",
+          "to",
+          "timezone",
+          "filename",
+          "rows",
+          "bytes",
+          "csv",
+          "createdBy",
+          "createdAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "tenantId": {
+            "bsonType": "objectId"
+          },
+          "siteId": {
+            "bsonType": [
+              "long",
+              "int"
+            ]
+          },
+          "range": {
+            "enum": [
+              "today",
+              "7d",
+              "30d"
+            ]
+          },
+          "from": {
+            "bsonType": "string",
+            "maxLength": 40
+          },
+          "to": {
+            "bsonType": "string",
+            "maxLength": 40
+          },
+          "timezone": {
+            "bsonType": "string",
+            "maxLength": 64
+          },
+          "filename": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "rows": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "bytes": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "csv": {
+            "bsonType": "string",
+            "maxLength": 1000000,
+            "description": "The CSV as downloaded (a few KB: one row per day or hour)."
+          },
+          "createdBy": {
+            "bsonType": "objectId"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "expiresAt": {
+            "bsonType": "date",
+            "description": "createdAt + 90 days. A TTL index deletes the report then."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "password_resets": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "userId",
+          "createdAt",
+          "expiresAt",
+          "usedAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the reset token. The token itself is only ever in the e-mailed link."
+          },
+          "userId": {
+            "bsonType": "objectId"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "expiresAt": {
+            "bsonType": "date",
+            "description": "One hour after createdAt. A TTL index deletes the document later."
+          },
+          "usedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "indexes": [
@@ -394,6 +513,38 @@
     },
     {
       "collection": "sessions",
+      "keys": {
+        "userId": 1
+      }
+    },
+    {
+      "collection": "exports",
+      "keys": {
+        "tenantId": 1,
+        "siteId": 1,
+        "createdAt": -1
+      }
+    },
+    {
+      "collection": "exports",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "expireAfterSeconds": 0
+      }
+    },
+    {
+      "collection": "password_resets",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "expireAfterSeconds": 0
+      }
+    },
+    {
+      "collection": "password_resets",
       "keys": {
         "userId": 1
       }

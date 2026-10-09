@@ -21,7 +21,7 @@ async function boot(): Promise<Listener> {
   const env = process.env;
   const config = configFromEnv(env, publicUrlOf(env, 0));
   const store = await storeFromEnv(env, !!env.VERCEL);
-  const app = createApp({ store, ...servicesFromEnv(env), config });
+  const app = createApp({ store, ...servicesFromEnv(env, !!env.VERCEL), config });
   return getRequestListener(app.fetch);
 }
 

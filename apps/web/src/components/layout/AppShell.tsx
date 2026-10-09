@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Activity, BarChart2, ChevronsUpDown, LogOut, Plus, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react';
+import { Activity, BarChart2, Check, ChevronsUpDown, Globe, LogOut, Menu, Plus, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import logo from '../../assets/lg.png';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
@@ -35,11 +35,28 @@ export default function AppShell() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const wsRef = useRef<HTMLDivElement>(null);
+
   // route badle to drawer aur dropdown band
   useEffect(() => {
     setOpen(false);
     setWsOpen(false);
   }, [pathname]);
+
+  // Domain dropdown: a click anywhere outside it (sidebar, page, anywhere) or Escape closes it.
+  useEffect(() => {
+    if (!wsOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      if (wsRef.current && !wsRef.current.contains(e.target as Node)) setWsOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setWsOpen(false);
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [wsOpen]);
 
   const confirmDelete = async () => {
     if (!toDelete) return;
@@ -87,40 +104,59 @@ export default function AppShell() {
 
         <div className="flex-1 overflow-y-auto">
           {/* domain selector */}
-          <div className="relative mb-3 px-3">
+          <div ref={wsRef} className="relative mb-3 px-3">
             <button
               onClick={() => setWsOpen((o) => !o)}
               aria-expanded={wsOpen}
-              className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-gray-200 transition hover:bg-white/10"
+              aria-haspopup="listbox"
+              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm text-gray-200 transition hover:bg-white/10 ${
+                wsOpen ? 'border-teal-400/40 bg-white/10' : 'border-white/10 bg-white/5'
+              }`}
             >
-              <span className="truncate">{current?.domain ?? 'Select domain'}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <Globe className="size-4 flex-none text-teal-300" />
+                <span className="truncate">{current?.domain ?? 'Select domain'}</span>
+              </span>
               <ChevronsUpDown className="size-4 flex-none text-gray-500" />
             </button>
 
             {wsOpen && (
-              <div className="absolute left-3 right-3 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-[#1a2233] shadow-lg">
-                {sites.length === 0 && <p className="px-3 py-2 text-xs text-gray-500">No domains yet</p>}
-                {sites.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between px-3 py-2 hover:bg-white/10">
-                    <button
-                      onClick={() => { select(d.id); setWsOpen(false); }}
-                      className={`flex-1 truncate text-left text-sm hover:text-white ${d.id === current?.id ? 'text-white' : 'text-gray-300'}`}
-                    >
-                      {d.domain}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setToDelete(d); }}
-                      title="Delete domain"
-                      aria-label={`Delete ${d.domain}`}
-                      className="ml-2 text-rose-500 transition-colors hover:text-rose-400"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
+              <div
+                role="listbox"
+                className="absolute left-3 right-3 top-full z-20 mt-1.5 origin-top animate-[tw-pop_120ms_ease-out] overflow-hidden rounded-xl border border-white/10 bg-[#1a2233] shadow-2xl shadow-black/40"
+              >
+                <p className="px-3 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Your sites</p>
+                <div className="max-h-64 overflow-y-auto pb-1">
+                  {sites.length === 0 && <p className="px-3 py-2 text-xs text-gray-500">No domains yet</p>}
+                  {sites.map((d) => {
+                    const on = d.id === current?.id;
+                    return (
+                      <div key={d.id} className="group flex items-center gap-1 px-1.5">
+                        <button
+                          role="option"
+                          aria-selected={on}
+                          onClick={() => { select(d.id); setWsOpen(false); }}
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition hover:bg-white/10 ${on ? 'text-white' : 'text-gray-300 hover:text-white'}`}
+                        >
+                          <span className={`size-1.5 flex-none rounded-full ${d.status === 'paused' ? 'bg-amber-400' : d.verifiedAt ? 'bg-emerald-400' : 'bg-gray-500'}`} />
+                          <span className="truncate">{d.domain}</span>
+                          {on && <Check className="ml-auto size-3.5 flex-none text-teal-300" />}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setWsOpen(false); setToDelete(d); }}
+                          title="Delete domain"
+                          aria-label={`Delete ${d.domain}`}
+                          className="grid size-7 flex-none place-items-center rounded-md text-gray-500 opacity-70 transition hover:bg-rose-500/15 hover:text-rose-400 group-hover:opacity-100"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
                 <button
-                  onClick={() => navigate('/sites/new')}
-                  className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2 text-left text-sm text-teal-300 hover:bg-white/10"
+                  onClick={() => { setWsOpen(false); navigate('/sites/new'); }}
+                  className="flex w-full items-center gap-2 border-t border-white/10 px-4 py-2.5 text-left text-sm font-medium text-teal-300 transition hover:bg-white/10"
                 >
                   <Plus className="size-3.5" /> Add a site
                 </button>
@@ -160,6 +196,14 @@ export default function AppShell() {
 
       {/* CONTENT */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* mobile top bar: the sidebar is a drawer below lg */}
+        <header className="flex items-center gap-3 border-b border-white/10 bg-[#111827] px-4 py-2.5 text-white lg:hidden">
+          <button onClick={() => setOpen(true)} aria-label="Open menu" className="grid size-9 place-items-center rounded-lg text-gray-300 transition hover:bg-white/10 hover:text-white">
+            <Menu className="size-5" />
+          </button>
+          <img src={logo} alt="TailWatch" className="h-8 w-auto object-contain" />
+          <span className="ml-auto max-w-[45%] truncate text-xs text-gray-400">{current?.domain}</span>
+        </header>
         <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-10 lg:px-5">
           <div
             aria-hidden="true"

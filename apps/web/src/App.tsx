@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AddSitePage from './pages/AddSitePage';
 import InstallPage from './pages/InstallPage';
 import VerifyPage from './pages/VerifyPage';
@@ -18,10 +20,12 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-      {/* Public: sirf login + signup */}
+      {/* Public: login, signup, forgot / reset password */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>
 
       {/* After login: dashboard shell (sidebar + topbar). RequireAuth loads the user and sites from the API. */}

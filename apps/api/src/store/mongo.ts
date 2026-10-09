@@ -1,7 +1,7 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
 import { DuplicateError } from './types';
-import type { ControlStore, MembershipDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { ControlStore, ExportDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {
@@ -27,7 +27,23 @@ export class MongoStore implements ControlStore {
   static async connect(url: string, database = 'tailwatch_control'): Promise<MongoStore> {
     const client = new MongoClient(url, { serverSelectionTimeoutMS: 5_000, appName: 'tailwatch-api' });
     await client.connect();
-    return new MongoStore(client, client.db(database));
+    const store = new MongoStore(client, client.db(database));
+    await store.ensureIndexes();
+    return store;
+  }
+
+  /**
+   * The indexes the newer collections need (exports, password_resets), created by the API itself so a
+   * deployment works with an app user that has readWrite only (MongoDB Atlas). createIndex is idempotent
+   * and cheap when the index exists. Validators come from `pnpm db:mongo` (needs an admin user).
+   */
+  private async ensureIndexes() {
+    await Promise.all([
+      this.exports.createIndex({ tenantId: 1, siteId: 1, createdAt: -1 }),
+      this.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      this.resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      this.resets.createIndex({ userId: 1 }),
+    ]);
   }
 
   private get users(): Collection<UserDoc> {
@@ -44,6 +60,12 @@ export class MongoStore implements ControlStore {
   }
   private get sites(): Collection<SiteDoc> {
     return this.db.collection('sites');
+  }
+  private get exports(): Collection<ExportDoc> {
+    return this.db.collection('exports');
+  }
+  private get resets(): Collection<PasswordResetDoc> {
+    return this.db.collection('password_resets');
   }
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -126,6 +148,41 @@ export class MongoStore implements ControlStore {
   }
   allSites() {
     return this.sites.find({}).toArray();
+  }
+
+  async setPassword(userId: ObjectId, passwordHash: string, now: Date) {
+    await this.users.updateOne({ _id: userId }, { $set: { passwordHash, updatedAt: now } });
+  }
+  async deleteSessionsOf(userId: ObjectId) {
+    await this.sessions.deleteMany({ userId });
+  }
+  async createPasswordReset(reset: PasswordResetDoc) {
+    await this.resets.insertOne(reset);
+  }
+  passwordReset(id: string, now: Date) {
+    return this.resets.findOne({ _id: id, usedAt: null, expiresAt: { $gt: now } });
+  }
+  usePasswordReset(id: string, now: Date) {
+    return this.resets.findOneAndUpdate({ _id: id, usedAt: null, expiresAt: { $gt: now } }, { $set: { usedAt: now } }, { returnDocument: 'after' });
+  }
+  async deletePasswordResetsOf(userId: ObjectId) {
+    await this.resets.deleteMany({ userId });
+  }
+
+  async insertExport(doc: ExportDoc) {
+    await this.exports.insertOne(doc);
+  }
+  exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number) {
+    return this.exports.find({ tenantId, siteId, expiresAt: { $gt: now } }).sort({ createdAt: -1 }).limit(limit).toArray();
+  }
+  exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date) {
+    return this.exports.findOne({ _id: id, tenantId, siteId, expiresAt: { $gt: now } });
+  }
+  countExports(tenantId: ObjectId, siteId: number, now: Date) {
+    return this.exports.countDocuments({ tenantId, siteId, expiresAt: { $gt: now } });
+  }
+  async deleteExport(tenantId: ObjectId, siteId: number, id: ObjectId) {
+    return (await this.exports.deleteOne({ _id: id, tenantId, siteId })).deletedCount === 1;
   }
   async close() {
     await this.client.close();

@@ -30,7 +30,7 @@ let setup;
 try {
   const config = configFromEnv(env, publicUrl);
   const store = await storeFromEnv(env, hosted);
-  setup = { config, store, ...servicesFromEnv(env) };
+  setup = { config, store, ...servicesFromEnv(env, hosted) };
 } catch (error) {
   if (error instanceof SetupError) {
     for (const line of error.lines) console.error(line);
@@ -38,7 +38,7 @@ try {
   }
   throw error;
 }
-const { config, store, kv, analytics, stats } = setup;
+const { config, store, kv, analytics, stats, mailer } = setup;
 const signupAllowlist = config.signupAllowlist;
 
 if (process.argv.includes('--resync')) {
@@ -57,7 +57,7 @@ if (process.argv.includes('--resync')) {
   process.exitCode = failed ? 1 : 0;
 } else {
   const server = new Hono();
-  server.route('/', createApp({ store, kv, analytics, stats, config }));
+  server.route('/', createApp({ store, kv, analytics, stats, mailer, config }));
 
   // The dashboard (apps/web, built). Any other path gets index.html: the dashboard routes in the browser.
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));

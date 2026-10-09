@@ -1,4 +1,5 @@
-import { useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Sparkles, Tablet, Users, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import GettingStarted from '../components/dashboard/GettingStarted';
@@ -11,7 +12,7 @@ import WarningsFeed from '../components/dashboard/WarningsFeed';
 import VerticalBars from '../components/dashboard/VerticalBars';
 import { BarList, LiveChart, SourcesDonut, VisitorsChart } from '../components/dashboard/charts';
 import { useSession } from '../api/session';
-import { stats } from '../api/client';
+import { reports, startDownload, stats } from '../api/client';
 import type { RangeKey } from '../api/client';
 import { ago, capital, change, countryName, num, percent, share } from '../lib/format';
 import { usePoll } from '../lib/usePoll';
@@ -55,6 +56,23 @@ function Reports({ siteId, domain, name, range, setRange }: { siteId: number; do
   const bounceDelta = k && k.bounceRate !== null && k.previous.bounceRate !== null ? (k.bounceRate - k.previous.bounceRate) * 100 : null;
   const sourcesTotal = o ? o.sources.reduce((s, x) => s + x.sessions, 0) || 1 : 1;
 
+  // Every export is saved as a report (Reports page), so it can be downloaded again for 90 days.
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState<{ ok: boolean; text: string } | null>(null);
+  const exportCsv = async () => {
+    setExporting(true);
+    setExported(null);
+    try {
+      const { export: r } = await reports.create(siteId, range);
+      startDownload(reports.downloadUrl(siteId, r.id), r.filename);
+      setExported({ ok: true, text: 'Saved to Reports' });
+    } catch (e) {
+      setExported({ ok: false, text: e instanceof Error ? e.message : 'Export failed.' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="grid gap-6" data-testid="reports">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -65,14 +83,28 @@ function Reports({ siteId, domain, name, range, setRange }: { siteId: number; do
         </div>
         <div className="flex items-center gap-2">
           <RangeSelect value={range} onChange={(v) => setRange(v as RangeKey)} />
-          <a
-            href={stats.exportUrl(siteId, range)}
-            className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={exporting}
+            className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            <Download className="size-4" /> Export CSV
-          </a>
+            {exporting ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Download className="size-4" />} Export CSV
+          </button>
         </div>
       </div>
+
+      {exported && (
+        <p role="status" className={`-mt-3 text-right text-xs ${exported.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`}>
+          {exported.text}
+          {exported.ok && (
+            <>
+              {' · '}
+              <Link to="/reports" className="font-semibold underline-offset-2 hover:underline">View all reports</Link>
+            </>
+          )}
+        </p>
+      )}
 
       {overview.error && (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">

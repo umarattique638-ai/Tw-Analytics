@@ -16,6 +16,8 @@ import type { ApiConfig } from './config';
 import { signupAllowed } from './config';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from './domain';
 import { KvSyncError, syncSite } from './kv';
+import { UnconfiguredMailer, resetPasswordMail } from './mail';
+import type { Mailer } from './mail';
 import type { SiteConfigSink } from './kv';
 import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from './passwords';
 import { newIdentitySecret, newKeyId, newPublicKey, newSessionToken, sha256Hex } from './secrets';
@@ -23,7 +25,7 @@ import { snippetsFor } from './snippets';
 import { RANGE_KEYS, resolveRange } from './stats';
 import type { RangeKey, StatsReader } from './stats';
 import { DuplicateError } from './store/types';
-import type { ControlStore, KeyDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
+import type { ControlStore, ExportDoc, KeyDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
 import { VerifyInputError, runActiveCheck } from './verifier';
 import type { VerifierOptions } from './verifier';
 
@@ -34,6 +36,8 @@ export interface Deps {
   /** Query API (Stage 6). Null when ClickHouse is not configured for the API. */
   stats?: StatsReader | null;
   config: ApiConfig;
+  /** Outgoing e-mail (password reset). Missing: reset by e-mail is "not set up". */
+  mailer?: Mailer;
   now?: () => Date;
   verifier?: VerifierOptions;
 }
@@ -41,6 +45,12 @@ export interface Deps {
 export const SESSION_COOKIE = 'tw_session';
 /** "Has any event arrived in the last 30 min?" (BUILD-ORDER ⑤, passive check). */
 export const PASSIVE_WINDOW_MINUTES = 30;
+/** A "forgot password" link works this long. */
+export const RESET_MINUTES = 60;
+/** Reports (saved CSV exports) are deleted this many days after they were made (TTL index). */
+export const EXPORT_KEEP_DAYS = 90;
+/** Saved reports per site at one time: enough for daily exports for the whole 90 days, and then some. */
+export const EXPORT_MAX = 200;
 
 type Vars = { user: UserDoc; tenant: TenantDoc; token: string };
 type Ctx = Context<{ Variables: Vars }>;
@@ -100,6 +110,21 @@ function siteView(site: SiteDoc) {
   };
 }
 
+function exportView(e: ExportDoc) {
+  return {
+    id: e._id.toHexString(),
+    range: e.range,
+    from: e.from,
+    to: e.to,
+    timezone: e.timezone,
+    filename: e.filename,
+    rows: e.rows,
+    bytes: e.bytes,
+    createdAt: e.createdAt.toISOString(),
+    expiresAt: e.expiresAt.toISOString(),
+  };
+}
+
 const userView = (u: UserDoc) => ({ id: u._id.toHexString(), email: u.email, name: u.name ?? null });
 
 async function body(c: Context): Promise<Record<string, unknown>> {
@@ -132,6 +157,10 @@ export function createApp(deps: Deps) {
   const signupLimiter = new Limiter(20, 60 * 60_000);
   /** Per address, across e-mails: stops one machine from guessing many accounts' passwords. */
   const loginIpLimiter = new Limiter(30, 15 * 60_000);
+  /** Reset e-mails: a few per address an hour, so the form cannot be used to flood someone's inbox. */
+  const forgotLimiter = new Limiter(3, 60 * 60_000);
+  const forgotIpLimiter = new Limiter(10, 60 * 60_000);
+  const mailer = deps.mailer ?? new UnconfiguredMailer();
 
   const app = new Hono<{ Variables: Vars }>().basePath('/api/v1');
 
@@ -278,6 +307,70 @@ export function createApp(deps: Deps) {
     const ok = await verifyPassword(password, user?.passwordHash ?? (await decoyHash(config.scrypt)));
     if (!user || !ok || user.status !== 'active') throw new HttpError(401, 'invalid_credentials', 'Wrong e-mail or password.');
     const extra = await startSession(c as Ctx, user, b.token === true);
+    return c.json({ user: userView(user), ...extra });
+  });
+
+  /**
+   * Forgot password. The answer is the same whether the e-mail has an account or not (no account
+   * oracle), and takes at least the same time. The link carries a random token; only its SHA-256 is
+   * stored, it works once, for RESET_MINUTES.
+   */
+  app.post('/auth/forgot', async (c) => {
+    const started = Date.now();
+    const b = await body(c);
+    const email = str(b.email).trim();
+    if (!EMAIL_RE.test(email) || email.length > 320) throw new HttpError(400, 'invalid_email', 'Enter a valid e-mail address.');
+    if (!mailer.configured) {
+      throw new HttpError(503, 'reset_unavailable', 'Password reset by e-mail is not set up on this server yet. Ask the owner to set TW_BREVO_API_KEY and TW_MAIL_FROM.');
+    }
+    const key = email.toLowerCase();
+    if (!forgotLimiter.take(`email:${key}`, Date.now()) || !forgotIpLimiter.take(`ip:${clientIp(c)}`, Date.now())) {
+      throw new HttpError(429, 'rate_limited', 'Too many reset requests. Wait an hour and try again.');
+    }
+    const user = await store.userByEmail(key);
+    if (user && user.status === 'active') {
+      const token = newSessionToken();
+      const at = now();
+      await store.createPasswordReset({ _id: sha256Hex(token), userId: user._id, createdAt: at, expiresAt: new Date(at.getTime() + RESET_MINUTES * 60_000), usedAt: null });
+      const link = `${config.publicUrl}/reset-password?token=${encodeURIComponent(token)}`;
+      try {
+        await mailer.send(resetPasswordMail(user.email, user.name, link, RESET_MINUTES));
+      } catch (error) {
+        // Logged for the owner, never shown: telling the visitor would reveal that the account exists.
+        console.error(JSON.stringify({ tw: 'mail_failed', kind: 'password_reset', message: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+    const wait = 700 - (Date.now() - started);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    return c.json({ ok: true, minutes: RESET_MINUTES });
+  });
+
+  /** Is this reset link still good? Lets the page say "expired" before the user types a new password. */
+  app.get('/auth/reset', async (c) => {
+    const token = c.req.query('token') ?? '';
+    const reset = token ? await store.passwordReset(sha256Hex(token), now()) : null;
+    return c.json({ valid: !!reset });
+  });
+
+  /** New password from a reset link: every other session ends (all devices), and this browser is signed in. */
+  app.post('/auth/reset', async (c) => {
+    const b = await body(c);
+    const token = str(b.token);
+    const password = str(b.password);
+    if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+      throw new HttpError(400, 'invalid_password', `Use at least ${PASSWORD_MIN} characters.`);
+    }
+    const expired = () => new HttpError(400, 'reset_invalid', 'This reset link has expired or was already used. Ask for a new one.');
+    if (!token) throw expired();
+    const at = now();
+    const reset = await store.usePasswordReset(sha256Hex(token), at);
+    const user = reset && (await store.userById(reset.userId));
+    if (!reset || !user || user.status !== 'active') throw expired();
+    await store.setPassword(user._id, await hashPassword(password, config.scrypt), at);
+    await store.deleteSessionsOf(user._id);
+    await store.deletePasswordResetsOf(user._id);
+    // `token` in this body is the reset token, so a client that wants a Bearer token asks with `session: true`.
+    const extra = await startSession(c as Ctx, user, b.session === true);
     return c.json({ user: userView(user), ...extra });
   });
 
@@ -505,17 +598,88 @@ export function createApp(deps: Deps) {
   });
 
   /** One row per local day (or hour for today): the same numbers as the chart. */
-  app.get('/sites/:id/export.csv', async (c) => {
-    const site = await loadSite(c);
-    const range = rangeOf(c, site);
+  /** The CSV of the Visitors over time chart for a range: one row per local day, or per hour for Today. */
+  const buildCsv = async (site: SiteDoc, range: ReturnType<typeof rangeOf>) => {
     const o = await reading(() => statsFor().overview(site._id, range));
     const lines = [range.hourly ? 'hour_start_utc,local_hour,visitors,sessions,pageviews' : 'date,visitors,sessions,pageviews'];
     for (const r of o.series) {
       lines.push(range.hourly ? `${new Date(Number(r.bucket) * 1000).toISOString()},${r.label},${r.visitors},${r.sessions},${r.pageviews}` : `${r.bucket},${r.visitors},${r.sessions},${r.pageviews}`);
     }
+    const safe = (v: string) => v.replace(/[^A-Za-z0-9._-]+/g, '-');
+    return { csv: lines.join('\n') + '\n', rows: o.series.length, filename: `${safe(site.domain)}-${safe(range.from)}-${safe(range.to)}.csv` };
+  };
+  const csvResponse = (c: Context, csv: string, filename: string) => {
     c.header('content-type', 'text/csv; charset=utf-8');
-    c.header('content-disposition', `attachment; filename="${site.domain}-${range.from}-${range.to}.csv"`);
-    return c.body(lines.join('\n') + '\n');
+    c.header('content-disposition', `attachment; filename="${filename}"`);
+    return c.body(csv);
+  };
+
+  /** Direct download, not saved (API clients). The dashboard saves every export as a report (below). */
+  app.get('/sites/:id/export.csv', async (c) => {
+    const site = await loadSite(c);
+    const out = await buildCsv(site, rangeOf(c, site));
+    return csvResponse(c, out.csv, out.filename);
+  });
+
+  // ---------------------------------------------------------------- Reports: saved exports
+
+  const exportId = (c: Ctx) => {
+    const raw = c.req.param('exportId') ?? '';
+    if (!/^[0-9a-f]{24}$/.test(raw)) throw new HttpError(404, 'not_found', 'No such report.');
+    return new ObjectId(raw);
+  };
+
+  app.get('/sites/:id/exports', async (c) => {
+    const site = await loadSite(c);
+    const list = await store.exportsOf(c.get('tenant')._id, site._id, now(), EXPORT_MAX);
+    return c.json({ keepDays: EXPORT_KEEP_DAYS, max: EXPORT_MAX, exports: list.map(exportView) });
+  });
+
+  /** Make a report: the CSV is built now, saved, and can be downloaded again until it expires. */
+  app.post('/sites/:id/exports', async (c) => {
+    const site = await loadSite(c);
+    const b = await body(c);
+    const key = str(b.range) as RangeKey;
+    if (!RANGE_KEYS.includes(key)) throw new HttpError(400, 'invalid_range', `range is one of ${RANGE_KEYS.join(', ')}.`);
+    const tenantId = c.get('tenant')._id;
+    const at = now();
+    if ((await store.countExports(tenantId, site._id, at)) >= EXPORT_MAX) {
+      throw new HttpError(409, 'too_many_reports', `You have ${EXPORT_MAX} saved reports for this site. Delete some to make a new one.`);
+    }
+    const range = resolveRange(key, site.timezone, at);
+    const out = await buildCsv(site, range);
+    const doc: ExportDoc = {
+      _id: new ObjectId(),
+      tenantId,
+      siteId: site._id,
+      range: key,
+      from: range.from,
+      to: range.to,
+      timezone: site.timezone,
+      filename: out.filename,
+      rows: out.rows,
+      bytes: Buffer.byteLength(out.csv, 'utf8'),
+      csv: out.csv,
+      createdBy: c.get('user')._id,
+      createdAt: at,
+      expiresAt: new Date(at.getTime() + EXPORT_KEEP_DAYS * 86_400_000),
+    };
+    await store.insertExport(doc);
+    return c.json({ export: exportView(doc) }, 201);
+  });
+
+  app.get('/sites/:id/exports/:exportId/download', async (c) => {
+    const site = await loadSite(c);
+    const e = await store.exportById(c.get('tenant')._id, site._id, exportId(c), now());
+    if (!e) throw new HttpError(404, 'not_found', 'This report no longer exists (deleted, or older than 90 days).');
+    return csvResponse(c, e.csv, e.filename);
+  });
+
+  app.delete('/sites/:id/exports/:exportId', async (c) => {
+    const site = await loadSite(c);
+    const gone = await store.deleteExport(c.get('tenant')._id, site._id, exportId(c));
+    if (!gone) throw new HttpError(404, 'not_found', 'No such report.');
+    return c.json({ ok: true });
   });
 
   /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */

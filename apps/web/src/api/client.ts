@@ -76,6 +76,10 @@ export const api = {
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
   status: (id: number) => call<Status>('GET', `/sites/${id}/status`),
   verify: (id: number, url?: string) => call<VerifyResult>('POST', `/sites/${id}/verify`, { url }),
+  /** Forgot password: always the same answer, whether the e-mail has an account or not. */
+  forgot: (email: string) => call<{ ok: true; minutes: number }>('POST', '/auth/forgot', { email }),
+  resetValid: (token: string) => call<{ valid: boolean }>('GET', `/auth/reset?token=${encodeURIComponent(token)}`),
+  reset: (token: string, password: string) => call<{ user: User }>('POST', '/auth/reset', { token, password }),
 };
 
 // ------------------------------------------------------------------ Stage 6: Query API (/stats)
@@ -117,6 +121,38 @@ export interface EventsReport {
 export interface DropsReport {
   range: Range;
   rows: { reason: string; detail: string; country: string; asn: number; hits: number; last: number }[];
+}
+
+/** A saved export (Reports page). Kept 90 days, then deleted automatically. */
+export interface Report {
+  id: string;
+  range: RangeKey;
+  from: string;
+  to: string;
+  timezone: string;
+  filename: string;
+  rows: number;
+  bytes: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export const reports = {
+  list: (id: number) => call<{ keepDays: number; max: number; exports: Report[] }>('GET', `/sites/${id}/exports`),
+  create: (id: number, range: RangeKey) => call<{ export: Report }>('POST', `/sites/${id}/exports`, { range }),
+  remove: (id: number, reportId: string) => call<{ ok: true }>('DELETE', `/sites/${id}/exports/${reportId}`),
+  downloadUrl: (id: number, reportId: string) => `/api/v1/sites/${id}/exports/${reportId}/download`,
+};
+
+/** Starts a browser download of a saved report (same-origin GET, the session cookie goes along). */
+export function startDownload(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 export const stats = {

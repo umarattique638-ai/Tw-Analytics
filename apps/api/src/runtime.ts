@@ -11,6 +11,8 @@ import { defaultConfig, parseAllowlist } from './config';
 import type { ApiConfig } from './config';
 import { CloudflareKv, UnconfiguredKv } from './kv';
 import type { SiteConfigSink } from './kv';
+import { mailerFromEnv } from './mail';
+import type { Mailer } from './mail';
 import { StatsReader } from './stats';
 import { MongoStore } from './store/mongo';
 import type { ControlStore } from './store/types';
@@ -49,6 +51,7 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
     secureCookies: publicUrl.startsWith('https://'),
     verifierAllowPrivate: env.TW_VERIFIER_ALLOW_PRIVATE === '1',
     signupAllowlist,
+    publicUrl: publicUrl.replace(/\/+$/, ''),
   });
 }
 
@@ -70,7 +73,10 @@ export async function storeFromEnv(env: Env, hosted: boolean): Promise<ControlSt
   }
 }
 
-export function servicesFromEnv(env: Env): { kv: SiteConfigSink; analytics: AnalyticsReader; stats: StatsReader | null } {
+export function servicesFromEnv(
+  env: Env,
+  hosted = false,
+): { kv: SiteConfigSink; analytics: AnalyticsReader; stats: StatsReader | null; mailer: Mailer } {
   const kv =
     env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID && env.CF_API_TOKEN
       ? new CloudflareKv(env.CF_ACCOUNT_ID, env.CF_KV_NAMESPACE_ID, env.CF_API_TOKEN)
@@ -83,6 +89,7 @@ export function servicesFromEnv(env: Env): { kv: SiteConfigSink; analytics: Anal
     kv,
     analytics: clickhouse ? new ClickHouseReader(clickhouse) : new UnconfiguredReader(),
     stats: clickhouse ? new StatsReader(clickhouse) : null,
+    mailer: mailerFromEnv(env, hosted),
   };
 }
 
