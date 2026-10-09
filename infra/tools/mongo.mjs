@@ -4,6 +4,10 @@
  *
  *   node tools/mongo.mjs apply    create/update tailwatch_control: validators, indexes, site-id counter
  *   node tools/mongo.mjs verify   prove every rule on the REAL server in a scratch database, then drop it
+ *   node tools/mongo.mjs copy     copy tailwatch_control from TW_MONGO_URL (your local MongoDB) to
+ *                                 TW_MONGO_TARGET_URL (MongoDB Atlas): schema first, then every account,
+ *                                 site and key, ids unchanged. Login sessions are not copied (log in again).
+ *                                 Safe to run twice (documents are replaced by _id).
  *
  * Source of truth: infra/mongodb/control-plane.schema.json. A test keeps it identical to the mongosh script
  * infra/mongodb/001_control_plane.js, so both ways of applying give the same result.
@@ -205,10 +209,52 @@ async function connect() {
   }
 }
 
+/** Local -> Atlas, ids unchanged (site 101 stays 101, so its ClickHouse data stays its data). */
+async function copy() {
+  const target = process.env.TW_MONGO_TARGET_URL;
+  if (!target) {
+    console.error('Missing TW_MONGO_TARGET_URL (the MongoDB Atlas connection string) in the root .env.');
+    process.exit(2);
+  }
+  // promoteLongs: false keeps 64-bit numbers (site ids, the id counter) as Long, so the target's rules accept them.
+  const from = new MongoClient(MONGO_URL, { serverSelectionTimeoutMS: 8000, promoteLongs: false });
+  const to = new MongoClient(target, { serverSelectionTimeoutMS: 15000 });
+  try {
+    await from.connect();
+    await to.connect();
+  } catch (error) {
+    console.error(`FAILED: cannot connect (${error.message}). Check both URLs, and in Atlas: Network Access allows your IP.`);
+    process.exit(1);
+  }
+  try {
+    const src = from.db(schema.database);
+    const dst = to.db(schema.database);
+    console.log(`from ${redact(MONGO_URL)}
+  to ${redact(target)}`);
+    await applySchema(dst);
+    console.log(`schema applied on the target (${Object.keys(schema.collections).length} collections, rules + indexes)`);
+    for (const name of ['counters', 'tenants', 'users', 'memberships', 'sites']) {
+      const docs = await src.collection(name).find({}).toArray();
+      for (const doc of docs) await dst.collection(name).replaceOne({ _id: doc._id }, doc, { upsert: true });
+      const there = await dst.collection(name).countDocuments();
+      console.log(`  ${name.padEnd(12)} copied ${String(docs.length).padStart(4)}   now on target ${there}`);
+    }
+    const sites = await dst.collection('sites').find({}, { projection: { domain: 1 } }).toArray();
+    console.log(`
+OK. Sites on the target: ${sites.map((x) => `${x._id} ${x.domain}`).join(', ') || '(none)'}`);
+    console.log('Login sessions were not copied: log in again on the new server.');
+    printReplicaSetAdvice((await to.db('admin').command({ hello: 1 })).setName ?? null);
+  } finally {
+    await from.close();
+    await to.close();
+  }
+}
+
 const command = process.argv[2];
 if (command === 'apply') await apply();
 else if (command === 'verify') await verify();
+else if (command === 'copy') await copy();
 else {
-  console.error('usage: mongo.mjs apply | verify');
+  console.error('usage: mongo.mjs apply | verify | copy');
   process.exit(2);
 }

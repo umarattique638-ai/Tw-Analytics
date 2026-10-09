@@ -14,7 +14,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './analytics';
 import { createApp } from './app';
-import { defaultConfig } from './config';
+import { defaultConfig, parseAllowlist } from './config';
 import { CloudflareKv, UnconfiguredKv, syncSite } from './kv';
 import { StatsReader } from './stats';
 import { MongoStore } from './store/mongo';
@@ -32,12 +32,22 @@ function need(name: string): string {
   return v;
 }
 
-const publicUrl = env.TW_PUBLIC_URL || `http://localhost:${env.TW_API_PORT || 8788}`;
+// Hosted (Render): the platform gives PORT and the public https address (RENDER_EXTERNAL_URL) itself.
+const hosted = !!env.PORT;
+const port = Number(env.TW_API_PORT || env.PORT || 8788);
+const publicUrl = env.TW_PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+const signupAllowlist = parseAllowlist(env.TW_SIGNUP_ALLOWLIST);
+if (publicUrl.startsWith('https://') && !signupAllowlist) {
+  console.error('Refusing to start: this is a public (https) server and TW_SIGNUP_ALLOWLIST is empty, so anyone could sign up.');
+  console.error('Set TW_SIGNUP_ALLOWLIST to your e-mail (comma-separated, "@domain.com" allows a whole domain).');
+  process.exit(2);
+}
 const config = defaultConfig({
   collectorUrl: need('TW_COLLECTOR_URL'),
   region: env.TW_REGION === 'in-eu' ? 'in-eu' : 'in',
   secureCookies: publicUrl.startsWith('https://'),
   verifierAllowPrivate: env.TW_VERIFIER_ALLOW_PRIVATE === '1',
+  signupAllowlist,
 });
 
 let store: MongoStore;
@@ -45,7 +55,9 @@ try {
   store = await MongoStore.connect(need('TW_MONGO_URL'), env.TW_MONGO_DB || 'tailwatch_control');
 } catch (error) {
   console.error(`Cannot connect to MongoDB (${error instanceof Error ? error.message : error}).`);
-  console.error('Is it running, and is TW_MONGO_URL in .env right? From Stage 5 it is mongodb://127.0.0.1:27017/?replicaSet=rs0');
+  console.error(hosted
+    ? 'Check TW_MONGO_URL in the hosting settings (MongoDB Atlas connection string) and that Atlas Network Access allows 0.0.0.0/0.'
+    : 'Is it running, and is TW_MONGO_URL in .env right? From Stage 5 it is mongodb://127.0.0.1:27017/?replicaSet=rs0');
   process.exit(2);
 }
 const kv =
@@ -86,10 +98,11 @@ if (process.argv.includes('--resync')) {
     server.get('*', (c) => c.html(index));
   }
 
-  const port = Number(env.TW_API_PORT || 8788);
-  const hostname = env.TW_API_HOST || '127.0.0.1';
+  // Locally only this computer can reach it; a host must listen on every interface.
+  const hostname = env.TW_API_HOST || (hosted ? '0.0.0.0' : '127.0.0.1');
   const listening = serve({ fetch: server.fetch, port, hostname }, () => {
     console.log(`TailWatch API + dashboard: ${publicUrl}`);
+    console.log(signupAllowlist ? `  sign-up limited to: ${signupAllowlist.join(', ')}` : '  sign-up: open (local development)');
     if (kv instanceof UnconfiguredKv) console.log('  WARNING: Cloudflare KV not configured (CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID, CF_API_TOKEN): new sites will not activate.');
     if (analytics instanceof UnconfiguredReader) console.log('  WARNING: ClickHouse read user not configured (TW_CH_READ_PASSWORD): the first-pageview check cannot run.');
   });

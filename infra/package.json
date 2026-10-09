@@ -13,7 +13,8 @@
     "ch:reader": "node tools/clickhouse.mjs reader",
     "lists:generate": "node tools/lists.mjs generate",
     "lists:check": "node tools/lists.mjs check",
-    "lists:update": "node tools/lists.mjs update"
+    "lists:update": "node tools/lists.mjs update",
+    "mongo:copy": "node tools/mongo.mjs copy"
   },
   "dependencies": {
     "mongodb": "^7.7.0"

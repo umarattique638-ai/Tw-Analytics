@@ -1,0 +1,45 @@
+# Render Blueprint: the TailWatch API + dashboard as ONE free web service (docs/TESTING.md section 11).
+# Render > New > Blueprint > pick this GitHub repo. Values marked sync:false are asked for once in
+# Render's dashboard and never stored in git.
+services:
+  - type: web
+    name: tailwatch
+    runtime: node
+    plan: free
+    # Closest Render region to the ClickHouse Cloud service (il-central-1) and to Pakistan.
+    region: frankfurt
+    # Only the API, the dashboard and what they need: no workerd, no browsers.
+    buildCommand: >-
+      corepack enable &&
+      pnpm install --frozen-lockfile --filter "@tailwatch/api..." --filter "@tailwatch/web..." &&
+      pnpm --filter @tailwatch/web build &&
+      pnpm --filter @tailwatch/api build
+    startCommand: node apps/api/dist/server.mjs
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: COREPACK_ENABLE_DOWNLOAD_PROMPT
+        value: "0"
+      - key: TW_COLLECTOR_URL
+        value: https://tailwatch-collector.umarattique638.workers.dev
+      - key: TW_REGION
+        value: in
+      - key: CF_ACCOUNT_ID
+        value: a4f0ab5a55729cc4acfc9cb056904a95
+      - key: CF_KV_NAMESPACE_ID
+        value: 0878a2b0f1c148148ec8dbe73cac767c
+      - key: TW_CH_READ_USER
+        value: tw_read
+      # Secrets and personal values: Render asks for these when the Blueprint is created.
+      - key: TW_MONGO_URL
+        sync: false
+      - key: TW_SIGNUP_ALLOWLIST
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
+      - key: TW_CH_URL
+        sync: false
+      - key: TW_CH_READ_PASSWORD
+        sync: false

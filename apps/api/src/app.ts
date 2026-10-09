@@ -13,6 +13,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { ObjectId } from 'mongodb';
 import type { AnalyticsReader } from './analytics';
 import type { ApiConfig } from './config';
+import { signupAllowed } from './config';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from './domain';
 import { KvSyncError, syncSite } from './kv';
 import type { SiteConfigSink } from './kv';
@@ -112,11 +113,25 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
+/**
+ * The client's address for rate limiting only (never stored). Behind a hosting proxy (Render) the real
+ * address is the LAST X-Forwarded-For entry: the proxy appends it, and anything before it the client
+ * could have written itself.
+ */
+function clientIp(c: Context): string {
+  const xff = c.req.header('x-forwarded-for');
+  if (!xff) return 'local';
+  const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+  return parts[parts.length - 1] ?? 'local';
+}
+
 export function createApp(deps: Deps) {
   const { store, kv, analytics, config } = deps;
   const now = deps.now ?? (() => new Date());
   const loginLimiter = new Limiter(10, 15 * 60_000);
   const signupLimiter = new Limiter(20, 60 * 60_000);
+  /** Per address, across e-mails: stops one machine from guessing many accounts' passwords. */
+  const loginIpLimiter = new Limiter(30, 15 * 60_000);
 
   const app = new Hono<{ Variables: Vars }>().basePath('/api/v1');
 
@@ -221,7 +236,10 @@ export function createApp(deps: Deps) {
     if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
       throw new HttpError(400, 'invalid_password', `Use at least ${PASSWORD_MIN} characters.`);
     }
-    if (!signupLimiter.take(`ip:${c.req.header('x-forwarded-for') ?? 'local'}`, Date.now())) {
+    if (!signupAllowed(config.signupAllowlist, email)) {
+      throw new HttpError(403, 'signup_closed', 'Sign-up on this server is by invitation only. Ask the owner to add your e-mail.');
+    }
+    if (!signupLimiter.take(`ip:${clientIp(c)}`, Date.now())) {
       throw new HttpError(429, 'rate_limited', 'Too many sign-ups from here. Try again later.');
     }
     const at = now();
@@ -252,7 +270,7 @@ export function createApp(deps: Deps) {
     const b = await body(c);
     const email = str(b.email).trim().toLowerCase();
     const password = str(b.password);
-    if (!loginLimiter.take(`email:${email}`, Date.now())) {
+    if (!loginLimiter.take(`email:${email}`, Date.now()) || !loginIpLimiter.take(`ip:${clientIp(c)}`, Date.now())) {
       throw new HttpError(429, 'rate_limited', 'Too many attempts. Wait 15 minutes and try again.');
     }
     const user = email ? await store.userByEmail(email) : null;

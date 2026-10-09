@@ -28,6 +28,7 @@
     "lists:check": "pnpm --filter @tailwatch/infra lists:check",
     "lists:update": "pnpm --filter @tailwatch/infra lists:update",
     "e2e:precision": "pnpm --filter @tailwatch/consumer e2e:precision",
-    "bots:live": "pnpm --filter @tailwatch/consumer bots:live"
+    "bots:live": "pnpm --filter @tailwatch/consumer bots:live",
+    "db:mongo:copy": "pnpm --filter @tailwatch/infra mongo:copy"
   }
 }

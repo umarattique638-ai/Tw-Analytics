@@ -16,6 +16,24 @@ export interface ApiConfig {
   scrypt: ScryptCost;
   /** Tests / local development only: the active verifier may fetch private addresses. */
   verifierAllowPrivate: boolean;
+  /**
+   * Who may sign up. null = anyone (local development). On a public server (TW_SIGNUP_ALLOWLIST) only
+   * these e-mails, or e-mails of a listed domain written as "@example.com". Until Phase 3 (teams,
+   * invites, quotas) a public dashboard must not be open to everyone.
+   */
+  signupAllowlist: string[] | null;
+}
+
+/** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty -> null (open). */
+export function parseAllowlist(raw: string | undefined): string[] | null {
+  const list = (raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return list.length ? list : null;
+}
+
+export function signupAllowed(allowlist: string[] | null, email: string): boolean {
+  if (!allowlist) return true;
+  const e = email.trim().toLowerCase();
+  return allowlist.some((entry) => (entry.startsWith('@') ? e.endsWith(entry) : e === entry));
 }
 
 export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
@@ -27,5 +45,6 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   sessionDays: 30,
   scrypt: PRODUCTION_COST,
   verifierAllowPrivate: false,
+  signupAllowlist: null,
   ...over,
 });

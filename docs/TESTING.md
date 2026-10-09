@@ -362,3 +362,38 @@ The drops then show up, itemised, on the dashboard's **Suspicious activity** pag
 pnpm lists:update   # prints what was added/removed upstream — READ IT (a new ASN that is a home ISP? add it to infra/lists/asn-overrides.json "never")
 pnpm --filter @tailwatch/consumer test
 ```
+
+## 11. The dashboard online (Render free + MongoDB Atlas free)
+
+What goes online: the API + dashboard (one Node service on Render) and the control-plane database
+(MongoDB Atlas). Collector, consumer, queue, KV, R2 and ClickHouse are already online and do not change.
+
+**A. MongoDB Atlas (free M0)**
+1. https://www.mongodb.com/cloud/atlas/register → sign up → create a **Free (M0)** cluster
+   (provider AWS, region **Frankfurt eu-central-1** or **Bahrain me-south-1**).
+2. *Database Access* → **Add New Database User** → `tw_app`, a long generated password,
+   role **Read and write to any database** (simplest; later: readWrite on `tailwatch_control` only).
+3. *Network Access* → **Add IP Address** → **Allow access from anywhere** (`0.0.0.0/0`).
+   Render's free servers have no fixed address, so this is needed; the long password protects it.
+4. *Clusters* → **Connect** → **Drivers** → copy the `mongodb+srv://tw_app:<password>@...` string,
+   put the password in, add the database name: `...mongodb.net/tailwatch_control?retryWrites=true&w=majority`.
+
+**B. Copy your accounts and sites to Atlas (folder `ttw`)**
+Put the Atlas string in the root `.env` as `TW_MONGO_TARGET_URL="mongodb+srv://..."`, then:
+```powershell
+pnpm db:mongo:copy
+```
+It applies the schema on Atlas, then copies accounts, workspaces, sites (with their keys, so site 101 stays
+101 and keeps its ClickHouse data) and the site-id counter. Optional proof on Atlas:
+`$env:TW_MONGO_URL = "<atlas string>"; pnpm verify:mongo` (needs an Atlas user with admin rights).
+
+**C. Render (free)**
+1. Push `ttw` to GitHub (it contains `render.yaml`).
+2. https://render.com → sign in with GitHub → **New → Blueprint** → choose the repo.
+3. Render asks for the secret values once: `TW_MONGO_URL` (the Atlas string), `TW_SIGNUP_ALLOWLIST`
+   (your e-mail), `CF_API_TOKEN`, `TW_CH_URL`, `TW_CH_READ_PASSWORD` (same as in your `.env`).
+4. **Apply**. The first build takes a few minutes. Your dashboard: `https://tailwatch-xxxx.onrender.com`.
+
+Free plan: the service sleeps after 15 minutes without visits and the first visit then takes about a
+minute. Data collection is not affected (that is Cloudflare). A public server refuses to start without
+`TW_SIGNUP_ALLOWLIST`, so nobody else can create an account until Phase 3.

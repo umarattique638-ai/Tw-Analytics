@@ -138,6 +138,30 @@ describe('① sign up / log in', () => {
     expect(last).toBe(429);
   });
 
+  it('a public server only lets allow-listed e-mails sign up (TW_SIGNUP_ALLOWLIST)', async () => {
+    const s = setup({ signupAllowlist: ['umar@example.com', '@team.test'] });
+    const c = s.client();
+    const stranger = await c.post('/auth/signup', { name: 'X', email: 'someone@else.com', password: 'correct horse' });
+    expect(stranger.status).toBe(403);
+    expect(stranger.body.error).toBe('signup_closed');
+    expect((await s.client().post('/auth/signup', { name: 'Umar', email: 'UMAR@example.com', password: 'correct horse' })).status).toBe(201);
+    expect((await s.client().post('/auth/signup', { name: 'Sara', email: 'sara@team.test', password: 'correct horse' })).status).toBe(201);
+  });
+
+  it('login is also rate limited per client address, across e-mails (password spraying)', async () => {
+    const s = setup();
+    const c = s.client();
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) {
+      statuses.push((await c.post('/auth/login', { email: `user${i}@example.com`, password: 'wrong wrong' }, { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' })).status);
+    }
+    expect(statuses.slice(0, 30).every((x) => x === 401)).toBe(true);
+    expect(statuses[30]).toBe(429);
+    // The address is the proxy-appended LAST entry: a client cannot dodge the limit by changing the first one.
+    const other = await c.post('/auth/login', { email: 'next@example.com', password: 'wrong wrong' }, { 'x-forwarded-for': '1.2.3.4, 203.0.113.9' });
+    expect(other.status).toBe(429);
+  });
+
   it('logout ends the session', async () => {
     const s = setup();
     const c = await signedUp(s);
