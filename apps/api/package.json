@@ -10,7 +10,8 @@
     "start": "node dist/server.mjs",
     "resync": "node dist/server.mjs --resync",
     "live": "vitest run test/live",
-    "e2e": "pnpm --filter @tailwatch/collector build && pnpm --filter @tailwatch/web build && pnpm build && vitest run test/e2e"
+    "e2e": "pnpm --filter @tailwatch/collector build && pnpm --filter @tailwatch/web build && pnpm build && vitest run test/e2e",
+    "build:vercel": "node scripts/build-vercel.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.4",

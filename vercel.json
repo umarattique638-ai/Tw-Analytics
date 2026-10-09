@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile --filter \"@tailwatch/api...\" --filter \"@tailwatch/web...\"",
+  "buildCommand": "pnpm --filter @tailwatch/web build && pnpm --filter @tailwatch/api build:vercel"
+}

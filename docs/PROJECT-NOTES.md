@@ -367,6 +367,8 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
     b. MongoDB Atlas M0 (free, 3-node replica set: transactions work). Accounts and sites are copied with their ids (pnpm db:mongo:copy), so site 101 keeps its ClickHouse data and KV entry.
     c. A public (https) server refuses to start without TW_SIGNUP_ALLOWLIST: until Phase 3 (teams, invites, quotas) only the owner can sign up. Login is rate limited per e-mail (10/15 min) and per client address (30/15 min, the proxy-appended last X-Forwarded-For entry). Cookies are Secure on https.
     d. Accepted limits of the free plan: sleeps after 15 minutes idle, ~1 minute cold start; Atlas Network Access 0.0.0.0/0 because Render free has no fixed outbound IP. Move to a paid plan at launch.
+    e. 2026-10-09: Render asked for a credit card (the owner has none), so the dashboard goes on VERCEL Hobby (free, no card): the built dashboard as static files + the same API as one Node 22 serverless function (apps/api/src/vercel.ts, .vercel/output via scripts/build-vercel.mjs, vercel.json). Settings rules live in apps/api/src/runtime.ts, shared with `pnpm app` and Render. Known serverless difference: the in-memory login rate limits are per warm instance; a shared limiter is a Phase 3 item.
+    f. Atlas copy done 2026-10-09 (pnpm db:mongo:copy): 1 account, 1 workspace, site 101 with its keys. Atlas user tw_app = readWriteAnyDatabase (the app); collMod (schema changes) needs an Atlas admin user.
 ---------------------------------------------------------------------------------------------------------
 
 ## 16. Lessons from the first attempt (do not repeat)

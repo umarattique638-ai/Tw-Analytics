@@ -12,63 +12,34 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './analytics';
+import { UnconfiguredReader } from './analytics';
 import { createApp } from './app';
-import { defaultConfig, parseAllowlist } from './config';
-import { CloudflareKv, UnconfiguredKv, syncSite } from './kv';
-import { StatsReader } from './stats';
-import { MongoStore } from './store/mongo';
+import { UnconfiguredKv, syncSite } from './kv';
+import { SetupError, configFromEnv, publicUrlOf, servicesFromEnv, storeFromEnv } from './runtime';
 
 const rootEnv = fileURLToPath(new URL('../../../.env', import.meta.url));
 if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const env = process.env;
 
-function need(name: string): string {
-  const v = env[name];
-  if (!v) {
-    console.error(`Missing ${name}. Put it in the .env file at the repository root (see .env.example, Stage 5).`);
-    process.exit(2);
-  }
-  return v;
-}
-
-// Hosted (Render): the platform gives PORT and the public https address (RENDER_EXTERNAL_URL) itself.
+// Hosted (Render, a VPS): the platform gives PORT. Settings rules live in runtime.ts (shared with Vercel).
 const hosted = !!env.PORT;
 const port = Number(env.TW_API_PORT || env.PORT || 8788);
-const publicUrl = env.TW_PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
-const signupAllowlist = parseAllowlist(env.TW_SIGNUP_ALLOWLIST);
-if (publicUrl.startsWith('https://') && !signupAllowlist) {
-  console.error('Refusing to start: this is a public (https) server and TW_SIGNUP_ALLOWLIST is empty, so anyone could sign up.');
-  console.error('Set TW_SIGNUP_ALLOWLIST to your e-mail (comma-separated, "@domain.com" allows a whole domain).');
-  process.exit(2);
-}
-const config = defaultConfig({
-  collectorUrl: need('TW_COLLECTOR_URL'),
-  region: env.TW_REGION === 'in-eu' ? 'in-eu' : 'in',
-  secureCookies: publicUrl.startsWith('https://'),
-  verifierAllowPrivate: env.TW_VERIFIER_ALLOW_PRIVATE === '1',
-  signupAllowlist,
-});
+const publicUrl = publicUrlOf(env, port);
 
-let store: MongoStore;
+let setup;
 try {
-  store = await MongoStore.connect(need('TW_MONGO_URL'), env.TW_MONGO_DB || 'tailwatch_control');
+  const config = configFromEnv(env, publicUrl);
+  const store = await storeFromEnv(env, hosted);
+  setup = { config, store, ...servicesFromEnv(env) };
 } catch (error) {
-  console.error(`Cannot connect to MongoDB (${error instanceof Error ? error.message : error}).`);
-  console.error(hosted
-    ? 'Check TW_MONGO_URL in the hosting settings (MongoDB Atlas connection string) and that Atlas Network Access allows 0.0.0.0/0.'
-    : 'Is it running, and is TW_MONGO_URL in .env right? From Stage 5 it is mongodb://127.0.0.1:27017/?replicaSet=rs0');
-  process.exit(2);
+  if (error instanceof SetupError) {
+    for (const line of error.lines) console.error(line);
+    process.exit(2);
+  }
+  throw error;
 }
-const kv =
-  env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID && env.CF_API_TOKEN
-    ? new CloudflareKv(env.CF_ACCOUNT_ID, env.CF_KV_NAMESPACE_ID, env.CF_API_TOKEN)
-    : new UnconfiguredKv();
-const clickhouse =
-  env.TW_CH_URL && env.TW_CH_READ_PASSWORD
-    ? new ClickHouseClient(env.TW_CH_URL, env.TW_CH_READ_USER || 'tw_read', env.TW_CH_READ_PASSWORD)
-    : null;
-const analytics = clickhouse ? new ClickHouseReader(clickhouse) : new UnconfiguredReader();
+const { config, store, kv, analytics, stats } = setup;
+const signupAllowlist = config.signupAllowlist;
 
 if (process.argv.includes('--resync')) {
   let failed = 0;
@@ -81,12 +52,12 @@ if (process.argv.includes('--resync')) {
       console.log(`  FAIL  site ${site._id} ${site.domain}: ${error instanceof Error ? error.message : error}`);
     }
   }
-  await store.close();
+  await store.close?.();
   console.log(failed ? `${failed} site(s) failed.` : 'OK: Cloudflare KV matches MongoDB.');
   process.exitCode = failed ? 1 : 0;
 } else {
   const server = new Hono();
-  server.route('/', createApp({ store, kv, analytics, stats: clickhouse ? new StatsReader(clickhouse) : null, config }));
+  server.route('/', createApp({ store, kv, analytics, stats, config }));
 
   // The dashboard (apps/web, built). Any other path gets index.html: the dashboard routes in the browser.
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));

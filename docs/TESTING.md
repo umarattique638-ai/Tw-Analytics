@@ -387,7 +387,21 @@ It applies the schema on Atlas, then copies accounts, workspaces, sites (with th
 101 and keeps its ClickHouse data) and the site-id counter. Optional proof on Atlas:
 `$env:TW_MONGO_URL = "<atlas string>"; pnpm verify:mongo` (needs an Atlas user with admin rights).
 
-**C. Render (free)**
+**C. Vercel (free Hobby plan, no card) — the way we use**
+1. https://vercel.com/signup → **Continue with GitHub** → Hobby.
+2. **Add New → Project** → import the GitHub repo. Framework Preset: **Other**. Leave Root Directory,
+   Build and Install commands empty: `vercel.json` sets them.
+3. **Environment Variables** (Production): `TW_MONGO_URL` (Atlas, user tw_app), `TW_SIGNUP_ALLOWLIST`
+   (your e-mail), `TW_COLLECTOR_URL`, `TW_REGION=in`, `CF_ACCOUNT_ID`, `CF_KV_NAMESPACE_ID`,
+   `CF_API_TOKEN`, `TW_CH_URL`, `TW_CH_READ_USER=tw_read`, `TW_CH_READ_PASSWORD`.
+4. **Deploy**. Your dashboard: `https://<project>.vercel.app`. Every `git push` deploys again.
+
+How it runs: `pnpm --filter @tailwatch/api build:vercel` writes `.vercel/output` (Build Output API):
+the dashboard as static files on Vercel's CDN, and the API (`apps/api/src/vercel.ts`, same createApp and
+rules as `pnpm app`) as one Node 22 function behind `/api/*`. Settings rules are shared in
+`apps/api/src/runtime.ts`.
+
+**C2. Render (free, but asks for a card)**
 1. Push `ttw` to GitHub (it contains `render.yaml`).
 2. https://render.com → sign in with GitHub → **New → Blueprint** → choose the repo.
 3. Render asks for the secret values once: `TW_MONGO_URL` (the Atlas string), `TW_SIGNUP_ALLOWLIST`
