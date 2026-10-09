@@ -1,7 +1,7 @@
 import { LIMITS } from '@tailwatch/contract';
 import type { SessionRecord } from '../core/rows';
 import type { StateLoad, StatePort, StateSnapshot, StateUpdate } from '../process';
-import type { CommitRequest, LoadRequest, LoadResponse } from './store';
+import type { CommitRequest, IntendRequest, LoadRequest, LoadResponse } from './store';
 
 /**
  * StatePort backed by the SessionStateObject Durable Object (production, Free plan).
@@ -31,6 +31,12 @@ export class StateStoreError extends Error {
   }
 }
 
+/**
+ * An insert group is remembered as long as an event's de-dup marker (7 days): queue retries end within an
+ * hour, but a dead letter can be replayed days later and must still find its first group.
+ */
+export const INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export const sessionKey = (siteId: number, visitor: string): string => `${siteId}:${visitor}`;
 
 export function createDurableState(namespace: DurableNamespaceLike, options: { shards?: number } = {}): StatePort {
@@ -38,7 +44,7 @@ export function createDurableState(namespace: DurableNamespaceLike, options: { s
   const stubFor = (shard: number) => namespace.get(namespace.idFromName(`sessions-shard-${shard}`));
   const shardOf = (siteId: number) => siteId % shards;
 
-  async function call<T>(shard: number, path: '/load' | '/commit', body: LoadRequest | CommitRequest): Promise<T | null> {
+  async function call<T>(shard: number, path: '/load' | '/commit' | '/intend', body: LoadRequest | CommitRequest | IntendRequest): Promise<T | null> {
     const res = await stubFor(shard).fetch(`https://state${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -64,13 +70,25 @@ export function createDurableState(namespace: DurableNamespaceLike, options: { s
       const responses = await Promise.all(
         [...byShard].map(([shard, body]) => call<LoadResponse>(shard, '/load', body)),
       );
-      const snapshot: StateSnapshot = { sessions: new Map<string, SessionRecord>(), seen: new Set<string>() };
+      const snapshot: StateSnapshot = { sessions: new Map<string, SessionRecord>(), seen: new Set<string>(), intents: new Map<string, string>() };
       for (const response of responses) {
         if (!response) continue;
         for (const [key, record] of Object.entries(response.sessions)) snapshot.sessions.set(key, record);
         for (const key of response.seen) snapshot.seen.add(key);
+        for (const [key, group] of Object.entries(response.intents ?? {})) snapshot.intents!.set(key, group);
       }
       return snapshot;
+    },
+
+    async intend(entries: readonly { siteId: number; key: string; group: string }[], now: number): Promise<void> {
+      const byShard = new Map<number, IntendRequest>();
+      for (const e of entries) {
+        const shard = shardOf(e.siteId);
+        const entry = byShard.get(shard) ?? { entries: [], now, ttlMs: INTENT_TTL_MS };
+        entry.entries.push({ key: e.key, group: e.group });
+        byShard.set(shard, entry);
+      }
+      await Promise.all([...byShard].map(([shard, body]) => call(shard, '/intend', body)));
     },
 
     async commit(updates: readonly StateUpdate[], dedupe: readonly { siteId: number; key: string }[], now: number): Promise<void> {

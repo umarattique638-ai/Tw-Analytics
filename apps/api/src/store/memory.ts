@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Long, ObjectId } from 'mongodb';
 import { violation } from './validate';
 import { DuplicateError } from './types';
-import type { ControlStore, ExportDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { ControlStore, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /**
  * In-memory ControlStore for tests. It enforces the same rules the real MongoDB enforces:
@@ -41,6 +41,7 @@ export class MemoryStore implements ControlStore {
   sites: SiteDoc[] = [];
   exports: ExportDoc[] = [];
   resets: PasswordResetDoc[] = [];
+  outbox: KvIssueDoc[] = [];
   counter = Long.fromNumber(0);
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -117,6 +118,24 @@ export class MemoryStore implements ControlStore {
   }
   async allSites() {
     return clone(this.sites);
+  }
+  async siteById(id: number) {
+    return clone(this.sites.find((s) => s._id === id) ?? null);
+  }
+
+  async recordKvIssue(siteId: number, tenantId: ObjectId, error: string, now: Date) {
+    const i = this.outbox.findIndex((o) => o._id === siteId);
+    const prev = i >= 0 ? this.outbox[i]! : null;
+    const doc: KvIssueDoc = { _id: siteId, tenantId, error: error.slice(0, 500), attempts: (prev?.attempts ?? 0) + 1, createdAt: prev?.createdAt ?? now, updatedAt: now };
+    check('kv_outbox', doc);
+    if (i >= 0) this.outbox[i] = doc;
+    else this.outbox.push(doc);
+  }
+  async kvIssues(tenantId: ObjectId | null, limit: number) {
+    return clone(this.outbox.filter((o) => !tenantId || same(o.tenantId, tenantId)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).slice(0, limit));
+  }
+  async clearKvIssue(siteId: number) {
+    this.outbox = this.outbox.filter((o) => o._id !== siteId);
   }
 
   async setPassword(userId: ObjectId, passwordHash: string, now: Date) {

@@ -16,7 +16,9 @@ export interface Site {
   publicKey: string | null;
   keys: Key[];
 }
-export interface Sync { ok: boolean; message?: string }
+export interface Sync { ok: boolean; pending?: boolean; message?: string }
+/** A site whose Cloudflare KV entries do not match yet (decision 18). Retried automatically. */
+export interface KvIssue { siteId: number; domain: string; deleted: boolean; error: string; since: string; attempts: number }
 export interface Snippet {
   id: string;
   group: 'script-tag' | 'npm' | 'framework' | 'wordpress';
@@ -65,7 +67,8 @@ export const api = {
   signup: (name: string, email: string, password: string) => call<{ user: User }>('POST', '/auth/signup', { name, email, password }),
   login: (email: string, password: string) => call<{ user: User }>('POST', '/auth/login', { email, password }),
   logout: () => call<{ ok: true }>('POST', '/auth/logout'),
-  sites: () => call<{ sites: Site[] }>('GET', '/sites'),
+  sites: () => call<{ sites: Site[]; kvIssues?: KvIssue[] }>('GET', '/sites'),
+  syncAll: () => call<{ kvIssues: KvIssue[] }>('POST', '/sites/sync-all'),
   preview: (domain: string) => call<{ domain: string; allowedHosts: string[] }>('GET', `/sites/preview?domain=${encodeURIComponent(domain)}`),
   addSite: (domain: string, timezone: string) => call<{ site: Site; sync: Sync }>('POST', '/sites', { domain, timezone }),
   site: (id: number) => call<{ site: Site; snippets: Snippet[] }>('GET', `/sites/${id}`),

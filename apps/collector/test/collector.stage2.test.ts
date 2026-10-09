@@ -233,6 +233,26 @@ describe('Stage 2 done-when: messages land in the queue', () => {
   });
 });
 
+describe('drop batching protects the Free plan queue budget (2026-10-09 review)', () => {
+  it('identical drops become ONE queue message with a hit count; different drops stay separate', async () => {
+    const h = harness();
+    h.env.DROP_BATCH_MS = '30';
+    for (let i = 0; i < 25; i++) await post(h, body({ q: i + 1 }), { 'user-agent': 'curl/8.5.0' });
+    await post(h, body({ u: 'https://evil.example/' }));
+    expect(h.drops()).toHaveLength(0); // nothing sent yet: still collecting
+    await h.settle();
+    const drops = h.drops().sort((a, b) => a.reason.localeCompare(b.reason));
+    expect(drops.map((d) => [d.reason, d.hits])).toEqual([['bot', 25], ['hostname', 1]]);
+  });
+
+  it('without DROP_BATCH_MS every drop is its own message (local dev, tests)', async () => {
+    const h = harness();
+    for (let i = 0; i < 3; i++) await post(h, body({ q: i + 1 }), { 'user-agent': 'curl/8.5.0' });
+    await h.settle();
+    expect(h.drops().map((d) => d.hits)).toEqual([undefined, undefined, undefined]);
+  });
+});
+
 describe('drops are itemised, not silent (PLAN 3.1 b, 8.2)', () => {
   it('hostname, bot and gpc drops queue a drop message with a reason', async () => {
     const h = harness();

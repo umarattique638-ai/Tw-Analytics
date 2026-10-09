@@ -53,6 +53,9 @@ writeFileSync(
         // Dashboard routes (/login, /sites/101, ...) are client-side: serve index.html.
         { src: '^/(.*)$', dest: '/index.html' },
       ],
+      // Once a day (Hobby plan limit): make Cloudflare KV match MongoDB. Vercel sends CRON_SECRET as a
+      // Bearer token when that environment variable is set; without it the route answers 404.
+      crons: [{ path: '/api/v1/internal/reconcile', schedule: '17 3 * * *' }],
     },
     null,
     2,

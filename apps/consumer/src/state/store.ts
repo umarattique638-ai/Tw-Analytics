@@ -14,6 +14,11 @@ import type { SessionRecord } from '../core/rows';
  * Keys:
  *   sessions.key = `${siteId}:${visitorHash}`    (TTL: 30 min after the last commit, PLAN 3.1 c)
  *   dedupe.key   = dedupeKey(...) from the contract (TTL: 7 days, STAGE-1 D5)
+ *   intents.key  = the same de-dup key, written BEFORE the ClickHouse inserts with the insert group it
+ *                  belongs to (TTL: 1 day). If the batch fails after inserting, the retry finds the group
+ *                  and re-inserts those rows under the SAME token, so ClickHouse drops them as duplicates
+ *                  even when the queue redelivers them mixed with other messages (2026-10-09 review).
+ *                  Deleted when the event is committed.
  */
 
 export interface SqlCursorLike {
@@ -39,6 +44,14 @@ export interface LoadRequest {
 export interface LoadResponse {
   sessions: Record<string, SessionRecord>;
   seen: string[];
+  /** de-dup key -> insert group, for events that were being inserted when a previous attempt failed. */
+  intents?: Record<string, string>;
+}
+
+export interface IntendRequest {
+  entries: { key: string; group: string }[];
+  now: number;
+  ttlMs: number;
 }
 
 export interface CommitRequest {
@@ -67,6 +80,8 @@ export class StateStore {
     sql.exec('CREATE INDEX IF NOT EXISTS sessions_expires ON sessions (expires_at)');
     sql.exec('CREATE TABLE IF NOT EXISTS dedupe (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
     sql.exec('CREATE INDEX IF NOT EXISTS dedupe_expires ON dedupe (expires_at)');
+    sql.exec('CREATE TABLE IF NOT EXISTS intents (key TEXT PRIMARY KEY, grp TEXT NOT NULL, expires_at INTEGER NOT NULL)');
+    sql.exec('CREATE INDEX IF NOT EXISTS intents_expires ON intents (expires_at)');
   }
 
   load(request: LoadRequest): LoadResponse {
@@ -88,7 +103,26 @@ export class StateStore {
       for (const row of rows) seen.push(String(row.key));
     }
 
-    return { sessions, seen };
+    const intents: Record<string, string> = {};
+    for (const part of chunks([...new Set(request.dedupeKeys)], MAX_PARAMS)) {
+      const marks = part.map(() => '?').join(',');
+      const rows = sql.exec(`SELECT key, grp FROM intents WHERE expires_at > ? AND key IN (${marks})`, request.now, ...part).toArray();
+      for (const row of rows) intents[String(row.key)] = String(row.grp);
+    }
+
+    return { sessions, seen, intents };
+  }
+
+  /** Remembers which insert group each event goes out in, before the inserts (see intents above). */
+  intend(request: IntendRequest): void {
+    const { sql } = this.backend;
+    this.backend.transaction(() => {
+      const expiry = request.now + request.ttlMs;
+      for (const { key, group } of request.entries) {
+        // An existing intent wins: a retry must keep the FIRST group, never move an event to a new one.
+        sql.exec('INSERT INTO intents (key, grp, expires_at) VALUES (?, ?, ?) ON CONFLICT (key) DO NOTHING', key, group, expiry);
+      }
+    });
   }
 
   commit(request: CommitRequest): void {
@@ -112,6 +146,9 @@ export class StateStore {
           dedupeExpiry,
         );
       }
+      for (const part of chunks([...new Set(request.dedupeKeys)], MAX_PARAMS)) {
+        sql.exec(`DELETE FROM intents WHERE key IN (${part.map(() => '?').join(',')})`, ...part);
+      }
       this.sweepSome(request.now, SWEEP_PER_COMMIT);
     });
   }
@@ -120,7 +157,7 @@ export class StateStore {
   sweepSome(now: number, limit: number): number {
     const { sql } = this.backend;
     let deleted = 0;
-    for (const table of ['sessions', 'dedupe'] as const) {
+    for (const table of ['sessions', 'dedupe', 'intents'] as const) {
       const rows = sql.exec(`SELECT key FROM ${table} WHERE expires_at <= ? LIMIT ?`, now, limit).toArray();
       for (const part of chunks(rows.map((r) => String(r.key)), MAX_PARAMS)) {
         sql.exec(`DELETE FROM ${table} WHERE key IN (${part.map(() => '?').join(',')})`, ...part);
@@ -131,9 +168,9 @@ export class StateStore {
   }
 
   /** Remaining row counts (tests and the alarm's reschedule decision). */
-  counts(): { sessions: number; dedupe: number } {
+  counts(): { sessions: number; dedupe: number; intents: number } {
     const { sql } = this.backend;
     const n = (table: string) => Number(sql.exec(`SELECT count(*) AS n FROM ${table}`).toArray()[0]?.n ?? 0);
-    return { sessions: n('sessions'), dedupe: n('dedupe') };
+    return { sessions: n('sessions'), dedupe: n('dedupe'), intents: n('intents') };
   }
 }

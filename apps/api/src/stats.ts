@@ -130,26 +130,25 @@ GROUP BY label
 ORDER BY visitors DESC, label
 LIMIT 8`,
 
-  // A page load = one visitor's run of sequence numbers; a new load starts when seq does not grow.
-  // expected = the highest seq seen in the load, received = distinct seqs that arrived. Beacons lost
-  // after the last one that arrived cannot be seen, so this is an upper bound of the true capture rate.
-  capture_rate: `SELECT sum(received) AS received, sum(expected) AS expected
+  // Every page load numbers its hits 1, 2, 3 ... (seq). Per visitor, count how often each number arrived
+  // (c). Page loads that reached number k are at least as many as those that reached any later number,
+  // so expected(k) = the largest count at k or above, and a missing number counts as expected too.
+  // Unlike a "runs of rising seq" split, this does not break when one visitor has two tabs open or two
+  // people share an IP and browser (2026-10-09 review). Beacons lost after the last one that arrived
+  // cannot be seen: this stays an upper bound of the true capture rate.
+  capture_rate: `SELECT sum(c) AS received, sum((seq - prev) * m) AS expected
 FROM
 (
-    SELECT visitor_hash, load, uniqExact(seq) AS received, max(seq) AS expected
+    SELECT visitor_hash, seq, c,
+           lagInFrame(seq, 1, 0) OVER (PARTITION BY visitor_hash ORDER BY seq ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev,
+           max(c) OVER (PARTITION BY visitor_hash ORDER BY seq DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m
     FROM
     (
-        SELECT visitor_hash, seq,
-               sum(new_load) OVER (PARTITION BY visitor_hash ORDER BY timestamp, seq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS load
-        FROM
-        (
-            SELECT visitor_hash, seq, timestamp,
-                   if(seq <= lagInFrame(seq, 1, 0) OVER (PARTITION BY visitor_hash ORDER BY timestamp, seq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 1, 0) AS new_load
-            FROM {db}.events
-            WHERE ${IN_RANGE('timestamp')} AND seq > 0
-        )
+        SELECT visitor_hash, seq, count() AS c
+        FROM {db}.events
+        WHERE ${IN_RANGE('timestamp')} AND seq > 0
+        GROUP BY visitor_hash, seq
     )
-    GROUP BY visitor_hash, load
 )`,
 
   drops_by_reason: `SELECT reason, sum(hits) AS hits, any(detail) AS detail, toUnixTimestamp64Milli(max(at)) AS last

@@ -52,6 +52,7 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
     verifierAllowPrivate: env.TW_VERIFIER_ALLOW_PRIVATE === '1',
     signupAllowlist,
     publicUrl: publicUrl.replace(/\/+$/, ''),
+    cronSecret: env.CRON_SECRET && env.CRON_SECRET.length >= 16 ? env.CRON_SECRET : null,
   });
 }
 

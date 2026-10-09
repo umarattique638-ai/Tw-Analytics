@@ -24,6 +24,8 @@ export interface ApiConfig {
   signupAllowlist: string[] | null;
   /** Where the dashboard is reachable: links in e-mails (password reset) point here. */
   publicUrl: string;
+  /** Shared secret for the scheduled KV reconcile call (Vercel Cron sends it as a Bearer token). Null: route off. */
+  cronSecret: string | null;
 }
 
 /** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty -> null (open). */
@@ -49,5 +51,6 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   verifierAllowPrivate: false,
   signupAllowlist: null,
   publicUrl: 'http://localhost:8788',
+  cronSecret: null,
   ...over,
 });

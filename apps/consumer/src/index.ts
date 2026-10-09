@@ -1,6 +1,8 @@
 import { ClickHouseError, createClickHousePort } from './adapters/clickhouse';
 import { createR2Archive } from './adapters/r2-archive';
 import type { R2BucketLike } from './adapters/r2-archive';
+import { archiveDeadLetters, replayDeadLetters } from './dlq';
+import type { DeadLetterBucket, ReplayProducer } from './dlq';
 import { processBatch } from './process';
 import type { ArchivePort, ClickHousePort, InboundMessage, Options, Ports, StatePort } from './process';
 import { StateStoreError, createDurableState } from './state/port';
@@ -37,6 +39,10 @@ export interface Env {
   SESSIONS?: DurableNamespaceLike;
   /** Number of state shards (default 8). Changing it restarts open sessions, see state/port.ts. */
   SESSION_SHARDS?: string;
+  /** Name of the dead-letter queue this Worker also consumes (wrangler.toml). */
+  DLQ_NAME?: string;
+  /** Producer binding to the main queue, used by the hourly dead-letter replay. */
+  REPLAY?: ReplayProducer;
 }
 
 interface QueueMessageLike {
@@ -47,6 +53,8 @@ interface QueueMessageLike {
 }
 
 interface QueueBatchLike {
+  /** Which queue the batch came from (the main queue or its dead-letter queue). */
+  readonly queue?: string;
   readonly messages: readonly QueueMessageLike[];
   retryAll(options?: { delaySeconds?: number }): void;
 }
@@ -132,8 +140,36 @@ export async function handleQueue(batch: QueueBatchLike, env: Env, overrides: Ov
   }
 }
 
+/** Dead letters go to R2 (kept beyond the DLQ's 24 h) and are replayed by the cron below. */
+export async function handleDeadLetters(batch: QueueBatchLike, env: Env, now = Date.now()): Promise<void> {
+  try {
+    if (!env.ARCHIVE) throw new Error('archive_required_but_missing');
+    const letters = batch.messages.map((m) => ({ id: m.id, timestamp: m.timestamp.getTime(), body: m.body }));
+    const r = await archiveDeadLetters(letters, env.ARCHIVE as unknown as DeadLetterBucket, now);
+    console.log(JSON.stringify({ tw: 'dlq_archived', stored: r.stored, parked: r.parked }));
+  } catch (error) {
+    console.error(JSON.stringify({ tw: 'dlq_archive_failed', reason: safeReason(error) }));
+    batch.retryAll({ delaySeconds: 300 });
+  }
+}
+
+export async function handleScheduled(env: Env): Promise<void> {
+  if (!env.ARCHIVE || !env.REPLAY) return;
+  try {
+    const r = await replayDeadLetters(env.ARCHIVE as unknown as DeadLetterBucket, env.REPLAY);
+    if (r.files) console.log(JSON.stringify({ tw: 'dlq_replayed', files: r.files, messages: r.messages }));
+  } catch (error) {
+    console.error(JSON.stringify({ tw: 'dlq_replay_failed', reason: safeReason(error) }));
+  }
+}
+
 export default {
   async queue(batch: QueueBatchLike, env: Env): Promise<void> {
+    if (batch.queue && batch.queue === (env.DLQ_NAME ?? 'tailwatch-events-dlq')) return handleDeadLetters(batch, env);
     await handleQueue(batch, env);
+  },
+
+  async scheduled(_controller: unknown, env: Env): Promise<void> {
+    await handleScheduled(env);
   },
 };

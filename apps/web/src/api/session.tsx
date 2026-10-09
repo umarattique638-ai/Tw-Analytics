@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { api } from './client';
-import type { Site, User } from './client';
+import type { KvIssue, Site, User } from './client';
 
 /**
  * Signed-in state for the dashboard: the user, their sites and the site being looked at.
@@ -11,6 +11,9 @@ import type { Site, User } from './client';
 interface Session {
   user: User;
   sites: Site[];
+  /** Sites whose changes have not reached Cloudflare yet (shown as a banner, retried by the server). */
+  kvIssues: KvIssue[];
+  retrySync: () => Promise<void>;
   current: Site | null;
   select: (id: number) => void;
   reload: () => Promise<Site[]>;
@@ -42,11 +45,13 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   const [state, setState] = useState<'loading' | 'out' | 'in'>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
+  const [kvIssues, setKvIssues] = useState<KvIssue[]>([]);
   const [currentId, setCurrentId] = useState<number | null>(remembered);
 
   const reload = useCallback(async () => {
-    const { sites } = await api.sites();
+    const { sites, kvIssues } = await api.sites();
     setSites(sites);
+    setKvIssues(kvIssues ?? []);
     return sites;
   }, []);
 
@@ -85,6 +90,10 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     return {
       user,
       sites,
+      kvIssues,
+      retrySync: async () => {
+        setKvIssues((await api.syncAll()).kvIssues);
+      },
       current: sites.find((s) => s.id === currentId) ?? null,
       select,
       reload,
@@ -95,7 +104,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
         setState('out');
       },
     };
-  }, [user, sites, currentId, select, reload, upsert]);
+  }, [user, sites, kvIssues, currentId, select, reload, upsert]);
 
   if (state === 'loading') {
     return (

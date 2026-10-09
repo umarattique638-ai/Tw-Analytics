@@ -397,3 +397,76 @@ describe('delivery: offline, 429, network errors', () => {
     expect(p.sent.map((s) => s.body.q)).toEqual([1, 3]);
   });
 });
+
+describe('capture rate counts only real losses (2026-10-09 review)', () => {
+  it('a hit too big to send, or with a name the collector refuses, takes no sequence number', async () => {
+    const p = page();
+    const t = p.start();
+    t.page();
+    t.track('big', { blob: 'x'.repeat(MAX_BODY_BYTES) });
+    t.track('Add To Cart');
+    t.track('add_to_cart');
+    await settle();
+    expect(p.sent.map((s) => [s.body.n, s.body.q])).toEqual([['pageview', 1], ['add_to_cart', 2]]);
+    expect(p.warnings.join(' ')).toContain('over 32 KB');
+    expect(p.warnings.join(' ')).toContain('"Add To Cart" ignored');
+  });
+
+  it('an event right after a route change goes out AFTER that page\'s pageview', async () => {
+    const p = page();
+    const t = p.start();
+    t.page();
+    p.state.href = 'https://example.com/b';
+    t.page();
+    t.track('click_buy');
+    await settle();
+    expect(p.sent.map((s) => [s.body.n, new URL(s.body.u).pathname, s.body.q])).toEqual([['pageview', '/', 1], ['pageview', '/b', 2], ['click_buy', '/b', 3]]);
+  });
+
+  it('engagement is capped at 24 h, the collector\'s limit', async () => {
+    const p = page();
+    const t = p.start();
+    t.page();
+    vi.advanceTimersByTime(30 * 3_600_000);
+    t.track('ping');
+    await settle();
+    expect(p.sent[1]!.body.e).toBe(86_400_000);
+    expect(validate(new Headers({ 'user-agent': BROWSER_UA }), p.sent[1]!.raw, { receivedAt: Date.now(), site: FIXTURE_SITE }).kind).not.toBe('reject');
+  });
+});
+
+describe('retries and consent withdrawal', () => {
+  it('withdrawing consent also drops what was waiting to be retried', async () => {
+    const p = page();
+    p.replyWith(() => Promise.resolve(false));
+    const t = p.start();
+    t.page();
+    await settle();
+    expect(p.sent).toHaveLength(1);
+    t.consent('denied');
+    p.replyWith(() => Promise.resolve(true));
+    await vi.advanceTimersByTimeAsync(RETRY_MS * 40);
+    expect(p.sent).toHaveLength(1);
+  });
+
+  it('a consent value other than granted/unknown means denied (no silent half state)', async () => {
+    const p = page();
+    const t = p.start({ consent: 'unknown' });
+    t.page();
+    t.consent(true as unknown as 'granted');
+    await settle();
+    expect(p.sent).toHaveLength(0);
+  });
+
+  it('retries back off (10 s, 20 s, 40 s ...), so a blocked collector is not hit every 10 s forever', async () => {
+    const p = page();
+    p.replyWith(() => Promise.resolve(false));
+    const t = p.start();
+    t.page();
+    await settle();
+    await vi.advanceTimersByTimeAsync(300_000);
+    // 10 + 20 + 40 + 80 + 160 s = 310 s: in 300 s at most 4 retries after the first try.
+    expect(p.sent.length).toBeLessThanOrEqual(5);
+    expect(p.sent.length).toBeGreaterThanOrEqual(4);
+  });
+});

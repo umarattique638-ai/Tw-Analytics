@@ -39,6 +39,10 @@ function harness(opts: { archiveFails?: boolean; chFailsOnce?: boolean; commitFa
         if (opts.loadFails) throw new Error('state down');
         return memory.load(requests, now);
       },
+      async intend(entries, now) {
+        calls.push('state:intend');
+        return memory.intend!(entries, now);
+      },
       async commit(updates, marks, now) {
         calls.push('state:commit');
         if (opts.commitFailsOnce && !commitFailed) { commitFailed = true; throw new Error('commit down'); }
@@ -62,7 +66,7 @@ describe('PLAN 3.1 order (a)-(g)', () => {
   it('archives first, loads state, inserts events then sessions, and commits state last', async () => {
     const h = harness();
     await processBatch([ev()], h.ports, OPT);
-    expect(h.calls).toEqual(['archive', 'state:load', 'ch:events', 'ch:sessions', 'state:commit']);
+    expect(h.calls).toEqual(['archive', 'state:load', 'state:intend', 'ch:events', 'ch:sessions', 'state:commit']);
   });
 
   it('archives the untransformed batch under raw/{date}/{hour}/{batch token}.ndjson', async () => {
@@ -107,7 +111,7 @@ describe('batching and idempotency', () => {
     await processBatch(msgs, h.ports, OPT);
     expect(h.inserts.filter((i) => i.table === 'events')).toHaveLength(1);
     expect(h.inserts.filter((i) => i.table === 'sessions')).toHaveLength(1);
-    expect(h.calls.filter((c) => c.startsWith('state:'))).toEqual(['state:load', 'state:commit']);
+    expect(h.calls.filter((c) => c.startsWith('state:'))).toEqual(['state:load', 'state:intend', 'state:commit']);
     expect(rowsOf(h, 'events')).toHaveLength(50);
   });
 
@@ -141,6 +145,63 @@ describe('batching and idempotency', () => {
     const [first, second] = [h.inserts.slice(0, 2), h.inserts.slice(2, 4)];
     expect(second).toEqual(first); // same rows, same tokens -> ClickHouse's block de-dup keeps one copy
     expect((await h.stored(7, 'V1'))?.state.pageviews).toBe(2);
+  });
+
+  it('a retry that the queue mixes with NEW messages re-inserts the old events under their FIRST token (no duplicates)', async () => {
+    const h = harness({ commitFailsOnce: true });
+    const first = [ev(), ev({ seq: 2, occurredAt: T + 60_000 }, undefined, 'm2')];
+    await expect(processBatch(first, h.ports, OPT)).rejects.toThrow('commit down');
+    const firstEvents = h.inserts.find((i) => i.table === 'events')!;
+    const firstSessions = h.inserts.find((i) => i.table === 'sessions')!;
+    // Redelivery: the two old messages plus a newer one, in a differently composed batch.
+    await processBatch([...first, ev({ seq: 3, occurredAt: T + 120_000, path: '/c' }, undefined, 'm3')], h.ports, OPT);
+    const retry = h.inserts.slice(2);
+    const ev2 = retry.filter((i) => i.table === 'events');
+    const ss2 = retry.filter((i) => i.table === 'sessions');
+    expect(ev2).toHaveLength(2);
+    expect(ev2[0]).toEqual(firstEvents); // identical rows, identical token: ClickHouse keeps one copy
+    expect(ss2[0]).toEqual(firstSessions);
+    expect(ev2[1]!.token).not.toBe(firstEvents.token);
+    expect(ev2[1]!.rows.map((r: { pathname: string }) => r.pathname)).toEqual(['/c']);
+    expect((await h.stored(7, 'V1'))?.state.pageviews).toBe(3);
+    // the new event continues the same session: its cancel row is the old group's last state
+    expect(ss2[1]!.rows[0]).toMatchObject({ sign: -1, pageviews: 2 });
+  });
+
+  it('in a mixed retry, the old events are replayed FIRST even if a new event is older, so their rows repeat exactly', async () => {
+    const h = harness({ commitFailsOnce: true });
+    const first = [ev({ occurredAt: T + 60_000 }, undefined, 'mA'), ev({ seq: 2, occurredAt: T + 120_000 }, undefined, 'mB')];
+    await expect(processBatch(first, h.ports, OPT)).rejects.toThrow('commit down');
+    const [firstEvents, firstSessions] = [h.inserts[0]!, h.inserts[1]!];
+    // the new event C happened BEFORE A and B
+    await processBatch([...first, ev({ seq: 1, occurredAt: T, path: '/c' }, { hash: 'V1', prevHash: 'V0' }, 'mC')], h.ports, OPT);
+    const retry = h.inserts.slice(2);
+    expect(retry.filter((i) => i.table === 'events')[0]).toEqual(firstEvents);
+    expect(retry.filter((i) => i.table === 'sessions')[0]).toEqual(firstSessions);
+    const cRows = retry.filter((i) => i.table === 'sessions')[1]!.rows;
+    // C continues the session written by the old group: it cancels exactly that state (version 2)
+    expect(cRows[0]).toMatchObject({ sign: -1, version: 2, pageviews: 2 });
+    expect(cRows[1]).toMatchObject({ sign: 1, version: 3, pageviews: 3 });
+  });
+
+  it('a late event (hours older than the current session) is a session of its own and does not replace the current one', async () => {
+    const h = harness();
+    await processBatch([ev({ occurredAt: T, seq: 1 })], h.ports, OPT);
+    await processBatch([ev({ occurredAt: T - 3 * 3_600_000, seq: 1, path: '/old' }, undefined, 'm-old')], h.ports, OPT);
+    const lateEvent = rowsOf(h, 'events')[1]!;
+    expect(lateEvent.session_id).toBe(Math.floor((T - 3 * 3_600_000) / 1000));
+    const lateSession = h.inserts.filter((i) => i.table === 'sessions')[1]!.rows;
+    expect(lateSession).toEqual([expect.objectContaining({ sign: 1, pageviews: 1, version: 1 })]); // a new session, nothing cancelled
+    const current = await h.stored(7, 'V1');
+    expect(current?.state.id).toBe(Math.floor(T / 1000));
+    expect(current?.state.pageviews).toBe(1);
+  });
+
+  it('a batched drop message from the collector (hits: 25) counts 25 in dropped_hits', async () => {
+    const h = harness();
+    const r = await processBatch([drop({ hits: 25 }), drop({}, 'd2'), drop({ hits: -3 }, 'd3')], h.ports, OPT);
+    expect(rowsOf(h, 'dropped_hits')).toEqual([expect.objectContaining({ reason: 'bot', hits: 27 })]); // a bad count counts 1
+    expect(r.dropsRecorded).toBe(27);
   });
 
   it('an empty batch does nothing', async () => {
@@ -244,10 +305,17 @@ describe('drops are itemised, poison does not break the batch', () => {
     expect(rows.find((r) => r.reason === 'gpc')).toMatchObject({ hits: 1, asn: 0 });
   });
 
-  it('a batch of only drops never touches the state store', async () => {
-    const h = harness();
-    await processBatch([drop()], h.ports, OPT);
-    expect(h.calls).toEqual(['archive', 'ch:dropped_hits']);
+  it('a drop message is de-duplicated by its queue message id: a redelivery (even mixed with new ones) counts once', async () => {
+    const h = harness({ commitFailsOnce: true });
+    await expect(processBatch([drop({ hits: 40 })], h.ports, OPT)).rejects.toThrow('commit down');
+    expect(h.calls).toEqual(['archive', 'state:load', 'state:intend', 'ch:dropped_hits', 'state:commit']);
+    const first = h.inserts[0]!;
+    await processBatch([drop({ hits: 40 }), drop({ reason: 'hostname' }, 'd2')], h.ports, OPT);
+    const retry = h.inserts.slice(1);
+    expect(retry[0]).toEqual(first); // same rows, same token: ClickHouse keeps one copy
+    expect(retry[1]!.rows).toEqual([expect.objectContaining({ reason: 'hostname', hits: 1 })]);
+    await processBatch([drop({ hits: 40 })], h.ports, OPT); // committed now: a later redelivery is a duplicate
+    expect(h.inserts).toHaveLength(3);
   });
 
   it('a message with a timestamp ClickHouse cannot hold is itemised, marked seen, and the rest still lands', async () => {

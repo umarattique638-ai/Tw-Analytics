@@ -4,6 +4,7 @@ import { Activity, BarChart2, Check, ChevronsUpDown, Globe, LogOut, Menu, Plus, 
 import type { LucideIcon } from 'lucide-react';
 import logo from '../../assets/lg.png';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
+import SyncBanner from './SyncBanner';
 import { api } from '../../api/client';
 import type { Site } from '../../api/client';
 import { useSession } from '../../api/session';
@@ -210,6 +211,7 @@ export default function AppShell() {
             className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_50%_-20%,rgba(45,212,191,0.16),transparent_65%)] dark:bg-[radial-gradient(ellipse_at_50%_-20%,rgba(45,212,191,0.10),transparent_65%)]"
           />
           <div className={`relative mx-auto flex w-full flex-col ${isSetup ? 'my-auto shrink-0' : 'flex-1'}`}>
+            <SyncBanner />
             <Outlet />
           </div>
         </main>

@@ -13,6 +13,7 @@ import {
 
 import type {
   DropOutcome,
+  DropQueueMessage,
   EdgeMeta,
   Outcome,
   QueueMessage,
@@ -48,6 +49,12 @@ interface Env {
    * Unset in production: a reason header would tell anyone whether a site key exists (STAGE-1 D2).
    */
   EXPOSE_DROP_REASON?: string;
+  /**
+   * Milliseconds to collect identical drops (same site, reason, detail, country, ASN) into ONE queue
+   * message per isolate (wrangler.toml: 5000). Unset or 0 = one message per drop. A bot flood then costs
+   * a handful of queue operations instead of one per hit (Free plan: about 3,300 messages a day).
+   */
+  DROP_BATCH_MS?: string;
 }
 
 interface ExecutionContextLike {
@@ -283,6 +290,41 @@ async function enqueue(env: Env, message: QueueMessage): Promise<void> {
   }
 }
 
+/** Drops being collected in this isolate, waiting for their single queue message. */
+const pendingDrops = new Map<string, DropQueueMessage>();
+const PENDING_DROPS_MAX = 500;
+
+/**
+ * Queues a drop message, or, with DROP_BATCH_MS, adds it to an identical one already waiting in this
+ * isolate. The first drop of a kind sends the batched message after the window (ctx.waitUntil keeps the
+ * invocation alive; the Free plan allows 30 s). Counts are kept, so nothing disappears from the feed.
+ */
+function queueDrop(env: Env, ctx: ExecutionContextLike, message: QueueMessage): void {
+  const windowMs = Number(env.DROP_BATCH_MS ?? 0);
+  if (message.type !== 'drop' || !(windowMs > 0 && windowMs <= 25_000)) {
+    ctx.waitUntil(enqueue(env, message));
+    return;
+  }
+  const key = [message.siteId, message.reason, message.detail ?? '', message.country ?? '', message.asn ?? 0].join('|');
+  const waiting = pendingDrops.get(key);
+  if (waiting) {
+    waiting.hits = (waiting.hits ?? 1) + 1;
+    return;
+  }
+  if (pendingDrops.size >= PENDING_DROPS_MAX) {
+    ctx.waitUntil(enqueue(env, message));
+    return;
+  }
+  pendingDrops.set(key, { ...message, hits: 1 });
+  ctx.waitUntil(
+    new Promise((resolve) => setTimeout(resolve, windowMs)).then(() => {
+      const batched = pendingDrops.get(key);
+      pendingDrops.delete(key);
+      return batched ? enqueue(env, batched) : undefined;
+    }),
+  );
+}
+
 function dropMessage(outcome: DropOutcome, at: number): QueueMessage | null {
   // not_found has no siteId on purpose: nothing to attribute it to.
   if (!outcome.siteId) return null;
@@ -333,7 +375,7 @@ async function collect(
 
   if (outcome.kind === 'drop') {
     const message = dropMessage(outcome, receivedAt);
-    if (message) ctx.waitUntil(enqueue(env, message));
+    if (message) queueDrop(env, ctx, message);
     return outcomeResponse(outcome, pixel, env);
   }
   if (outcome.kind !== 'accept') return outcomeResponse(outcome, pixel, env);
@@ -353,7 +395,7 @@ async function collect(
       },
       receivedAt,
     );
-    if (message) ctx.waitUntil(enqueue(env, message));
+    if (message) queueDrop(env, ctx, message);
     return pixel ? pixelResponse() : noContent(dropHeaders(env, 'identity_unavailable'));
   }
 

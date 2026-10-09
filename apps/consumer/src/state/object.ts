@@ -1,5 +1,5 @@
 import { StateStore } from './store';
-import type { CommitRequest, LoadRequest, SqlLike } from './store';
+import type { CommitRequest, IntendRequest, LoadRequest, SqlLike } from './store';
 
 /**
  * The Durable Object class that hosts StateStore (STAGE-1 D4).
@@ -10,6 +10,7 @@ import type { CommitRequest, LoadRequest, SqlLike } from './store';
  *
  * Protocol (JSON over the stub's fetch, so no RPC base class and no Cloudflare import is needed):
  *   POST /load    LoadRequest   -> LoadResponse
+ *   POST /intend  IntendRequest -> 204   (before the ClickHouse inserts)
  *   POST /commit  CommitRequest -> 204
  *
  * An alarm sweeps expired rows once a day so a shard that goes quiet still releases its storage.
@@ -52,6 +53,10 @@ export class SessionStateObject {
     if (path === '/load') {
       return Response.json(this.store.load(body as LoadRequest));
     }
+    if (path === '/intend') {
+      this.store.intend(body as IntendRequest);
+      return new Response(null, { status: 204 });
+    }
     if (path === '/commit') {
       this.store.commit(body as CommitRequest);
       if ((await this.state.storage.getAlarm()) === null) {
@@ -68,6 +73,6 @@ export class SessionStateObject {
       // keep sweeping in bounded rounds
     }
     const left = this.store.counts();
-    if (left.sessions + left.dedupe > 0) await this.state.storage.setAlarm(now + SWEEP_EVERY_MS);
+    if (left.sessions + left.dedupe + left.intents > 0) await this.state.storage.setAlarm(now + SWEEP_EVERY_MS);
   }
 }

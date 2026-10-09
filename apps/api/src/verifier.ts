@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { hostAllowed } from '@tailwatch/contract/url';
+import { ALLOWED_PORTS, guardedFetch, isPublicAddress } from './netguard';
 
 /**
  * Active install check (BUILD-ORDER Part 1 ⑤). Fetches the customer's page as TailwatchVerifier/1.0
@@ -105,17 +106,6 @@ export function cspAllows(policies: string[], directive: 'script-src' | 'connect
   return true;
 }
 
-function isPrivateAddress(ip: string): boolean {
-  if (isIP(ip) === 6) {
-    const v = ip.toLowerCase();
-    if (v === '::1' || v === '::') return true;
-    if (v.startsWith('::ffff:')) return isPrivateAddress(v.slice(7));
-    return /^(fc|fd|fe8|fe9|fea|feb)/.test(v);
-  }
-  const [a, b] = ip.split('.').map(Number) as [number, number];
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-}
-
 export interface VerifierOptions {
   fetchImpl?: typeof fetch;
   /** Tests and local development only: allow pages on private addresses. */
@@ -126,21 +116,30 @@ export interface VerifierOptions {
 /** SSRF guard: the API fetches a URL a user typed, so it must never reach our own network. */
 async function assertPublic(url: URL, o: VerifierOptions): Promise<void> {
   if (o.allowPrivate) return;
+  if (!ALLOWED_PORTS.has(url.port)) throw new Error('blocked port');
   const host = url.hostname.replace(/^\[|\]$/g, '');
   const addresses = isIP(host) ? [host] : await (o.resolve ?? (async (h) => (await lookup(h, { all: true })).map((a) => a.address)))(host);
-  if (addresses.length === 0 || addresses.some(isPrivateAddress)) throw new Error('private address');
+  if (addresses.length === 0 || !addresses.every(isPublicAddress)) throw new Error('private address');
 }
+
+/**
+ * The real network path checks the address again at connect time (netguard.guardedFetch), so DNS
+ * rebinding between the check above and the connection cannot reach a private address. Tests and local
+ * development (allowPrivate) inject their own fetch.
+ */
+const defaultFetch = (o: VerifierOptions): typeof fetch => o.fetchImpl ?? (o.allowPrivate ? fetch : (guardedFetch as unknown as typeof fetch));
 
 async function fetchLimited(url: string, o: VerifierOptions, accept: string): Promise<{ res: Response; body: string; finalUrl: string }> {
   let current = new URL(url);
   for (let hop = 0; hop < 5; hop++) {
     await assertPublic(current, o);
-    const res = await (o.fetchImpl ?? fetch)(current, {
+    const res = await defaultFetch(o)(current, {
       redirect: 'manual',
       headers: { 'user-agent': VERIFIER_USER_AGENT, accept },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      await res.body?.cancel().catch(() => undefined); // do not keep the socket open
       current = new URL(res.headers.get('location')!, current);
       if (current.protocol !== 'https:' && current.protocol !== 'http:') throw new Error('bad redirect');
       continue;
@@ -203,7 +202,7 @@ export async function runActiveCheck(
     html = got.body;
     checks.push(result('reach', 'pass', `${new URL(finalUrl).hostname} answered HTTP ${got.res.status}.`));
   } catch (error) {
-    const why = error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : error instanceof Error && error.message === 'private address' ? 'it resolves to a private network address' : 'connection failed';
+    const why = error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : error instanceof Error && error.message === 'private address' ? 'it resolves to a private network address' : error instanceof Error && error.message === 'blocked port' ? 'only ports 80, 443, 8080 and 8443 can be checked' : 'connection failed';
     checks.push(result('reach', 'fail', `We couldn't reach ${page.hostname} (${why}).`));
     skipRest(ALL.slice(1));
     return { url: page.href, ok: false, checks };

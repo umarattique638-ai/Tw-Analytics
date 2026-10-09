@@ -23,6 +23,12 @@ export const ENGAGEMENT_FLUSH_MIN_MS = 1_000;
 export const MAX_BUFFER = 100;
 /** Retry delay after a 429 / network failure (the collector's Retry-After is 10 s). */
 export const RETRY_MS = 10_000;
+/** Retries back off up to this (a blocked collector must not be hit every 10 s forever). */
+export const RETRY_MAX_MS = 300_000;
+/** The collector's rule for event names (contract LIMITS): anything else would be a 400 and a fake "lost" hit. */
+const NAME_RE = /^[a-z0-9_]{1,40}$/;
+/** The collector refuses engagement over 24 h; a tab left open longer sends the cap. */
+const MAX_ENGAGED_MS = 86_400_000;
 
 export type Consent = 'unknown' | 'granted' | 'denied';
 export type Props = Record<string, string | number | boolean>;
@@ -120,11 +126,13 @@ export function createTracker(config: Config, env: Env): Tracker {
     if (list.length > MAX_BUFFER) list.shift();
   };
 
+  let wait = RETRY_MS;
   const scheduleRetry = () => {
     retryTimer ??= setTimeout(() => {
       retryTimer = undefined;
+      wait = Math.min(wait * 2, RETRY_MAX_MS);
       flush(false);
-    }, RETRY_MS);
+    }, wait);
   };
 
   const deliver = (hit: Hit, hide: boolean) => {
@@ -134,14 +142,15 @@ export function createTracker(config: Config, env: Env): Tracker {
     // Bytes, not UTF-16 units: a body over the collector's cap would be a 413, so never send it.
     if (new Blob([body]).size > MAX_BODY_BYTES) return env.warn(`[tailwatch] event "${hit.n}" over 32 KB, dropped`);
     env.send(body, hide).then(
-      (done) => done || (cap(retry, hit), scheduleRetry()),
+      (done) => (done ? (wait = RETRY_MS) : (cap(retry, hit), scheduleRetry())),
       () => (cap(retry, hit), scheduleRetry()),
     );
   };
 
   const dispatch = (hit: Hit, hide = false) => {
-    // q is per page load and counts DISPATCHED hits only, so a gap means a lost beacon,
-    // never a hit we chose not to send (consent).
+    // q is per page load and counts DISPATCHED hits only, so a gap means a lost beacon, never a hit we
+    // chose not to send (consent, too big): the size check comes BEFORE q is taken.
+    if (new Blob([JSON.stringify(hit)]).size > MAX_BODY_BYTES - 64) return env.warn(`[tailwatch] event "${hit.n}" over 32 KB, dropped`);
     hit.q = ++seq;
     deliver(hit, hide);
   };
@@ -160,7 +169,7 @@ export function createTracker(config: Config, env: Env): Tracker {
   const make = (n: string, u: string, extra: Hit): Hit => {
     const e = takeEngaged();
     const h: Hit = { s: config.key, n, u, t: env.now(), v: TRACKER_VERSION, i: env.id(), w: env.width(), ...extra };
-    if (e) h.e = e;
+    if (e) h.e = Math.min(e, MAX_ENGAGED_MS);
     if (flags) h.f = ((h.f as number) | 0) | flags;
     return h;
   };
@@ -209,16 +218,26 @@ export function createTracker(config: Config, env: Env): Tracker {
     },
 
     track(name, props) {
+      // A name the collector would refuse (400) is caught here, so it never counts as a lost hit.
+      if (!NAME_RE.test(name)) return env.warn(`[tailwatch] event name "${name}" ignored: use a-z, 0-9 and _ (max 40)`);
+      // A route change still settling must be sent first: the event belongs to the new page.
+      firePending();
       const u = norm(env.href());
       if (!u) return;
       emit(make(name, u, props && Object.keys(props).length ? { p: props } : {}));
     },
 
     consent(state) {
-      consent = state;
+      consent = state === 'granted' || state === 'unknown' ? state : 'denied';
       const list = held;
       held = [];
-      if (state === 'granted') list.forEach((h) => dispatch(h));
+      if (consent === 'granted') list.forEach((h) => dispatch(h));
+      else if (consent === 'denied') {
+        // Withdrawn consent also stops what was waiting to be retried.
+        retry = [];
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
     },
 
     activity() {

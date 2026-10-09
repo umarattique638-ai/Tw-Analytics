@@ -66,6 +66,12 @@ export interface DropQueueMessage {
 
   /** ASN known at the edge, if available. */
   asn?: number;
+
+  /**
+   * How many identical drops this message stands for (same site, reason, detail, country, ASN), when the
+   * collector batches them (DROP_BATCH_MS). Absent = 1. Added 2026-10-09; optional, so append-only.
+   */
+  hits?: number;
 }
 
 /**

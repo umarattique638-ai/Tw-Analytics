@@ -436,6 +436,46 @@
         },
         "additionalProperties": false
       }
+    },
+    "kv_outbox": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "tenantId",
+          "error",
+          "attempts",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": [
+              "long",
+              "int"
+            ],
+            "description": "Site id whose Cloudflare KV entries do not match MongoDB yet."
+          },
+          "tenantId": {
+            "bsonType": "objectId"
+          },
+          "error": {
+            "bsonType": "string",
+            "maxLength": 500
+          },
+          "attempts": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "updatedAt": {
+            "bsonType": "date"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "indexes": [
@@ -547,6 +587,12 @@
       "collection": "password_resets",
       "keys": {
         "userId": 1
+      }
+    },
+    {
+      "collection": "kv_outbox",
+      "keys": {
+        "tenantId": 1
       }
     }
   ]

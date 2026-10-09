@@ -6,3 +6,8 @@ dist
 *.log
 *.timestamp-*
 .vercel
+
+# Build output and test reports (never commit)
+.next/
+test-results/
+playwright-report/

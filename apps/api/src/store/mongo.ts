@@ -1,7 +1,7 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
 import { DuplicateError } from './types';
-import type { ControlStore, ExportDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { ControlStore, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {
@@ -43,6 +43,7 @@ export class MongoStore implements ControlStore {
       this.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.resets.createIndex({ userId: 1 }),
+      this.outbox.createIndex({ tenantId: 1 }),
     ]);
   }
 
@@ -66,6 +67,9 @@ export class MongoStore implements ControlStore {
   }
   private get resets(): Collection<PasswordResetDoc> {
     return this.db.collection('password_resets');
+  }
+  private get outbox(): Collection<KvIssueDoc> {
+    return this.db.collection('kv_outbox');
   }
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -148,6 +152,23 @@ export class MongoStore implements ControlStore {
   }
   allSites() {
     return this.sites.find({}).toArray();
+  }
+  siteById(id: number) {
+    return this.sites.findOne({ _id: id });
+  }
+
+  async recordKvIssue(siteId: number, tenantId: ObjectId, error: string, now: Date) {
+    await this.outbox.updateOne(
+      { _id: siteId },
+      { $set: { tenantId, error: error.slice(0, 500), updatedAt: now }, $inc: { attempts: 1 }, $setOnInsert: { createdAt: now } },
+      { upsert: true },
+    );
+  }
+  kvIssues(tenantId: ObjectId | null, limit: number) {
+    return this.outbox.find(tenantId ? { tenantId } : {}).sort({ createdAt: 1 }).limit(limit).toArray();
+  }
+  async clearKvIssue(siteId: number) {
+    await this.outbox.deleteOne({ _id: siteId });
   }
 
   async setPassword(userId: ObjectId, passwordHash: string, now: Date) {

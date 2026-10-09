@@ -55,7 +55,7 @@ function optedOut(): boolean {
 }
 
 function isLocal(): boolean {
-  return location.protocol === 'file:' || /^(localhost|127\.|\[::1\]$|0\.0\.0\.0$)|\.(local|localhost)$/.test(location.hostname);
+  return location.protocol === 'file:' || /^(localhost|127(\.\d+){3}|\[::1\]|0\.0\.0\.0)$|\.(local|localhost)$/.test(location.hostname);
 }
 
 function inIframe(): boolean {

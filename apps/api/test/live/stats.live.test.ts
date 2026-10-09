@@ -37,6 +37,7 @@ const ts = (iso: string) => iso.replace('T', ' ').replace('Z', '');
 
 const KHI = 101; // Asia/Karachi site
 const LON = 102; // Europe/London site (DST)
+const TABS = 103; // two tabs, interleaved
 const NOW = new Date('2026-10-08T10:00:00Z'); // 15:00 in Karachi
 
 let stats: StatsReader;
@@ -83,6 +84,15 @@ beforeAll(async () => {
   await insert('dropped_hits', [
     { site_id: KHI, at: ts('2026-10-08T08:00:00Z'), reason: 'hostname', detail: 'staging.shop.test', hits: 3 },
     { site_id: KHI, at: ts('2026-10-08T08:30:00Z'), reason: 'bot', detail: 'ua_denylist', hits: 5 },
+  ]);
+
+  // ---- Two tabs of one visitor (same visitor hash), hits interleaved: tab A 1,2,3 and tab B 1,2. Nothing lost.
+  await insert('events', [
+    ev(TABS, '2026-10-08T07:00:00Z', 7, 1),
+    ev(TABS, '2026-10-08T07:00:01Z', 7, 1, { pathname: '/b' }),
+    ev(TABS, '2026-10-08T07:00:02Z', 7, 2),
+    ev(TABS, '2026-10-08T07:00:03Z', 7, 2, { pathname: '/b' }),
+    ev(TABS, '2026-10-08T07:00:04Z', 7, 3),
   ]);
 
   // ---- London site around the end of BST: 25 Oct 2026 02:00 BST -> 01:00 GMT (01:00Z)
@@ -147,6 +157,11 @@ describe.skipIf(!URL_)('Query API on a real ClickHouse', () => {
     const o = await stats.overview(KHI, resolveRange('today', 'Asia/Karachi', NOW));
     // loads: v1 [1,2,4] -> 3/4, v1 [1,2] -> 2/2, v2 [1], v3 [1], v4 [1..101] -> 101/101
     expect(o.capture).toEqual({ received: 108, expected: 109, rate: 108 / 109 });
+  });
+
+  it('capture rate: two interleaved tabs of one visitor lose nothing, so 100% (not 5 of 6)', async () => {
+    const o = await stats.overview(TABS, resolveRange('today', 'Asia/Karachi', NOW));
+    expect(o.capture).toEqual({ received: 5, expected: 5, rate: 1 });
   });
 
   it('drops by reason feed the warnings', async () => {

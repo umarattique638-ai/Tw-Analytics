@@ -148,23 +148,19 @@ LIMIT 8
 Capture rate = received / expected
 
 ```sql
-SELECT sum(received) AS received, sum(expected) AS expected
+SELECT sum(c) AS received, sum((seq - prev) * m) AS expected
 FROM
 (
-    SELECT visitor_hash, load, uniqExact(seq) AS received, max(seq) AS expected
+    SELECT visitor_hash, seq, c,
+           lagInFrame(seq, 1, 0) OVER (PARTITION BY visitor_hash ORDER BY seq ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev,
+           max(c) OVER (PARTITION BY visitor_hash ORDER BY seq DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS m
     FROM
     (
-        SELECT visitor_hash, seq,
-               sum(new_load) OVER (PARTITION BY visitor_hash ORDER BY timestamp, seq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS load
-        FROM
-        (
-            SELECT visitor_hash, seq, timestamp,
-                   if(seq <= lagInFrame(seq, 1, 0) OVER (PARTITION BY visitor_hash ORDER BY timestamp, seq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 1, 0) AS new_load
-            FROM {db}.events
-            WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND seq > 0
-        )
+        SELECT visitor_hash, seq, count() AS c
+        FROM {db}.events
+        WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND seq > 0
+        GROUP BY visitor_hash, seq
     )
-    GROUP BY visitor_hash, load
 )
 ```
 

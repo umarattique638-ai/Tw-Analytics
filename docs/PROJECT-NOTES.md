@@ -379,6 +379,33 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    d. The API creates the indexes of the new collections itself at start (createIndex works for a readWrite user on Atlas); `pnpm db:mongo` adds the validators where an admin user is available.
    e. Verify page: the check runs by itself, the steps turn green one by one, then "first pageview"; when everything passed the dashboard opens after 3 seconds (Stay here / Go now). An npm/framework install (no script tag) passes on the first pageview.
 
+18. DECIDED 2026-10-09 (owner accepted the review's order of work, items 1-5):
+   a. KV sync, two rules. GRANT (new site, new key, resume, extra host): Cloudflare KV FIRST; if KV refuses,
+      nothing is changed and the owner gets a 503 that says why (a refused token is explained, never echoed).
+      So a key or host is never shown, or put in a snippet, before the collector accepts it. REVOKE (revoke
+      key, pause, delete): MongoDB first, then KV; a KV failure is stored in kv_outbox (one per site), shown
+      as a banner on every dashboard page, retried on dashboard loads (once a minute per instance), by
+      "Retry now", and by a daily Vercel Cron (/api/v1/internal/reconcile, needs CRON_SECRET) that also
+      compares every KV entry with MongoDB and repairs drift. Replaces decision 13's "Retry activation" path.
+   b. Verifier SSRF: one address classifier (IPv4 special ranges; IPv6 incl. IPv4-mapped in hex, NAT64,
+      6to4, IPv4-compatible, ULA, link-local, multicast; unparseable = private), ports 80/443/8080/8443 only,
+      every hop and the script URL checked, and the connection itself pinned to a checked address
+      (node:http lookup hook) against DNS rebinding. 20 checks per account per 10 min.
+   c. Data accuracy (an independent review of these changes found and we fixed: stale rollbacks that could
+      bring a revoked key back, a crash on odd HTTP statuses in the verifier, time budgets on Vercel, retried
+      events now replayed before new ones): consumer max_concurrency = 1 (one batch at a time);
+      insert groups ("intents" in the Durable Object, written before the inserts) keep a retried event's
+      ClickHouse token even when the queue mixes it with new messages; an event more than 30 min older than
+      the current session is a session of its own; tracker: q is taken only by hits actually sent, event
+      names are checked in the browser (a 400 is no longer a fake "lost beacon"), engagement capped at 24 h,
+      a track() right after a route change goes after that page's pageview, consent withdrawal also clears
+      retries, retries back off to 5 min, React adapter queues calls made before init; capture rate is now
+      computed per sequence number (two tabs of one visitor no longer look like loss).
+   d. Free-plan abuse limits: per IP 120/min, per site key 600/min; identical drops are batched per isolate
+      into one queue message with a hit count (DROP_BATCH_MS = 5000); dead letters are moved from the DLQ
+      (24 h retention) into R2 dlq/ and replayed every 15 minutes by a cron (12 files a run), parked in
+      dlq-dead/ after 6 replays. Drop messages are de-duplicated by queue message id like events.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.
@@ -446,8 +473,8 @@ Stage 3 storage + consumer: DONE 2026-10-07 [x] owner's Windows + ClickHouse Clo
 Stage 4 tracker: 4.0 deploy [x] | 4.1-4.3 core + browser + CDN build [x] owner's Windows: all tests pass; LIVE 2026-10-08: tw.js served by the collector, demo site (site 2) -> 16 correct rows in ClickHouse Cloud, seq 1-16 with no gap, no duplicate pageview, engagement on tab switch, signup props | 4.4 adapters [x] @tailwatch/react, @tailwatch/next, @tailwatch/vue, @tailwatch/svelte (svelte: no example app yet) | 4.5 done-when [x] in the sandbox: Next.js 16 App Router (Navigation API and fallback), Vite 8 + React Router 7, Vue + hash router, all in dev/StrictMode: exactly one pageview per navigation incl. the first [ ] owner's Windows run of e2e:frameworks    Stage 5 control plane: DONE 2026-10-08 [x] sandbox: API 40 unit + verifier tests, onboarding e2e in Chromium [x] owner's Windows: typecheck/test/build, live:api 7/7 on local MongoDB rs0, e2e:api 2/2 [x] LIVE done-when: the owner signed up at http://localhost:8788, added tailwatch-demo.umarattique638.workers.dev (site 101), pasted the snippet, verifier 7/7 green, first pageview arrived on the verify screen, dashboard opened. Nobody touched a database.    Stage 6 dashboard: [x] in the sandbox: Query API proven on the ClickHouse engine (chDB 26.9) with known rows incl. DST (10/10), HTTP layer 5, dashboard e2e in Chromium (every page shows the API's numbers; no sample value survives) [ ] owner: live:api against ClickHouse Cloud, then the real dashboard    Stage 7 precision: [x] in the sandbox: labelled regression corpus 64 humans counted / 71 bots dropped, 0 false positives, 0 misses (after an independent false-positive review); ⭐ Plausible's Puppeteer test on workerd + real ClickHouse engine: 0 of 95 sessions counted, 192 of 192 hits itemised (+10 stealth sessions also 0) [x] owner's Windows + ClickHouse Cloud: e2e:precision 0 of 95 (202/202 hits itemised), e2e:collector 20/20, e2e:frameworks 3/3, e2e:api 3/3 [x] LIVE 2026-10-08: consumer + collector (tw.js v3) deployed; bots:live from the owner's PC against site 101: TailWatch counted 0 of 95 sessions, 192 hits dropped with a reason (automation 73, ua_denylist 63, headless:js_ua_mismatch 56). STAGE 7 DONE.
     Extra (owner request 2026-10-08): a second customer site, kept OUTSIDE this repo on the owner's Desktop (kiln-shop): React + react-router-dom shop (BrowserRouter, 4 pages + product detail, wishlist, cart, demo checkout) on Cloudflare static assets (kiln-shop.umarattique638.workers.dev), tracked with the script-tag snippet + tw('track') custom events add_to_cart / add_to_wishlist / checkout.
 
-Leftovers from the first attempt that still exist online. OWNER ORDERED DELETION on 2026-10-05 (delete order: consumer Worker first, then collector, testsite, queues, KV, then the ClickHouse database). Tick when done:
-- [ ] Workers: tailwatch-consumer (first: it is still consuming the queue), tailwatch-collector, tailwatch-testsite
-- [ ] Queue tailwatch-events (+ tailwatch-events-dlq if it was created), [ ] KV namespace "KV" holding site:tw_pub_test
-- [ ] Secret CLICKHOUSE_PASSWORD (goes away with the consumer Worker)
-- [ ] ClickHouse database tailwatch (tables events, sessions, dropped_hits, old schema): DROP DATABASE; keep the ClickHouse Cloud service itself
+Leftovers from the first attempt: CLOSED 2026-10-09. They were replaced IN PLACE on 2026-10-08: the live system
+now uses exactly those names (Workers tailwatch-collector and tailwatch-consumer, queue tailwatch-events +
+tailwatch-events-dlq, KV SITE_CONFIG, ClickHouse database tailwatch with the Stage 1 schema).
+DO NOT DELETE any of them: that would take production down. Only `tailwatch-testsite` (an old test Worker, not
+used by anything) may still be deleted.

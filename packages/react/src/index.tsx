@@ -23,22 +23,35 @@ export interface TailwatchProps extends Omit<Options, 'key'> {
   children?: ReactNode;
 }
 
+/**
+ * Child effects run BEFORE the provider's effect, so a child calling consent() or track() on mount
+ * would reach the tracker before init(). Those calls wait here and run right after init (max 100).
+ */
+let started = false;
+const early: ((api: Api) => void)[] = [];
+const run = (fn: (api: Api) => void) => {
+  if (started) fn(current());
+  else if (typeof window !== 'undefined' && early.length < 100) early.push(fn);
+};
+
 export function TailwatchProvider({ children, siteKey, ...options }: TailwatchProps) {
   // Runs once per mount in the browser only (effects never run on the server).
   // StrictMode runs it twice in dev: the second init() returns the first instance.
   useEffect(() => {
     init({ key: siteKey, ...options });
+    started = true;
+    early.splice(0).forEach((fn) => fn(current()));
     // Options are read once, like a script tag's attributes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <>{children}</>;
 }
 
-/** Stable handle; calls before init or on the server are no-ops. */
+/** Stable handle. Calls before init wait for it; on the server they are no-ops. */
 const handle: Api = {
-  page: (o) => current().page(o),
-  track: (name, props) => current().track(name, props),
-  consent: (state) => current().consent(state),
+  page: (o) => run((a) => a.page(o)),
+  track: (name, props) => run((a) => a.track(name, props)),
+  consent: (state) => run((a) => a.consent(state)),
 };
 
 export function useTailwatch(): Api {

@@ -1,7 +1,7 @@
 import { LIMITS } from '@tailwatch/contract';
 import type { SessionRecord } from '../core/rows';
 import type { StateLoad, StatePort, StateSnapshot, StateUpdate } from '../process';
-import { sessionKey } from './port';
+import { INTENT_TTL_MS, sessionKey } from './port';
 
 /**
  * In-memory StatePort for tests and for `wrangler dev` without a Durable Object binding. NEVER production:
@@ -15,10 +15,11 @@ export type MemoryState = StatePort & { size(): { sessions: number; dedupe: numb
 export function createMemoryState(): MemoryState {
   const sessions = new Map<string, { record: SessionRecord; expiresAt: number }>();
   const dedupe = new Map<string, number>();
+  const intents = new Map<string, { group: string; expiresAt: number }>();
 
   return {
     async load(requests: readonly StateLoad[], now: number): Promise<StateSnapshot> {
-      const snapshot: StateSnapshot = { sessions: new Map(), seen: new Set() };
+      const snapshot: StateSnapshot = { sessions: new Map(), seen: new Set(), intents: new Map() };
       for (const r of requests) {
         for (const visitor of r.visitors) {
           const key = sessionKey(r.siteId, visitor);
@@ -28,6 +29,8 @@ export function createMemoryState(): MemoryState {
         for (const key of r.dedupeKeys) {
           const expiresAt = dedupe.get(key);
           if (expiresAt !== undefined && expiresAt > now) snapshot.seen.add(key);
+          const intent = intents.get(key);
+          if (intent && intent.expiresAt > now) snapshot.intents!.set(key, intent.group);
         }
       }
       return snapshot;
@@ -37,9 +40,16 @@ export function createMemoryState(): MemoryState {
       for (const u of updates) {
         sessions.set(sessionKey(u.siteId, u.visitor), { record: structuredClone(u.record), expiresAt: now + LIMITS.sessionGapMs });
       }
-      for (const m of marks) dedupe.set(m.key, now + LIMITS.dedupeWindowMs);
+      for (const m of marks) {
+        dedupe.set(m.key, now + LIMITS.dedupeWindowMs);
+        intents.delete(m.key);
+      }
       for (const [k, v] of sessions) if (v.expiresAt <= now) sessions.delete(k);
       for (const [k, v] of dedupe) if (v <= now) dedupe.delete(k);
+    },
+
+    async intend(entries: readonly { siteId: number; key: string; group: string }[], now: number): Promise<void> {
+      for (const e of entries) if (!intents.has(e.key)) intents.set(e.key, { group: e.group, expiresAt: now + INTENT_TTL_MS });
     },
 
     size: () => ({ sessions: sessions.size, dedupe: dedupe.size }),

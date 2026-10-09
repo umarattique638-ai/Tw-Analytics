@@ -90,6 +90,19 @@ export interface PasswordResetDoc {
   usedAt: Date | null;
 }
 
+/**
+ * A site whose Cloudflare KV entries may not match MongoDB yet (a KV write failed). One per site; the
+ * reconciler re-syncs the site from MongoDB and removes it. Shown to the customer until it is gone.
+ */
+export interface KvIssueDoc {
+  _id: number;
+  tenantId: ObjectId;
+  error: string;
+  attempts: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret'>>;
 
 /** Thrown for a unique-index violation. `field` says which rule: shown to the user as a 409. */
@@ -127,6 +140,14 @@ export interface ControlStore {
   updateSite(tenantId: ObjectId, id: number, expectedUpdatedAt: Date, patch: SitePatch, now: Date): Promise<SiteDoc | null>;
   /** Every site, any tenant (KV resync). */
   allSites(): Promise<SiteDoc[]>;
+  /** One site by id, any tenant, deleted ones included (the KV reconciler). */
+  siteById(id: number): Promise<SiteDoc | null>;
+
+  /** Remembers that a site's KV entries may be wrong (upsert, keeps the first createdAt). */
+  recordKvIssue(siteId: number, tenantId: ObjectId, error: string, now: Date): Promise<void>;
+  /** Outstanding KV issues: of one tenant, or all (oldest first). */
+  kvIssues(tenantId: ObjectId | null, limit: number): Promise<KvIssueDoc[]>;
+  clearKvIssue(siteId: number): Promise<void>;
 
   /** New password: replaces the hash and ends every session of the user (all devices). */
   setPassword(userId: ObjectId, passwordHash: string, now: Date): Promise<void>;

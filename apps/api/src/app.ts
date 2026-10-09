@@ -7,6 +7,7 @@
  * Stage 5 surface (BUILD-ORDER Part 1 ①-⑤): auth, tenants, sites with timezone, key issue and rotation,
  * KV sync on write, the verifier, the snippet generator. Stage 6 adds the Query API under /api/v1 too.
  */
+import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -15,7 +16,7 @@ import type { AnalyticsReader } from './analytics';
 import type { ApiConfig } from './config';
 import { signupAllowed } from './config';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from './domain';
-import { KvSyncError, syncSite } from './kv';
+import { deleteKeys, expectedEntries, kvProblem, putKeys, syncSite } from './kv';
 import { UnconfiguredMailer, resetPasswordMail } from './mail';
 import type { Mailer } from './mail';
 import type { SiteConfigSink } from './kv';
@@ -25,7 +26,7 @@ import { snippetsFor } from './snippets';
 import { RANGE_KEYS, resolveRange } from './stats';
 import type { RangeKey, StatsReader } from './stats';
 import { DuplicateError } from './store/types';
-import type { ControlStore, ExportDoc, KeyDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
+import type { ControlStore, ExportDoc, KeyDoc, KvIssueDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
 import { VerifyInputError, runActiveCheck } from './verifier';
 import type { VerifierOptions } from './verifier';
 
@@ -138,6 +139,13 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
+/** Constant-time string comparison (the cron secret). */
+function sameSecret(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
 /**
  * The client's address for rate limiting only (never stored). Behind a hosting proxy (Render) the real
  * address is the LAST X-Forwarded-For entry: the proxy appends it, and anything before it the client
@@ -161,6 +169,9 @@ export function createApp(deps: Deps) {
   const forgotLimiter = new Limiter(3, 60 * 60_000);
   const forgotIpLimiter = new Limiter(10, 60 * 60_000);
   const mailer = deps.mailer ?? new UnconfiguredMailer();
+  /** The verifier fetches other people's servers: a few checks a minute per account and per address. */
+  const verifyLimiter = new Limiter(20, 10 * 60_000);
+  const verifyIpLimiter = new Limiter(40, 10 * 60_000);
 
   const app = new Hono<{ Variables: Vars }>().basePath('/api/v1');
 
@@ -232,16 +243,77 @@ export function createApp(deps: Deps) {
     return site;
   };
 
-  /** Mongo first (source of truth), then KV. A KV failure is reported, never hidden: the site works once synced. */
+  /**
+   * KV sync (PROJECT-NOTES decision 18). Two directions, two rules:
+   *  - GRANT (new site, new key, resume, extra host): Cloudflare KV first. If KV refuses, nothing is changed
+   *    and the customer sees why (503). So a key or host is never shown before the collector accepts it.
+   *  - REVOKE (revoke key, pause, delete): MongoDB first, then KV. A KV failure is remembered in kv_outbox,
+   *    shown in the dashboard, and retried by the reconciler until KV matches MongoDB again.
+   */
+  const activateFirst = async (site: SiteDoc, onlyKeys?: string[]) => {
+    try {
+      if (onlyKeys) await putKeys(kv, site, onlyKeys);
+      else await syncSite(kv, site);
+    } catch (error) {
+      const message = kvProblem(error);
+      console.error(JSON.stringify({ tw: 'kv_activate_failed', site: site._id, message }));
+      throw new HttpError(503, 'activation_failed', `${message} Nothing was changed.`);
+    }
+  };
+
   const sync = async (site: SiteDoc) => {
     try {
       await syncSite(kv, site);
+      await store.clearKvIssue(site._id);
       return { ok: true as const };
     } catch (error) {
-      const message = error instanceof KvSyncError ? error.message : 'KV sync failed';
+      const message = kvProblem(error);
       console.error(JSON.stringify({ tw: 'kv_sync_failed', site: site._id, message }));
-      return { ok: false as const, message: `${message}. The site is saved; use "Retry activation".` };
+      await store.recordKvIssue(site._id, site.tenantId, message, now());
+      return { ok: false as const, pending: true, message: `${message} Your change is saved and reaches the collector automatically once Cloudflare accepts it.` };
     }
+  };
+
+  /**
+   * Undo of a half-done grant: KV is rewritten from the site as MongoDB has it NOW (re-read), never from the
+   * copy loaded at the start of the request: a key revoked meanwhile must not be written back.
+   */
+  const resyncFresh = async (siteId: number) => {
+    const fresh = await store.siteById(siteId);
+    if (fresh) await sync(fresh);
+  };
+
+  /** Re-sync sites with an outstanding KV issue from MongoDB (the source of truth). Returns how many are fixed. */
+  const reconcileIssues = async (tenantId: ObjectId | null, limit: number) => {
+    let fixed = 0;
+    for (const issue of await store.kvIssues(tenantId, limit)) {
+      const site = await store.siteById(issue._id);
+      if (!site) {
+        await store.clearKvIssue(issue._id);
+        continue;
+      }
+      if ((await sync(site)).ok) fixed += 1;
+    }
+    return fixed;
+  };
+
+  /** Dashboard loads retry a tenant's KV issues by themselves, at most once a minute per server instance. */
+  const lastAutoRetry = new Map<string, number>();
+  const issuesOf = async (tenantId: ObjectId): Promise<KvIssueDoc[]> => {
+    let issues = await store.kvIssues(tenantId, 20);
+    const key = tenantId.toHexString();
+    if (issues.length && Date.now() - (lastAutoRetry.get(key) ?? 0) > 60_000) {
+      lastAutoRetry.set(key, Date.now());
+      if (lastAutoRetry.size > 10_000) lastAutoRetry.clear();
+      // A few only: this runs inside a dashboard request (Vercel limit 30 s); "Retry now" and the cron do more.
+      await reconcileIssues(tenantId, 3);
+      issues = await store.kvIssues(tenantId, 20);
+    }
+    return issues;
+  };
+  const issueView = async (issue: KvIssueDoc) => {
+    const site = await store.siteById(issue._id);
+    return { siteId: issue._id, domain: site?.domain ?? String(issue._id), deleted: site?.status === 'deleted', error: issue.error, since: issue.createdAt.toISOString(), attempts: issue.attempts };
   };
 
   const patchSite = async (c: Ctx, site: SiteDoc, patch: SitePatch) => {
@@ -393,8 +465,18 @@ export function createApp(deps: Deps) {
   });
 
   app.get('/sites', async (c) => {
-    const sites = await store.sitesOf(c.get('tenant')._id);
-    return c.json({ sites: sites.map(siteView) });
+    const tenantId = c.get('tenant')._id;
+    const issues = await issuesOf(tenantId);
+    const sites = await store.sitesOf(tenantId);
+    return c.json({ sites: sites.map(siteView), kvIssues: await Promise.all(issues.map(issueView)) });
+  });
+
+  /** "Retry now" on the dashboard's Cloudflare warning: re-sync every site of this account with an issue. */
+  app.post('/sites/sync-all', async (c) => {
+    const tenantId = c.get('tenant')._id;
+    await reconcileIssues(tenantId, 10);
+    const issues = await store.kvIssues(tenantId, 50);
+    return c.json({ kvIssues: await Promise.all(issues.map(issueView)) });
   });
 
   /** What adding this domain would register: the form shows it before submit (rules stay here). */
@@ -421,13 +503,22 @@ export function createApp(deps: Deps) {
     } else if (existing) {
       // Re-adding a deleted domain restores it: same site id, so its history comes back. Fresh key and
       // secret, because the old ones were revoked on delete.
-      site = await patchSite(c, existing, {
+      const fresh = key();
+      const patch: SitePatch = {
         status: 'active',
         timezone,
         allowedHosts: allowedHostsFor(domain),
         identitySecret: newIdentitySecret(),
-        keys: [...existing.keys.map((k) => ({ ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at })), key()],
-      });
+        keys: [...existing.keys.map((k) => ({ ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at })), fresh],
+      };
+      await activateFirst({ ...existing, ...patch } as SiteDoc, [fresh.publicKey]);
+      try {
+        site = await patchSite(c, existing, patch);
+      } catch (error) {
+        await deleteKeys(kv, [fresh.publicKey]);
+        await resyncFresh(existing._id);
+        throw error;
+      }
     } else {
       site = {
         _id: await store.nextSiteId(config.siteIdFloor),
@@ -444,14 +535,16 @@ export function createApp(deps: Deps) {
         createdAt: at,
         updatedAt: at,
       };
+      await activateFirst(site);
       try {
         await store.insertSite(site);
       } catch (error) {
+        await deleteKeys(kv, site.keys.map((k) => k.publicKey));
         if (error instanceof DuplicateError && error.field === 'domain') throw new HttpError(409, 'domain_taken', `${domain} is already one of your sites.`);
         throw error;
       }
     }
-    return c.json({ site: siteView(site), sync: await sync(site) }, 201);
+    return c.json({ site: siteView(site), sync: { ok: true } }, 201);
   });
 
   app.get('/sites/:id', async (c) => {
@@ -472,6 +565,15 @@ export function createApp(deps: Deps) {
     if (b.status !== undefined) {
       if (b.status !== 'active' && b.status !== 'paused') throw new HttpError(400, 'invalid_status', 'Status is active or paused.');
       patch.status = b.status;
+    }
+    if (patch.status === 'active' && site.status !== 'active') {
+      // Resume = grant: the collector must accept the key again before the dashboard says so.
+      await activateFirst({ ...site, ...patch } as SiteDoc);
+      const updated = await patchSite(c, site, patch).catch(async (error) => {
+        await resyncFresh(site._id);
+        throw error;
+      });
+      return c.json({ site: siteView(updated), sync: { ok: true } });
     }
     const updated = await patchSite(c, site, patch);
     return c.json({ site: siteView(updated), sync: patch.status ? await sync(updated) : { ok: true } });
@@ -495,10 +597,18 @@ export function createApp(deps: Deps) {
     if (site.keys.filter((k) => k.status === 'active').length >= 3) {
       throw new HttpError(409, 'too_many_keys', 'Revoke an old key before adding another.');
     }
-    const updated = await patchSite(c, site, {
-      keys: [...site.keys, { id: newKeyId(), publicKey: newPublicKey(), createdAt: now(), revokedAt: null, status: 'active' }],
-    });
-    return c.json({ site: siteView(updated), sync: await sync(updated) }, 201);
+    const fresh: KeyDoc = { id: newKeyId(), publicKey: newPublicKey(), createdAt: now(), revokedAt: null, status: 'active' };
+    // Grant: the new key is written to KV first, so it is never shown (or put in a snippet) before it works.
+    await activateFirst({ ...site, keys: [...site.keys, fresh] }, [fresh.publicKey]);
+    let updated: SiteDoc;
+    try {
+      updated = await patchSite(c, site, { keys: [...site.keys, fresh] });
+    } catch (error) {
+      await deleteKeys(kv, [fresh.publicKey]);
+      await resyncFresh(site._id);
+      throw error;
+    }
+    return c.json({ site: siteView(updated), sync: { ok: true } }, 201);
   });
 
   app.post('/sites/:id/keys/:keyId/revoke', async (c) => {
@@ -540,6 +650,9 @@ export function createApp(deps: Deps) {
   /** Active check: fetch the customer's page and say exactly what is wrong. */
   app.post('/sites/:id/verify', async (c) => {
     const site = await loadSite(c);
+    if (!verifyLimiter.take(`t:${c.get('tenant')._id.toHexString()}`, Date.now()) || !verifyIpLimiter.take(`ip:${clientIp(c)}`, Date.now())) {
+      throw new HttpError(429, 'rate_limited', 'Too many checks. Wait a few minutes and try again.');
+    }
     const b = await body(c);
     try {
       const result = await runActiveCheck(site, str(b.url) || undefined, {
@@ -692,8 +805,62 @@ export function createApp(deps: Deps) {
     }
     if (site.allowedHosts.includes(host)) return c.json({ site: siteView(site), sync: { ok: true } });
     if (site.allowedHosts.length >= 50) throw new HttpError(409, 'too_many_hosts', 'A site can accept at most 50 hosts.');
-    const updated = await patchSite(c, site, { allowedHosts: [...site.allowedHosts, host] });
-    return c.json({ site: siteView(updated), sync: await sync(updated) });
+    const next: SiteDoc = { ...site, allowedHosts: [...site.allowedHosts, host] };
+    await activateFirst(next);
+    const updated = await patchSite(c, site, { allowedHosts: next.allowedHosts }).catch(async (error) => {
+      await resyncFresh(site._id);
+      throw error;
+    });
+    return c.json({ site: siteView(updated), sync: { ok: true } });
+  });
+
+  // ---------------------------------------------------------------- scheduled: KV reconcile
+
+  /**
+   * Makes Cloudflare KV match MongoDB for every site: first the known issues, then a full compare (read
+   * each entry, write only what differs). Called by Vercel Cron once a day with CRON_SECRET; off without it.
+   */
+  app.get('/internal/reconcile', async (c) => {
+    if (!config.cronSecret || !sameSecret(c.req.header('authorization') ?? '', `Bearer ${config.cronSecret}`)) {
+      throw new HttpError(404, 'not_found', 'No such endpoint.');
+    }
+    // Vercel stops the function at 30 s: work in a 20 s budget, known issues first, then the full compare
+    // in a random order, so that over a few days every site is checked even if one run cannot finish.
+    const deadline = Date.now() + 20_000;
+    const fixedIssues = await reconcileIssues(null, 50);
+    let checked = 0;
+    let repaired = 0;
+    const failed: number[] = [];
+    if (kv.get) {
+      const all = await store.allSites();
+      for (let i = all.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [all[i], all[j]] = [all[j]!, all[i]!];
+      }
+      for (const loaded of all) {
+        if (Date.now() > deadline) break;
+        try {
+          let wrong = false;
+          for (const [name, want] of expectedEntries(loaded)) {
+            checked += 1;
+            if ((await kv.get(name)) !== want) wrong = true;
+          }
+          if (wrong) {
+            // Re-read: a change made while we were comparing must win over our snapshot.
+            const fresh = await store.siteById(loaded._id);
+            if (!fresh) continue;
+            const r = await sync(fresh);
+            if (r.ok) repaired += 1;
+            else failed.push(fresh._id);
+          }
+        } catch (error) {
+          failed.push(loaded._id);
+          await store.recordKvIssue(loaded._id, loaded.tenantId, kvProblem(error), now());
+        }
+      }
+    }
+    console.log(JSON.stringify({ tw: 'kv_reconcile', fixedIssues, checked, repaired, failed: failed.length }));
+    return c.json({ fixedIssues, checked, repaired, failed });
   });
 
   return app;

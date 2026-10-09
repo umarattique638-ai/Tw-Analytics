@@ -24,13 +24,26 @@ class FakeAnalytics implements AnalyticsReader {
 class FlakyKv implements SiteConfigSink {
   inner = new MemoryKv();
   down = false;
+  failWith: string | null = null;
+  /** Runs once, inside the next put (to interleave another request). */
+  onPut: (() => Promise<void>) | null = null;
   async put(n: string, v: string) {
+    if (this.onPut) {
+      const hook = this.onPut;
+      this.onPut = null;
+      await hook();
+    }
+    if (this.failWith) throw new Error(this.failWith);
     if (this.down) throw new Error('Cloudflare KV PUT 503: unavailable');
     return this.inner.put(n, v);
   }
   async delete(n: string) {
     if (this.down) throw new Error('Cloudflare KV DELETE 503: unavailable');
     return this.inner.delete(n);
+  }
+  async get(n: string) {
+    if (this.down) throw new Error('Cloudflare KV GET 503: unavailable');
+    return this.inner.get(n);
   }
 }
 
@@ -44,6 +57,11 @@ function setup(over: Partial<Parameters<typeof defaultConfig>[0]> = {}, fetchImp
     analytics,
     config: defaultConfig({ collectorUrl: COLLECTOR, secureCookies: false, scrypt: FAST, ...over }),
     verifier: fetchImpl ? { fetchImpl, resolve: async () => ['93.184.216.34'] } : undefined,
+    // Every call a later millisecond, like real requests (updatedAt is the optimistic-concurrency check).
+    now: (() => {
+      let t = Date.now();
+      return () => new Date((t += 1));
+    })(),
   });
 
   /** A browser-like client: keeps the session cookie, sends same-origin JSON. */
@@ -256,18 +274,116 @@ describe('② add a site', () => {
     expect((await b.post('/sites', { domain: 'example.com', timezone: 'UTC' })).status).toBe(201); // their own copy
   });
 
-  it('a KV outage is reported, the site is kept, and "retry activation" fixes it', async () => {
+  it('a KV outage while ADDING: nothing is created, and the owner is told why in plain words', async () => {
     const s = setup();
     const c = await signedUp(s);
     s.kv.down = true;
     const r = await c.post('/sites', { domain: 'example.com', timezone: 'UTC' });
-    expect(r.status).toBe(201);
-    expect(r.body.sync.ok).toBe(false);
-    expect(r.body.sync.message).toContain('Retry activation');
-    expect(s.kv.inner.entries.size).toBe(0);
+    expect(r.status).toBe(503);
+    expect(r.body.error).toBe('activation_failed');
+    expect(r.body.message).toContain('Nothing was changed');
+    expect((await c.get('/sites')).body.sites).toEqual([]);
+    expect(s.store.sites).toHaveLength(0);
     s.kv.down = false;
-    expect((await c.post(`/sites/${r.body.site.id}/sync`)).body.sync).toEqual({ ok: true });
+    const ok = await c.post('/sites', { domain: 'example.com', timezone: 'UTC' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.sync).toEqual({ ok: true });
     expect(s.kv.inner.entries.size).toBe(1);
+  });
+
+  it('a refused Cloudflare token is explained, never echoed', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    s.kv.failWith = 'Cloudflare KV PUT 401: {"result":null,"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}';
+    const r = await c.post('/sites', { domain: 'example.com', timezone: 'UTC' });
+    expect(r.status).toBe(503);
+    expect(r.body.message).toContain('CF_API_TOKEN');
+    expect(r.body.message).toContain('Workers KV Storage > Edit');
+    expect(r.body.message).not.toContain('errors');
+  });
+});
+
+describe('KV stays in step with MongoDB (decision 18)', () => {
+  const add = async (s: ReturnType<typeof setup>, c: Awaited<ReturnType<typeof signedUp>>) =>
+    (await c.post('/sites', { domain: 'example.com', timezone: 'UTC' })).body.site;
+
+  it('rotation during an outage: no new key appears, so no snippet can carry a dead key', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    const site = await add(s, c);
+    s.kv.down = true;
+    const r = await c.post(`/sites/${site.id}/keys`);
+    expect(r.status).toBe(503);
+    const after = (await c.get(`/sites/${site.id}`)).body.site;
+    expect(after.keys).toHaveLength(1);
+    expect(after.publicKey).toBe(site.publicKey);
+  });
+
+  it('revoke during an outage: saved, shown as pending, and fixed by itself once Cloudflare is back', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    const site = await add(s, c);
+    s.kv.down = false;
+    const second = (await c.post(`/sites/${site.id}/keys`)).body.site;
+    s.kv.down = true;
+    const r = await c.post(`/sites/${site.id}/keys/${site.keys[0].id}/revoke`);
+    expect(r.status).toBe(200);
+    expect(r.body.sync).toMatchObject({ ok: false, pending: true });
+    expect(s.kv.inner.entries.has(`site:${site.publicKey}`)).toBe(true); // still live in KV for now
+    const listed = (await c.get('/sites')).body.kvIssues;
+    expect(listed).toEqual([expect.objectContaining({ siteId: site.id, domain: 'example.com', deleted: false })]);
+    s.kv.down = false;
+    const retried = (await c.post('/sites/sync-all')).body.kvIssues;
+    expect(retried).toEqual([]);
+    expect(s.kv.inner.entries.has(`site:${site.publicKey}`)).toBe(false);
+    expect(s.kv.inner.entries.has(`site:${second.publicKey}`)).toBe(true);
+  });
+
+  it('delete during an outage: the deleted site\'s keys are still removed later (no "retry" button needed)', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    const site = await add(s, c);
+    s.kv.down = true;
+    expect((await c.del(`/sites/${site.id}`)).body.sync).toMatchObject({ ok: false, pending: true });
+    expect((await c.get('/sites')).body.kvIssues).toEqual([expect.objectContaining({ siteId: site.id, deleted: true })]);
+    s.kv.down = false;
+    expect((await c.post('/sites/sync-all')).body.kvIssues).toEqual([]);
+    expect(s.kv.inner.entries.size).toBe(0);
+  });
+
+  it('a key revoked WHILE another change is being activated is not written back (rollback re-reads MongoDB)', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    const site = await add(s, c);
+    const b = (await c.post(`/sites/${site.id}/keys`)).body.site;
+    const a = site.keys[0];
+    s.kv.onPut = async () => {
+      expect((await c.post(`/sites/${site.id}/keys/${a.id}/revoke`)).status).toBe(200);
+    };
+    const r = await c.post(`/sites/${site.id}/allowed-hosts`, { host: 'staging.example.com' });
+    expect(r.status).toBe(409); // the site changed under it
+    expect(s.kv.inner.entries.has(`site:${a.publicKey}`)).toBe(false);
+    expect(s.kv.inner.entries.has(`site:${b.publicKey}`)).toBe(true);
+    expect((await c.get('/sites')).body.kvIssues).toEqual([]);
+  });
+
+  it('the daily reconcile repairs drift it was never told about, and needs the cron secret', async () => {
+    const s = setup({ cronSecret: 'a-very-long-cron-secret' });
+    const c = await signedUp(s);
+    const site = await add(s, c);
+    s.kv.inner.entries.delete(`site:${site.publicKey}`); // someone deleted it by hand in Cloudflare
+    s.kv.inner.entries.set('site:tw_pub_stale', '{}'); // not ours to judge: left alone
+    expect((await c.get('/internal/reconcile')).status).toBe(404);
+    expect((await c.get('/internal/reconcile', { authorization: 'Bearer wrong' })).status).toBe(404);
+    const r = await c.get('/internal/reconcile', { authorization: 'Bearer a-very-long-cron-secret' });
+    expect(r.body).toMatchObject({ checked: 1, repaired: 1, failed: [] });
+    expect(JSON.parse(s.kv.inner.entries.get(`site:${site.publicKey}`)!).id).toBe(site.id);
+  });
+
+  it('without a cron secret the reconcile route does not exist', async () => {
+    const s = setup();
+    const c = await signedUp(s);
+    expect((await c.get('/internal/reconcile', { authorization: 'Bearer ' })).status).toBe(404);
   });
 });
 

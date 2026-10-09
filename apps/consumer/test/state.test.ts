@@ -201,3 +201,20 @@ describe('Durable Object port errors', () => {
     await expect(createDurableState(ns).load([{ siteId: 1, visitors: ['1'], dedupeKeys: [] }], T)).rejects.toBeInstanceOf(StateStoreError);
   });
 });
+
+describe('insert-group intents (2026-10-09 review)', () => {
+  it.each([
+    ['memory', () => createMemoryState() as StatePort],
+    ['durable object (SQLite)', () => createDurableState(namespace().ns, { shards: 4 })],
+  ] as const)('%s: an intent is kept until the event is committed, and the first group always wins', async (_name, make) => {
+    const state = make();
+    await state.intend!([{ siteId: 7, key: 'k1', group: 'G1' }, { siteId: 9, key: 'k2', group: 'G1' }], T);
+    await state.intend!([{ siteId: 7, key: 'k1', group: 'G2' }], T); // a retry must not move it
+    let snap = await state.load([{ siteId: 7, visitors: [], dedupeKeys: ['k1'] }, { siteId: 9, visitors: [], dedupeKeys: ['k2'] }], T);
+    expect([...snap.intents!.entries()].sort()).toEqual([['k1', 'G1'], ['k2', 'G1']]);
+    await state.commit([], [{ siteId: 7, key: 'k1' }], T);
+    snap = await state.load([{ siteId: 7, visitors: [], dedupeKeys: ['k1'] }, { siteId: 9, visitors: [], dedupeKeys: ['k2'] }], T);
+    expect([...snap.intents!.entries()]).toEqual([['k2', 'G1']]);
+    expect(snap.seen.has('k1')).toBe(true);
+  });
+});

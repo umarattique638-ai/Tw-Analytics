@@ -305,6 +305,20 @@ ensureCollection('password_resets', {
   additionalProperties: false,
 });
 
+ensureCollection('kv_outbox', {
+  bsonType: 'object',
+  required: ['_id', 'tenantId', 'error', 'attempts', 'createdAt', 'updatedAt'],
+  properties: {
+    _id: { ...numericId, description: 'Site id whose Cloudflare KV entries do not match MongoDB yet.' },
+    tenantId: { bsonType: 'objectId' },
+    error: { bsonType: 'string', maxLength: 500 },
+    attempts: { bsonType: 'int', minimum: 0 },
+    createdAt: date,
+    updatedAt: date,
+  },
+  additionalProperties: false,
+});
+
 database.users.createIndex(
   { emailNormalized: 1 },
   {
@@ -338,6 +352,7 @@ database.exports.createIndex({ tenantId: 1, siteId: 1, createdAt: -1 });
 database.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ userId: 1 });
+database.kv_outbox.createIndex({ tenantId: 1 });
 
 database.counters.updateOne(
   { _id: 'site_id' },

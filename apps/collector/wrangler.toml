@@ -6,6 +6,8 @@ compatibility_date = "2026-09-01"
 # EXPOSE_DROP_REASON is deliberately NOT set here: production responses must not say why a hit was
 # dropped (STAGE-1 D2). Local dev sets it in .dev.vars.
 [vars]
+# One queue message per kind of drop per 5 s per isolate, with a hit count (src/index.ts queueDrop).
+DROP_BATCH_MS = "5000"
 REGION = "in"
 
 # Stage 2: edge collector bindings.
@@ -24,20 +26,22 @@ queue = "tailwatch-events"
 # blocks: the collector treats a missing limiter as "allowed".
 # Per-site limiter (keyed by public key), applied before the KV lookup.
 # namespace_id: any positive integer unique within your account.
+# Free plan budget (2026-10-09 review): the queue takes about 3,300 messages a day, so these are kept
+# tight. A real visitor sends a few hits a minute; raise them when the account moves to a paid plan.
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1001"
   [ratelimits.simple]
   limit = 600
-  period = 10
+  period = 60
 
 # Per-client limiter, applied before the body is read.
 [[ratelimits]]
 name = "RATE_LIMITER_IP"
 namespace_id = "1002"
   [ratelimits.simple]
-  limit = 100
-  period = 10
+  limit = 120
+  period = 60
 
 # Workers Logs (Free plan: 200K events/day). Without it a failing batch's reason is invisible.
 [observability]
