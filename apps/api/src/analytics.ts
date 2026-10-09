@@ -14,6 +14,17 @@ export interface AnalyticsReader {
 }
 
 /** Minimal ClickHouse HTTP client: parameterised queries ({name:Type}), JSON rows, UInt64 as strings. */
+export interface ClickHouseClientOptions {
+  /**
+   * Read-your-writes on ClickHouse Cloud's replicas (select_sequential_consistency). Only the live tests
+   * need it (they insert, then read at once). The dashboard does not: it waits for replica sync on every
+   * query and made the hosted overview time out (Vercel log, 2026-10-09).
+   */
+  sequentialConsistency?: boolean;
+  /** Per query. A hosted function has 30 s in total; ClickHouse Cloud waking from idle can take ~15 s. */
+  timeoutMs?: number;
+}
+
 export class ClickHouseClient {
   constructor(
     private readonly url: string,
@@ -21,21 +32,28 @@ export class ClickHouseClient {
     private readonly password: string,
     readonly database = 'tailwatch',
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly options: ClickHouseClientOptions = {},
   ) {}
 
   async query<T>(sql: string, params: Record<string, string | number>): Promise<T[]> {
-    const qs = new URLSearchParams({
-      default_format: 'JSON',
-      output_format_json_quote_64bit_integers: '1',
-      select_sequential_consistency: '1',
-    });
+    const qs = new URLSearchParams({ default_format: 'JSON', output_format_json_quote_64bit_integers: '1' });
+    if (this.options.sequentialConsistency) qs.set('select_sequential_consistency', '1');
     for (const [k, v] of Object.entries(params)) qs.set(`param_${k}`, String(v));
-    const res = await this.fetchImpl(`${this.url.replace(/\/+$/, '')}/?${qs}`, {
-      method: 'POST',
-      headers: { 'X-ClickHouse-User': this.user, 'X-ClickHouse-Key': this.password },
-      body: sql,
-      signal: AbortSignal.timeout(10_000),
-    });
+    const send = () =>
+      this.fetchImpl(`${this.url.replace(/\/+$/, '')}/?${qs}`, {
+        method: 'POST',
+        headers: { 'X-ClickHouse-User': this.user, 'X-ClickHouse-Key': this.password },
+        body: sql,
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 20_000),
+      });
+    let res: Response;
+    try {
+      res = await send();
+    } catch {
+      // One retry on a network failure ("fetch failed", a dropped keep-alive connection, a timeout while
+      // the Cloud service wakes up). A ClickHouse ERROR response is never retried: it would fail again.
+      res = await send();
+    }
     const text = await res.text();
     if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${text.slice(0, 300)}`);
     return (JSON.parse(text) as { data: T[] }).data;

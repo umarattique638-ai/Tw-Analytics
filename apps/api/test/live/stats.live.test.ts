@@ -57,7 +57,7 @@ beforeAll(async () => {
   for (const statement of ddl.replace(/^--.*$/gm, '').replaceAll('tailwatch', DB).split(';').map((s) => s.trim()).filter(Boolean)) {
     await sql(statement);
   }
-  stats = new StatsReader(new ClickHouseClient(URL_, USER, PASSWORD, DB));
+  stats = new StatsReader(new ClickHouseClient(URL_, USER, PASSWORD, DB, fetch, { sequentialConsistency: true }));
 
   // ---- Karachi site, "today" = 2026-10-08 local (2026-10-07T19:00Z .. 2026-10-08T19:00Z)
   await insert('events', [
