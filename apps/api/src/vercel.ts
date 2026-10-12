@@ -1,13 +1,4 @@
-/**
- * The API as ONE Vercel serverless function (free Hobby plan, no card). Vercel serves the built dashboard
- * (apps/web/dist) from its CDN and sends every /api/* request here; scripts/build-vercel.mjs bundles this
- * file into .vercel/output (Build Output API v3).
- *
- * Same createApp, same rules as the local server (runtime.ts). Differences that come with serverless:
- *   - settings and the MongoDB connection are made once per warm instance and reused;
- *   - the in-memory login rate limits are per instance (a cold start resets them). The per-e-mail
- *     limit still bounds guessing per instance; a shared limiter belongs to Phase 3.
- */
+
 import { getRequestListener } from '@hono/node-server';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createApp } from './app';
@@ -34,7 +25,6 @@ function setupFailed(res: ServerResponse, error: unknown) {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  // The route sends /api/<rest> here as /api?__path=/api/<rest>: put the original path back.
   const url = new URL(req.url ?? '/', 'http://local');
   const path = url.searchParams.get('__path');
   if (path) {
@@ -46,7 +36,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const listen = await ready;
     await listen(req, res);
   } catch (error) {
-    ready = null; // next request tries again (e.g. Atlas was briefly unreachable)
+    ready = null; 
     if (!res.headersSent) setupFailed(res, error);
   }
 }

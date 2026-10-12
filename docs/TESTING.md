@@ -213,23 +213,12 @@ The output must say `Read 2 files from the assets directory`. Check:
 If no rows: an ad blocker may block the collector (that is the "beacon blocked" case PLAN 7 talks
 about; try a window without extensions), or the minute in step 3 was not over.
 
-### 7.4 Framework apps (Stage 4 done-when)
+### 7.4 Framework apps (removed 2026-10-12)
 
-```powershell
-# folder: ttw
-pnpm e2e:frameworks
-```
-
-This starts three real dev servers one after another, each with React StrictMode / dev mode on:
-`examples/next-app` (Next.js App Router), `examples/vite-react` (Vite + React Router) and
-`examples/vue-hash` (Vue + hash router). Chromium opens each one as `http://<name>.localhost:<port>` and walks
-Home → About → Blog → Sign up → Back. Each app must record exactly 4 pageviews (only the first one flagged
-first) + 1 signup, sequence 1-5, no errors. Next.js runs the walk twice: once with the browser's
-Navigation API, once without it (the older-browser path). Expected: `Tests 3 passed`. The first run takes
-1-2 minutes while Next compiles.
-
-To try an app by hand (folder: `ttw\examples\vite-react`): `pnpm dev`, then open the printed address.
-Without `VITE_TW_KEY` / `VITE_TW_API` it renders but sends nothing.
+The example apps (Next.js, Vite React, Vue hash router) and `pnpm e2e:frameworks` were removed by the
+owner's decision: the dashboard offers one install method, the script tag in `<head>`, for every framework.
+Single-page navigation is still covered by `apps/collector/test/e2e/tracker.e2e.test.ts` (Navigation API and
+the pushState fallback, hash routes) and by the core engine tests.
 
 
 ---

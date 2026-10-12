@@ -9,7 +9,7 @@ import type { Browser } from 'playwright-core';
 import { BROWSER_UA, FIXTURE_SITE } from '../../../../packages/contract/fixtures/payloads';
 
 /**
- * Shared Stage 4 browser harness (tracker e2e here, framework apps in examples/e2e):
+ * Shared Stage 4 browser harness (the tracker e2e tests here):
  *
  *   Chromium page on *.example.com  ->  http://collector.example.com:<port>  ->  collector on workerd
  *                                       (/tw.js = built dist/cdn/tw.js,       ->  Queue -> sink KV
@@ -26,7 +26,7 @@ import { BROWSER_UA, FIXTURE_SITE } from '../../../../packages/contract/fixtures
 export { BROWSER_UA };
 export const KEY = FIXTURE_SITE.publicKey;
 /**
- * A second site for apps served from *.localhost (the framework dev servers in examples/e2e).
+ * A second site for pages served from *.localhost (the localhost tests).
  * Chromium resolves *.localhost to loopback itself, and Next/Vite dev servers accept it without
  * extra config, so their HMR websockets connect (Next only hydrates once HMR is connected).
  * The tracker skips localhost unless allowLocal is set, so those apps set it.
@@ -95,7 +95,7 @@ export async function startStack(): Promise<Stack> {
           modules: true,
           scriptPath: here('../../dist/index.js'),
           // Module names are relative to this root; without it a run from another package's folder
-          // (examples/e2e) fails with "can't use '..' to break out of starting directory".
+          // (e.g. the consumer e2e) fails with "can't use '..' to break out of starting directory".
           modulesRoot: here('../../dist'),
           compatibilityDate: '2026-09-01',
           kvNamespaces: { SITE_CONFIG: 'site-config' },

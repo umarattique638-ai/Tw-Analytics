@@ -51,7 +51,7 @@ Options: `key`, `api` (required), `hashRouting`, `consent` (`'granted'` default 
 | `@tailwatch/svelte` | `tailwatch({ key, api })` in `+layout.svelte` or `main.ts`; `track()` |
 
 Adapters only start the tracker. Route changes are detected and de-duplicated in core, so no router
-wiring is needed, and StrictMode's double effect cannot double count. Working apps: `examples/`.
+wiring is needed, and StrictMode's double effect cannot double count.
 
 ## What it guarantees (PLAN 4, 8.1)
 

@@ -3,10 +3,7 @@ import { isIP } from 'node:net';
 import { hostAllowed } from '@tailwatch/contract/url';
 import { ALLOWED_PORTS, guardedFetch, isPublicAddress } from './netguard';
 
-/**
- * Active install check (BUILD-ORDER Part 1 ⑤). Fetches the customer's page as TailwatchVerifier/1.0
- * (on the edge bot denylist, so a check never counts as a visit) and reports exactly which step failed.
- */
+
 export const VERIFIER_USER_AGENT = 'TailwatchVerifier/1.0 (+install check; never counted)';
 const MAX_HTML_BYTES = 2_000_000;
 const TIMEOUT_MS = 10_000;
@@ -46,7 +43,6 @@ function attr(tag: string, name: string): string | null {
   return m ? (m[1] ?? m[2] ?? m[3] ?? '') : null;
 }
 
-/** Every <script src=".../tw.js"> in the HTML, with whether it sits in a comment or <noscript>. */
 export function findSnippets(html: string, pageUrl: string): FoundTag[] {
   const hiddenRanges: { from: number; to: number; kind: 'comment' | 'noscript' }[] = [];
   for (const m of html.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) hiddenRanges.push({ from: m.index!, to: m.index! + m[0].length, kind: 'comment' });
@@ -76,7 +72,6 @@ export function findSnippets(html: string, pageUrl: string): FoundTag[] {
   return out;
 }
 
-/** CSP source-list check for one directive (falls back to default-src). Null = no policy, allowed. */
 export function cspAllows(policies: string[], directive: 'script-src' | 'connect-src', target: string, pageOrigin: string): boolean {
   const t = new URL(target);
   for (const policy of policies) {
@@ -101,19 +96,17 @@ export function cspAllows(policies: string[], directive: 'script-src' | 'connect
       const portOk = !port || port === '*' || port === (t.port || (t.protocol === 'https:' ? '443' : '80'));
       return hostOk && portOk;
     });
-    if (!ok) return false; // every policy must allow it
+    if (!ok) return false;
   }
   return true;
 }
 
 export interface VerifierOptions {
   fetchImpl?: typeof fetch;
-  /** Tests and local development only: allow pages on private addresses. */
   allowPrivate?: boolean;
   resolve?: (host: string) => Promise<string[]>;
 }
 
-/** SSRF guard: the API fetches a URL a user typed, so it must never reach our own network. */
 async function assertPublic(url: URL, o: VerifierOptions): Promise<void> {
   if (o.allowPrivate) return;
   if (!ALLOWED_PORTS.has(url.port)) throw new Error('blocked port');
@@ -122,11 +115,7 @@ async function assertPublic(url: URL, o: VerifierOptions): Promise<void> {
   if (addresses.length === 0 || !addresses.every(isPublicAddress)) throw new Error('private address');
 }
 
-/**
- * The real network path checks the address again at connect time (netguard.guardedFetch), so DNS
- * rebinding between the check above and the connection cannot reach a private address. Tests and local
- * development (allowPrivate) inject their own fetch.
- */
+
 const defaultFetch = (o: VerifierOptions): typeof fetch => o.fetchImpl ?? (o.allowPrivate ? fetch : (guardedFetch as unknown as typeof fetch));
 
 async function fetchLimited(url: string, o: VerifierOptions, accept: string): Promise<{ res: Response; body: string; finalUrl: string }> {

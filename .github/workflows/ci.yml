@@ -53,7 +53,6 @@ jobs:
       - run: pnpm --filter @tailwatch/collector exec playwright-core install --with-deps chromium
       - run: pnpm --filter @tailwatch/collector e2e
       # Stage 4 done-when: Next.js App Router, Vite React SPA and a Vue hash-router app in dev mode.
-      - run: pnpm e2e:frameworks
       - run: pnpm --filter @tailwatch/consumer live
       - run: pnpm --filter @tailwatch/consumer e2e
       # Stage 7 done-when: Plausible's Puppeteer test, 95 bot sessions -> 0 counted, every drop itemised.

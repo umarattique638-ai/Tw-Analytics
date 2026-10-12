@@ -455,6 +455,11 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    arrives as an event. The verifier no longer mentions npm; a tag added by Google Tag Manager still
    passes on the first pageview.
 
+21. DECIDED 2026-10-12 (owner): the `examples/` folder (Next.js, Vite React, Vue hash-router test apps and
+   `pnpm e2e:frameworks`) is removed. Install is the script tag only (decision 20), which works in any
+   framework. SPA tracking stays tested by the collector's tracker e2e (Navigation API, pushState fallback,
+   hash routes, StrictMode-style double init) and packages/core tests. The stage 4.5 entries below are history.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

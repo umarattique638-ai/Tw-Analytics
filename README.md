@@ -48,4 +48,3 @@ pnpm --filter @tailwatch/collector dev   # wrangler dev, then open http://localh
 | `apps/web` | dashboard (React): talks only to apps/api |
 | `packages/react`, `next`, `vue`, `svelte` | framework adapters: start the tracker once (StrictMode-safe), `useTailwatch()` / `track()` |
 | `apps/demo` | static demo site on its own workers.dev host: the "real page" of Stage 4 |
-| `examples/` | Next.js App Router, Vite React SPA, Vue hash-router apps + `e2e` (Stage 4 done-when) |
