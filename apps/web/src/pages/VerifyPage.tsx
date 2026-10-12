@@ -113,7 +113,7 @@ export default function VerifyPage() {
 
   const revealed = !!result && shown >= result.checks.length;
   const received = !!status && status.pageviews > 0 && !!status.last;
-  // npm / framework installs have no script tag: there the first pageview is the proof.
+  // A tag added by Google Tag Manager or a plugin is not in the page source: there the first pageview is the proof.
   const noTagOnly = !!result && result.checks.find((c) => c.id === 'present')?.status === 'fail';
   const allGood = revealed && received && (result!.ok || noTagOnly);
 
@@ -255,7 +255,7 @@ export default function VerifyPage() {
 
       {!allGood && (
         <p className={`mt-4 text-[13px] ${muted}`}>
-          npm and framework installs have no script tag: for those, the first pageview is the proof.{' '}
+          Added the script with Google Tag Manager or a plugin? Then it is not in the page source, and the first pageview is the proof.{' '}
           {!showUrl && !failed && (
             <button type="button" onClick={() => setShowUrl(true)} className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Check a different page

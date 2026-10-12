@@ -212,7 +212,7 @@ export async function runActiveCheck(
   const visible = tags.filter((t) => !t.hidden);
   const hidden = tags.filter((t) => t.hidden);
   if (tags.length === 0) {
-    checks.push(result('present', 'fail', "The snippet isn't in the page source. If you use a cache or CDN, purge it. (npm and framework installs have no script tag: use the first-pageview check instead.)"));
+    checks.push(result('present', 'fail', "The snippet isn't in the page source. Paste it inside <head> and publish the change; if you use a cache or CDN, purge it."));
     skipRest(ALL.slice(2));
     return { url: page.href, ok: false, checks };
   }

@@ -447,6 +447,14 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
       site, one sentence, when. NO IP address and NO user agent (minimisation). Kept 400 days (TTL), and
       deleted with the account. Dashboard: Activity page (per site filter, 50 per page).
 
+20. DECIDED 2026-10-12 (owner): ONE install method in the dashboard: the script tag, pasted inside <head>.
+   The npm / framework / WordPress tabs are gone from the Install page (the packages stay in the repo,
+   unadvertised). The API's snippet generator returns two snippets: `script-tag` and `custom-event`
+   (copy-ready: the tw() queue stub for <head>, a button with onclick="tw('track', ...)", and a JS call
+   with details). The onboarding e2e pastes exactly that code into a test shop and proves the click
+   arrives as an event. The verifier no longer mentions npm; a tag added by Google Tag Manager still
+   passes on the first pageview.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

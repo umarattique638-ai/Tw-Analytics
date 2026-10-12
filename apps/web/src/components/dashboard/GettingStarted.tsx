@@ -5,7 +5,7 @@ import { muted } from '../ui/styles';
 
 const steps = [
   { icon: Globe, title: 'Add your site', desc: 'Enter your domain and timezone. We never touch your DNS.' },
-  { icon: Code, title: 'Install the snippet', desc: 'Paste one script tag, or use npm, a framework or WordPress.' },
+  { icon: Code, title: 'Install the snippet', desc: 'Copy one script line and paste it inside the <head> of your site.' },
   { icon: ShieldCheck, title: 'Verify the install', desc: 'We check your page and wait for the first pageview.' },
 ];
 

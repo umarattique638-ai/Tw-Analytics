@@ -30,12 +30,12 @@ export interface Sync { ok: boolean; pending?: boolean; message?: string }
 export interface KvIssue { siteId: number; domain: string; deleted: boolean; error: string; since: string; attempts: number }
 export interface Snippet {
   id: string;
-  group: 'script-tag' | 'npm' | 'framework' | 'wordpress';
+  group: 'script-tag' | 'custom-event';
   label: string;
   language: string;
   code: string;
   note?: string;
-  availability: 'now' | 'soon';
+  availability: 'now';
 }
 export interface Status {
   windowMinutes: number;

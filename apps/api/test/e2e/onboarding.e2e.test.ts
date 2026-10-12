@@ -130,8 +130,19 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     await snap(page, '3-install');
     expect(snippet).toMatch(new RegExp(`^<script async fetchpriority="low" src="${stack.collector}/tw\\.js\\?id=tw_pub_[A-Za-z0-9]{32}"></script>$`));
 
+    // One install method only (owner decision 2026-10-12): no npm / framework / WordPress tabs.
+    expect(await page.getByRole('tab').count()).toBe(0);
+    // Optional custom events: copy-ready code from the API.
+    await page.getByRole('button', { name: /Track custom events/ }).click();
+    const eventCode = (await page.getByTestId('custom-events').getByTestId('snippet').textContent())!;
+    expect(eventCode).toContain("tw('track', 'signup_click')");
+    await snap(page, '3b-install-events');
+    // The customer uses two lines of it as given: the stub (in <head>) and the button.
+    const stub = eventCode.split('\n').find((l) => l.startsWith('<script>window.tw'))!;
+    const button = eventCode.split('\n').find((l) => l.startsWith('<button'))!;
+
     // ④ Install: the customer pastes it into their site's <head>
-    shopHtml = `<!doctype html><html><head><title>Shop</title>${snippet}</head><body><h1>Shop</h1></body></html>`;
+    shopHtml = `<!doctype html><html><head><title>Shop</title>${snippet}${stub}</head><body><h1>Shop</h1>${button}</body></html>`;
     await page.getByRole('button', { name: 'I added it' }).click();
     await page.waitForURL('**/verify');
     // The check starts by itself, against https://<domain>/ (this test shop listens on another port: it fails there)
@@ -159,6 +170,10 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     // The verifier's own visit was never counted: exactly one event, the visitor's pageview.
     const { events } = await stack.snapshot();
     expect(events.map((e) => [e.name, e.path])).toEqual([['pageview', '/pricing']]);
+
+    // The pasted custom-event button works as copied: a click becomes a signup_click event.
+    await visitor.getByRole('button', { name: 'Sign up' }).click();
+    await expect.poll(async () => (await stack.snapshot()).events.map((e) => e.name), { timeout: 20_000 }).toContain('signup_click');
 
     // Done: the dashboard opens by itself for the verified site
     await page.waitForURL('**/dashboard', { timeout: 10_000 });

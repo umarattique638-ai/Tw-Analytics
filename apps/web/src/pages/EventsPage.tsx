@@ -71,12 +71,14 @@ export default function EventsPage() {
 
       {creating && (
         <Panel title="Create an event" subtitle="Any event name works right away. No registration needed.">
-          <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-[13.5px] leading-relaxed text-teal-100"><code>{`// Script tag: anywhere after the snippet
-tw('track', 'signup', { plan: 'pro', seats: 5 });
+          <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-[13.5px] leading-relaxed text-teal-100"><code>{`<!-- Once, in <head>, below the TailWatch script -->
+<script>window.tw=window.tw||function(){(tw.q=tw.q||[]).push(arguments)}</script>
 
-// npm / framework packages
-const tw = useTailwatch();          // React, Next.js, Vue
-tw.track('signup', { plan: 'pro' });`}</code></pre>
+<!-- A click on a button or link -->
+<button onclick="tw('track', 'signup_click')">Sign up</button>
+
+<!-- Or from your own JavaScript, with details -->
+<script>tw('track', 'signup', { plan: 'pro', seats: 5 });</script>`}</code></pre>
           <p className="mt-3 text-[13px] text-slate-500 dark:text-slate-400">
             Names: lowercase letters, digits and _ (up to 40). Up to 25 properties per event. The event shows up here with its first hit.
             Creating events from HTML attributes or dashboard rules comes in a later release.
