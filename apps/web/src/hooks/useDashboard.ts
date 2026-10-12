@@ -1,15 +1,30 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reports, startDownload, stats } from '../api/client';
-import type { RangeKey } from '../api/client';
+import type { Overview, RangeKey } from '../api/client';
 import { notify } from '../lib/notify';
 import { usePoll } from './usePoll';
 
 export const OVERVIEW_EVERY_MS = 60_000;
 export const LIVE_EVERY_MS = 10_000;
 
+/**
+ * The Overview page and the sidebar's capture rate ask for the same report at the same moment: one request
+ * answers both (an answer is shared for 5 seconds).
+ */
+const recent = new Map<string, { at: number; answer: Promise<Overview> }>();
+function overviewShared(siteId: number, range: RangeKey) {
+  const key = `${siteId}:${range}`;
+  const hit = recent.get(key);
+  if (hit && Date.now() - hit.at < 5_000) return hit.answer;
+  const answer = stats.overview(siteId, range);
+  recent.set(key, { at: Date.now(), answer });
+  answer.catch(() => recent.delete(key));
+  return answer;
+}
+
 /** KPIs, charts and top lists for one site and period (refreshed every minute). */
-export const useOverview = (siteId: number, range: RangeKey) => usePoll(() => stats.overview(siteId, range), [siteId, range], OVERVIEW_EVERY_MS);
+export const useOverview = (siteId: number, range: RangeKey) => usePoll(() => overviewShared(siteId, range), [siteId, range], OVERVIEW_EVERY_MS);
 
 /** Active visitors and the latest hits (refreshed every 10 seconds). */
 export const useLive = (siteId: number) => usePoll(() => stats.live(siteId), [siteId], LIVE_EVERY_MS);

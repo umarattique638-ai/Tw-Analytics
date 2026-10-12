@@ -114,10 +114,13 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     const text = async () => (await page.locator('main').innerText()).replace(/\s+/g, ' ');
     await expect.poll(async () => (await text()).includes('98,765')).toBe(true);
     const t = await text();
-    for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '98.7%', '987 of 1,000', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
+    for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
       expect(t, want).toContain(want);
     }
     await expect.poll(async () => (await text()).includes('7 active in the last 5 minutes')).toBe(true);
+    // The capture rate sits in the sidebar, above the account.
+    const capture = (await page.getByRole('region', { name: 'Capture rate' }).innerText()).replace(/\s+/g, ' ');
+    for (const want of ['98.7%', '987 of 1,000']) expect(capture, want).toContain(want);
     if (process.env.TW_SCREENSHOTS) await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/6-dashboard.png`, fullPage: true });
     // None of the old sample values survived anywhere.
     for (const old of ['John', '6,474', '5,140', '41.2%', '/blog/privacy-analytics', 'United States', 'Sample data']) expect(t, old).not.toContain(old);

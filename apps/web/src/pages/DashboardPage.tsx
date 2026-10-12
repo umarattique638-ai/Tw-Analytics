@@ -1,6 +1,5 @@
 import { useLocation } from 'react-router-dom';
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Users, Zap } from 'lucide-react';
-import CaptureRate from '../components/dashboard/CaptureRate';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
 import KpiCard from '../components/dashboard/KpiCard';
@@ -73,7 +72,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
 
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} />
         <KpiCard icon={Activity} label="Sessions" value={k ? num(k.sessions) : null} delta={sessionsChange?.delta} up={sessionsChange?.up} positive={sessionsChange?.up} />
         <KpiCard icon={Eye} label="Page views" value={k ? num(k.pageviews) : null} delta={pageviewsChange?.delta} up={pageviewsChange?.up} positive={pageviewsChange?.up} />
@@ -85,7 +84,6 @@ function Overview({ site, name }: { site: Site; name: string }) {
           up={(bounceDelta ?? 0) >= 0}
           positive={(bounceDelta ?? 0) <= 0}
         />
-        <CaptureRate capture={o?.capture ?? null} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
