@@ -54,6 +54,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired when the server says the session is gone (expired, signed out elsewhere): the app goes to Log in. */
+export const SESSION_ENDED = 'tw:session-ended';
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -67,11 +70,17 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     throw new ApiError(0, 'network', 'Cannot reach the TailWatch API. Is it running?');
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? 'error', data.message ?? `Request failed (${res.status}).`);
+  if (!res.ok) {
+    // Only a lost session, not "wrong password" (also 401) on Log in or Delete account.
+    if (res.status === 401 && data.error === 'unauthorized') window.dispatchEvent(new Event(SESSION_ENDED));
+    throw new ApiError(res.status, data.error ?? 'error', data.message ?? `Request failed (${res.status}).`);
+  }
   return data as T;
 }
 
 export const api = {
+  /** Public server facts (no login): the collector address and the password rule. */
+  meta: () => call<{ collector: string; region: string; passwordMin: number }>('GET', '/meta'),
   me: () => call<Me>('GET', '/me'),
   signup: (name: string, email: string, password: string) => call<{ user: User }>('POST', '/auth/signup', { name, email, password }),
   login: (email: string, password: string) => call<{ user: User }>('POST', '/auth/login', { email, password }),
@@ -83,8 +92,6 @@ export const api = {
   site: (id: number) => call<{ site: Site; snippets: Snippet[] }>('GET', `/sites/${id}`),
   updateSite: (id: number, patch: { timezone?: string; status?: 'active' | 'paused'; retentionDays?: number }) => call<{ site: Site; sync: Sync }>('PATCH', `/sites/${id}`, patch),
   deleteSite: (id: number) => call<{ ok: true; sync: Sync }>('DELETE', `/sites/${id}`),
-  rotateKey: (id: number) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/keys`),
-  revokeKey: (id: number, keyId: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/keys/${keyId}/revoke`),
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
   status: (id: number) => call<Status>('GET', `/sites/${id}/status`),
   verify: (id: number, url?: string) => call<VerifyResult>('POST', `/sites/${id}/verify`, { url }),
@@ -173,7 +180,6 @@ export const stats = {
   events: (id: number, range: RangeKey) => call<EventsReport>('GET', `/sites/${id}/stats/events?range=${range}`),
   drops: (id: number, range: RangeKey) => call<DropsReport>('GET', `/sites/${id}/stats/drops?range=${range}`),
   allowHost: (id: number, host: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/allowed-hosts`, { host }),
-  exportUrl: (id: number, range: RangeKey) => `/api/v1/sites/${id}/export.csv?range=${range}`,
 };
 
 // ------------------------------------------------------------------ Phase 3: activity log, export, delete

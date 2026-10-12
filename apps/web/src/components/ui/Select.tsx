@@ -31,7 +31,7 @@ export default function Select({ label, value, onChange, options, name, hint, pl
   const labelId = useId();
   const listId = useId();
 
-  // bahar click karne par band
+  // A click outside closes the list.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -41,7 +41,7 @@ export default function Select({ label, value, onChange, options, name, hint, pl
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  // active option hamesha nazar aaye
+  // Keep the active option in view.
   useEffect(() => {
     if (!open) return;
     (listRef.current?.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
@@ -107,7 +107,7 @@ export default function Select({ label, value, onChange, options, name, hint, pl
 
   return (
     <div className="grid gap-1.5" ref={rootRef}>
-      <span id={labelId} className="text-sm font-semibold">{label}</span>
+      <span id={labelId} className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
 
       <div className="relative">
         <button

@@ -3,11 +3,19 @@ import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContaine
 import type { Row } from './types';
 
 const tick = { fontSize: 11, fill: '#94a3b8' };
-const tooltipStyle = {
-  borderRadius: 8,
-  border: '1px solid rgba(148,163,184,0.25)',
-  fontSize: 12,
-  boxShadow: '0 8px 24px -8px rgba(15,23,42,0.2)',
+/** Tooltip colours come from CSS variables (index.css), so they follow the dark setting. */
+const tooltipProps = {
+  contentStyle: {
+    borderRadius: 10,
+    border: '1px solid var(--tw-tip-border)',
+    background: 'var(--tw-tip-bg)',
+    color: 'var(--tw-tip-fg)',
+    fontSize: 12,
+    boxShadow: '0 8px 24px -8px rgba(15,23,42,0.25)',
+  },
+  labelStyle: { color: 'var(--tw-tip-muted)', marginBottom: 2 },
+  itemStyle: { padding: 0 },
+  cursor: { stroke: 'rgba(148,163,184,0.4)' },
 };
 
 /* ---------- Visitors over time ---------- */
@@ -29,7 +37,7 @@ export function VisitorsChart({ data }: { data: { date: string; visitors: number
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.2)" />
           <XAxis dataKey="date" tick={tick} axisLine={false} tickLine={false} />
           <YAxis tick={tick} axisLine={false} tickLine={false} />
-          <Tooltip contentStyle={tooltipStyle} />
+          <Tooltip {...tooltipProps} />
           <Area type="monotone" dataKey="visitors" name="Visitors" stroke="#14b8a6" strokeWidth={2} fill="url(#gVisitors)" />
           <Area type="monotone" dataKey="sessions" name="Sessions" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 3" fill="url(#gSessions)" />
         </AreaChart>
@@ -42,7 +50,7 @@ export function VisitorsChart({ data }: { data: { date: string; visitors: number
 const SOURCE_COLORS = ['#14b8a6', '#8b5cf6', '#f59e0b', '#3b82f6', '#94a3b8'];
 
 export function SourcesDonut({ sources, total, caption = 'Unique visitors' }: { sources: { name: string; value: number }[]; total: number; caption?: string }) {
-  if (sources.length === 0) return <p className="py-10 text-center text-sm text-slate-400">No sessions in this period yet.</p>;
+  if (sources.length === 0) return <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">No sessions in this period yet.</p>;
   return (
     <div>
       <div className="relative mx-auto size-40">
@@ -55,7 +63,7 @@ export function SourcesDonut({ sources, total, caption = 'Unique visitors' }: { 
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 grid place-content-center text-center">
           <span className="text-lg font-semibold tabular-nums text-slate-900 dark:text-white">{total.toLocaleString()}</span>
-          <span className="text-[10px] text-slate-400">{caption}</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">{caption}</span>
         </div>
       </div>
       <ul className="mt-5 grid gap-2">
@@ -88,7 +96,7 @@ export function LiveChart({ data }: { data: { time: string; count: number }[] })
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.2)" />
           <XAxis dataKey="time" tick={{ ...tick, fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
           <YAxis allowDecimals={false} tick={tick} axisLine={false} tickLine={false} />
-          <Tooltip contentStyle={tooltipStyle} />
+          <Tooltip {...tooltipProps} />
           <Area type="monotone" dataKey="count" name="Active sessions" stroke="#10b981" strokeWidth={2} fill="url(#gLive)" animationDuration={300} />
         </AreaChart>
       </ResponsiveContainer>
@@ -98,7 +106,7 @@ export function LiveChart({ data }: { data: { time: string; count: number }[] })
 
 /* ---------- Generic bar list (devices, pages, locations, browsers) ---------- */
 export function BarList({ rows, icon: Icon, empty = 'No data yet.' }: { rows: Row[]; icon?: LucideIcon; empty?: string }) {
-  if (rows.length === 0) return <p className="py-6 text-center text-sm text-slate-400">{empty}</p>;
+  if (rows.length === 0) return <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">{empty}</p>;
   return (
     <ul className="grid gap-3.5">
       {rows.map((r) => (

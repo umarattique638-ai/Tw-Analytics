@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { api } from './client';
-import type { KvIssue, Me, Role, Site, User } from './client';
+import { SESSION_ENDED, api } from '../api/client';
+import type { KvIssue, Me, Role, Site, User } from '../api/client';
 
 /**
  * Signed-in state for the dashboard: the user, their sites and the site being looked at.
  * Everything comes from the API; the only thing kept in the browser is which site was last selected.
+ * When any request finds the session gone (expired, signed out elsewhere), the app returns to Log in and
+ * comes back to the same page after signing in.
  */
 interface Session {
   user: User;
@@ -57,6 +59,16 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     setSites(sites);
     setKvIssues(kvIssues ?? []);
     return sites;
+  }, []);
+
+  // A request anywhere found the session gone: back to Log in.
+  useEffect(() => {
+    const ended = () => {
+      setUser(null);
+      setState('out');
+    };
+    window.addEventListener(SESSION_ENDED, ended);
+    return () => window.removeEventListener(SESSION_ENDED, ended);
   }, []);
 
   useEffect(() => {

@@ -1,92 +1,71 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import FormError from '../components/ui/FormError';
 import PageHeader from '../components/ui/PageHeader';
+import TextLink from '../components/ui/TextLink';
 import { muted } from '../components/ui/styles';
-import { api } from '../api/client';
+import { useSignupForm } from '../hooks/useAuthForms';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 export default function SignupPage() {
+  useDocumentTitle('Create your account');
   const navigate = useNavigate();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [touched, setTouched] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const mismatch = touched && confirm.length > 0 && password !== confirm;
-
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setTouched(true);
-    if (password !== confirm) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.signup(name, email, password);
-      navigate('/sites/new');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-up failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const form = useSignupForm(() => navigate('/sites/new'));
 
   return (
     <>
-      <PageHeader title="Create your account" sub="Start measuring real visitors in a few minutes." />
+      <PageHeader compact title="Create your account" description="Start measuring real visitors in a few minutes." />
 
-      <form className="grid gap-5" onSubmit={onSubmit}>
-        <Field label="Full name" name="name" autoComplete="name" placeholder="John Doe" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} required />
-
-        <Field label="Work email" type="email" name="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
-
+      <form
+        className="grid gap-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          form.submit();
+        }}
+      >
+        <Field label="Full name" name="name" autoComplete="name" placeholder="Your name" maxLength={120} value={form.name} onChange={(e) => form.setName(e.target.value)} required />
+        <Field label="Work email" type="email" name="email" autoComplete="email" placeholder="you@company.com" value={form.email} onChange={(e) => form.setEmail(e.target.value)} required />
         <Field
           label="Password"
           type="password"
           name="password"
           autoComplete="new-password"
-          minLength={8}
+          minLength={form.min}
           placeholder="Create a password"
-          hint="Use at least 8 characters."
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          hint={`Use at least ${form.min} characters.`}
+          value={form.password}
+          onChange={(e) => form.setPassword(e.target.value)}
           required
         />
+        <div className="grid gap-1.5">
+          <Field
+            label="Confirm password"
+            type="password"
+            name="confirmPassword"
+            autoComplete="new-password"
+            minLength={form.min}
+            placeholder="Type it again"
+            value={form.confirm}
+            onChange={(e) => form.setConfirm(e.target.value)}
+            aria-invalid={form.mismatch}
+            required
+          />
+          {form.mismatch && (
+            <p role="alert" className="text-[13px] font-medium text-red-600 dark:text-red-400">
+              The two passwords are not the same.
+            </p>
+          )}
+        </div>
 
-        <Field
-          label="Confirm password"
-          type="password"
-          name="confirmPassword"
-          autoComplete="new-password"
-          minLength={8}
-          placeholder="Re-enter your password"
-          value={confirm}
-          onChange={(e) => { setConfirm(e.target.value); setTouched(true); }}
-          aria-invalid={mismatch}
-          required
-        />
-        {mismatch && (
-          <p role="alert" className="-mt-3 text-[13px] font-medium text-red-600 dark:text-red-400">
-            Passwords do not match.
-          </p>
-        )}
-
-        <FormError message={error} />
-        <Button type="submit" className="mt-1 w-full" loading={busy}>Create account</Button>
+        <FormError message={form.error} />
+        <Button type="submit" className="mt-1 w-full" loading={form.busy}>
+          Create account
+        </Button>
       </form>
 
-      <p className={`mt-5 text-center text-xs leading-relaxed ${muted}`}>
-        By continuing you agree to our <a href="#" className="underline hover:text-slate-700 dark:hover:text-slate-200">Terms</a> and{' '}
-        <a href="#" className="underline hover:text-slate-700 dark:hover:text-slate-200">Privacy Policy</a>.
-      </p>
-
       <p className={`mt-6 border-t border-slate-200 pt-6 text-center text-sm dark:border-slate-800 ${muted}`}>
-        Already have an account?{' '}
-        <Link to="/login" className="font-semibold text-teal-700 hover:underline dark:text-teal-400">Log in</Link>
+        Already have an account? <TextLink to="/login">Log in</TextLink>
       </p>
     </>
   );

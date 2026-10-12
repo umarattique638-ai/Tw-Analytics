@@ -1,5 +1,3 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
@@ -7,66 +5,61 @@ import FormError from '../components/ui/FormError';
 import PageHeader from '../components/ui/PageHeader';
 import Select from '../components/ui/Select';
 import { muted } from '../components/ui/styles';
-import { api } from '../api/client';
-import { useSession } from '../api/session';
-import { timezoneOptions } from '../lib/timezones';
+import { useAddSite } from '../hooks/useSetup';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useSession } from '../hooks/useSession';
 
+/** Setup step 1: the domain and its timezone. */
 export default function AddSitePage() {
+  useDocumentTitle('Add your site');
   const navigate = useNavigate();
   const { upsert, select } = useSession();
-  const zones = useMemo(timezoneOptions, []);
-  const [domain, setDomain] = useState('');
-  const [timezone, setTimezone] = useState(zones.local);
-  const [hosts, setHosts] = useState<string[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // The accepted hosts come from the API (the rule lives there), shown as the user types.
-  useEffect(() => {
-    if (!domain.trim()) return setHosts(null);
-    const t = setTimeout(() => {
-      api.preview(domain).then((p) => setHosts(p.allowedHosts), () => setHosts(null));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [domain]);
-
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const { site, sync } = await api.addSite(domain, timezone);
-      upsert(site);
-      select(site.id);
-      navigate('/install', { state: { sync } });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the site.');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const form = useAddSite((site, sync) => {
+    upsert(site);
+    select(site.id);
+    navigate('/install', { state: { sync } });
+  });
 
   return (
     <>
-      <PageHeader title="Add your site" sub="Enter your domain. We don't touch DNS." />
-      <form className="grid w-full gap-5" onSubmit={onSubmit}>
-        <Field label="Domain" name="domain" placeholder="example.com" spellCheck={false} autoCapitalize="none" value={domain} onChange={(e) => setDomain(e.target.value)} required />
+      <PageHeader compact title="Add your site" description="Enter your domain. Nothing changes on your DNS or hosting." />
+      <form
+        className="grid w-full gap-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          form.submit();
+        }}
+      >
+        <Field
+          label="Domain"
+          name="domain"
+          placeholder="example.com"
+          spellCheck={false}
+          autoCapitalize="none"
+          autoComplete="off"
+          value={form.domain}
+          onChange={(e) => form.setDomain(e.target.value)}
+          required
+          autoFocus
+        />
 
         <Select
           label="Timezone"
           name="timezone"
-          value={timezone}
-          onChange={setTimezone}
-          options={zones.list}
+          value={form.timezone}
+          onChange={form.setTimezone}
+          options={form.zones.list}
           hint="Daily reports split at midnight in this timezone. Type to search, e.g. karachi."
         />
 
-        <div>
-          <b className="text-sm">Hosts we'll accept</b>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {hosts ? (
-              hosts.map((h) => (
-                <span key={h} className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[13px] dark:border-slate-700 dark:bg-slate-950">{h}</span>
+        <div className="rounded-xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Hosts we'll accept</p>
+          <div className="mt-2 flex flex-wrap gap-2" aria-live="polite">
+            {form.hosts ? (
+              form.hosts.map((h) => (
+                <span key={h} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[13px] text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                  {h}
+                </span>
               ))
             ) : (
               <span className={`text-[13px] ${muted}`}>Your domain and all its subdomains, www included.</span>
@@ -74,8 +67,10 @@ export default function AddSitePage() {
           </div>
         </div>
 
-        <FormError message={error} />
-        <Button type="submit" className="w-full" loading={busy}>Add site</Button>
+        <FormError message={form.error} />
+        <Button type="submit" className="w-full" loading={form.busy}>
+          Add site
+        </Button>
       </form>
     </>
   );

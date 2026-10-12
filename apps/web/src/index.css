@@ -1,5 +1,19 @@
 @import "tailwindcss";
+/* Instrument Sans, self-hosted (no request to a font CDN: a privacy product does not leak its users' IPs). */
+@import "@fontsource-variable/instrument-sans";
 
+@theme {
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+html {
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Browser autofill keeps the field's own colours (the dark variant follows the system setting, like `dark:`). */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
@@ -7,13 +21,16 @@ input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0 1000px #fff inset;
   transition: background-color 9999s ease-in-out 0s;
 }
-.dark input:-webkit-autofill,
-.dark input:-webkit-autofill:hover,
-.dark input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #f1f5f9;
-  -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+@media (prefers-color-scheme: dark) {
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f1f5f9;
+    -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+  }
 }
-/* Small, quick motion for menus and the install check. Turned off for people who ask for less motion. */
+
+/* Small, quick motion for menus, dialogs and the install check. Off for people who ask for less motion. */
 @keyframes tw-pop {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to { opacity: 1; transform: none; }
@@ -27,6 +44,27 @@ input:-webkit-autofill:focus {
   60% { transform: scale(1.15); opacity: 1; }
   100% { transform: scale(1); }
 }
+@keyframes tw-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   [class*="animate-[tw-"] { animation: none !important; }
+  .animate-pulse, .animate-spin { animation-duration: 3s; }
+}
+
+/* Chart tooltips (recharts takes inline styles): follow the light / dark setting. */
+:root {
+  --tw-tip-bg: #ffffff;
+  --tw-tip-fg: #0f172a;
+  --tw-tip-muted: #64748b;
+  --tw-tip-border: rgba(148, 163, 184, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tw-tip-bg: #0f172a;
+    --tw-tip-fg: #f1f5f9;
+    --tw-tip-muted: #94a3b8;
+    --tw-tip-border: rgba(148, 163, 184, 0.2);
+  }
 }
