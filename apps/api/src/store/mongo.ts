@@ -1,7 +1,7 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
 import { DuplicateError } from './types';
-import type { ControlStore, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {
@@ -44,6 +44,9 @@ export class MongoStore implements ControlStore {
       this.resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.resets.createIndex({ userId: 1 }),
       this.outbox.createIndex({ tenantId: 1 }),
+      this.audit.createIndex({ tenantId: 1, at: -1, _id: -1 }),
+      this.audit.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      this.erasures.createIndex({ status: 1, updatedAt: 1 }),
     ]);
   }
 
@@ -70,6 +73,12 @@ export class MongoStore implements ControlStore {
   }
   private get outbox(): Collection<KvIssueDoc> {
     return this.db.collection('kv_outbox');
+  }
+  private get audit(): Collection<AuditDoc> {
+    return this.db.collection('audit_log');
+  }
+  private get erasures(): Collection<ErasureDoc> {
+    return this.db.collection('erasures');
   }
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -130,8 +139,8 @@ export class MongoStore implements ControlStore {
       duplicate(error);
     }
   }
-  sitesOf(tenantId: ObjectId) {
-    return this.sites.find({ tenantId, ...notDeleted }).sort({ _id: 1 }).toArray();
+  sitesOf(tenantId: ObjectId, includeDeleted = false) {
+    return this.sites.find(includeDeleted ? { tenantId } : { tenantId, ...notDeleted }).sort({ _id: 1 }).toArray();
   }
   site(tenantId: ObjectId, id: number) {
     return this.sites.findOne({ _id: id, tenantId, ...notDeleted });
@@ -194,7 +203,11 @@ export class MongoStore implements ControlStore {
     await this.exports.insertOne(doc);
   }
   exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number) {
-    return this.exports.find({ tenantId, siteId, expiresAt: { $gt: now } }).sort({ createdAt: -1 }).limit(limit).toArray();
+    return this.exports
+      .find({ tenantId, siteId, expiresAt: { $gt: now } }, { projection: { csv: 0 } })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray() as Promise<Omit<ExportDoc, 'csv'>[]>;
   }
   exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date) {
     return this.exports.findOne({ _id: id, tenantId, siteId, expiresAt: { $gt: now } });
@@ -205,6 +218,70 @@ export class MongoStore implements ControlStore {
   async deleteExport(tenantId: ObjectId, siteId: number, id: ObjectId) {
     return (await this.exports.deleteOne({ _id: id, tenantId, siteId })).deletedCount === 1;
   }
+  async insertAudit(doc: AuditDoc) {
+    await this.audit.insertOne(doc);
+  }
+  auditOf(tenantId: ObjectId, o: { limit: number; siteId?: number; before?: { at: Date; id: ObjectId } }) {
+    const filter: Record<string, unknown> = { tenantId };
+    if (o.siteId !== undefined) filter.siteId = o.siteId;
+    if (o.before) filter.$or = [{ at: { $lt: o.before.at } }, { at: o.before.at, _id: { $lt: o.before.id } }];
+    return this.audit.find(filter).sort({ at: -1, _id: -1 }).limit(o.limit).toArray();
+  }
+
+  membersOf(tenantId: ObjectId) {
+    return this.memberships.find({ tenantId }).toArray();
+  }
+  async eraseAccount(input: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, userIds: ObjectId[]) {
+    const session = this.client.startSession();
+    let erasure = null as ErasureDoc | null;
+    try {
+      await session.withTransaction(async () => {
+        const t = input._id;
+        // Read inside the transaction: a site or key changed by another request meanwhile either is in this
+        // snapshot or conflicts with the deleteMany below (the transaction is then retried).
+        const sites = await this.sites.find({ tenantId: t }, { session }).toArray();
+        erasure = { ...input, siteIds: sites.map((s) => s._id), publicKeys: sites.flatMap((s) => s.keys.map((k) => k.publicKey)) };
+        await this.erasures.insertOne(erasure, { session });
+        // A user who also belongs to another workspace keeps the account (only this membership goes).
+        const elsewhere = await this.memberships.distinct('userId', { userId: { $in: userIds }, tenantId: { $ne: t } }, { session });
+        const gone = userIds.filter((u) => !elsewhere.some((e) => e.equals(u)));
+        await this.memberships.deleteMany({ tenantId: t }, { session });
+        await this.users.deleteMany({ _id: { $in: gone } }, { session });
+        await this.sessions.deleteMany({ userId: { $in: gone } }, { session });
+        await this.resets.deleteMany({ userId: { $in: gone } }, { session });
+        await this.sites.deleteMany({ tenantId: t, _id: { $in: sites.map((s) => s._id) } }, { session });
+        await this.exports.deleteMany({ tenantId: t }, { session });
+        await this.audit.deleteMany({ tenantId: t }, { session });
+        await this.outbox.deleteMany({ tenantId: t }, { session });
+        await this.tenants.deleteOne({ _id: t }, { session });
+      });
+    } catch (error) {
+      duplicate(error);
+    } finally {
+      await session.endSession();
+    }
+    if (!erasure) throw new Error('account deletion did not commit');
+    return erasure;
+  }
+  activeErasures(watchSince: Date, limit: number) {
+    return this.erasures
+      .find({ $or: [{ status: 'pending' }, { status: 'completed', completedAt: { $gt: watchSince } }] })
+      .sort({ status: -1, updatedAt: 1 }) // 'pending' before 'completed', then least recently worked on
+      .limit(limit)
+      .toArray();
+  }
+  async deleteSitesOf(tenantId: ObjectId) {
+    const found = await this.sites.find({ tenantId }).toArray();
+    if (found.length) await this.sites.deleteMany({ tenantId, _id: { $in: found.map((s) => s._id) } });
+    return found;
+  }
+  erasureById(id: ObjectId) {
+    return this.erasures.findOne({ _id: id });
+  }
+  async updateErasure(id: ObjectId, patch: ErasurePatch) {
+    await this.erasures.updateOne({ _id: id }, { $set: patch });
+  }
+
   async close() {
     await this.client.close();
   }

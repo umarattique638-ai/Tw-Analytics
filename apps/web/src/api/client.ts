@@ -13,8 +13,17 @@ export interface Site {
   region: string;
   verifiedAt: string | null;
   createdAt: string;
+  /** Days collected data is kept; older data is deleted by the nightly clean-up, in weekly batches (Settings). */
+  retentionDays: number;
   publicKey: string | null;
   keys: Key[];
+}
+export type Role = 'owner' | 'admin' | 'viewer';
+export interface Me {
+  user: User;
+  tenant: { id: string; plan: string; region: string };
+  role: Role;
+  retention: { choices: number[]; max: number; default: number };
 }
 export interface Sync { ok: boolean; pending?: boolean; message?: string }
 /** A site whose Cloudflare KV entries do not match yet (decision 18). Retried automatically. */
@@ -63,7 +72,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  me: () => call<{ user: User }>('GET', '/me'),
+  me: () => call<Me>('GET', '/me'),
   signup: (name: string, email: string, password: string) => call<{ user: User }>('POST', '/auth/signup', { name, email, password }),
   login: (email: string, password: string) => call<{ user: User }>('POST', '/auth/login', { email, password }),
   logout: () => call<{ ok: true }>('POST', '/auth/logout'),
@@ -72,7 +81,7 @@ export const api = {
   preview: (domain: string) => call<{ domain: string; allowedHosts: string[] }>('GET', `/sites/preview?domain=${encodeURIComponent(domain)}`),
   addSite: (domain: string, timezone: string) => call<{ site: Site; sync: Sync }>('POST', '/sites', { domain, timezone }),
   site: (id: number) => call<{ site: Site; snippets: Snippet[] }>('GET', `/sites/${id}`),
-  updateSite: (id: number, patch: { timezone?: string; status?: 'active' | 'paused' }) => call<{ site: Site; sync: Sync }>('PATCH', `/sites/${id}`, patch),
+  updateSite: (id: number, patch: { timezone?: string; status?: 'active' | 'paused'; retentionDays?: number }) => call<{ site: Site; sync: Sync }>('PATCH', `/sites/${id}`, patch),
   deleteSite: (id: number) => call<{ ok: true; sync: Sync }>('DELETE', `/sites/${id}`),
   rotateKey: (id: number) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/keys`),
   revokeKey: (id: number, keyId: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/keys/${keyId}/revoke`),
@@ -165,4 +174,54 @@ export const stats = {
   drops: (id: number, range: RangeKey) => call<DropsReport>('GET', `/sites/${id}/stats/drops?range=${range}`),
   allowHost: (id: number, host: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/allowed-hosts`, { host }),
   exportUrl: (id: number, range: RangeKey) => `/api/v1/sites/${id}/export.csv?range=${range}`,
+};
+
+// ------------------------------------------------------------------ Phase 3: activity log, export, delete
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  action: string;
+  actor: { kind: 'user' | 'system'; name: string; you: boolean };
+  siteId: number | null;
+  domain: string | null;
+  summary: string;
+}
+
+export interface Erasure {
+  id: string;
+  sites: number;
+  trackingStopped: boolean;
+  dataDeleteSent: boolean;
+  finishesWithinDays: number;
+}
+
+export const account = {
+  activity: (options: { before?: string | null; site?: number | null } = {}) => {
+    const q = new URLSearchParams({ limit: '50' });
+    if (options.before) q.set('before', options.before);
+    if (options.site) q.set('site', String(options.site));
+    return call<{ keepDays: number; entries: AuditEntry[]; next: string | null }>('GET', `/audit?${q}`);
+  },
+  /** Fetches the export first, so an error is shown as a message instead of being saved as the file. */
+  async download(): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch('/api/v1/account/export', { credentials: 'same-origin' });
+    } catch {
+      throw new ApiError(0, 'network', 'Cannot reach the TailWatch API. Is it running?');
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      throw new ApiError(res.status, data.error ?? 'error', data.message ?? `Download failed (${res.status}).`);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'tailwatch-export.json';
+    const url = URL.createObjectURL(await res.blob());
+    try {
+      startDownload(url, name);
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
+  },
+  remove: (password: string, confirm: string) => call<{ ok: true; erasure: Erasure }>('POST', '/account/delete', { password, confirm }),
 };

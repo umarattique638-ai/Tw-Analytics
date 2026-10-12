@@ -103,7 +103,84 @@ export interface KvIssueDoc {
   updatedAt: Date;
 }
 
-export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret'>>;
+export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret' | 'retentionDays'>>;
+
+/** Everything the activity log can say happened. `system` entries are made by the nightly jobs. */
+export const AUDIT_ACTIONS = [
+  'account.created',
+  'auth.login',
+  'auth.login_failed',
+  'auth.logout',
+  'auth.password_reset',
+  'site.created',
+  'site.restored',
+  'site.paused',
+  'site.resumed',
+  'site.timezone_changed',
+  'site.retention_changed',
+  'site.deleted',
+  'key.created',
+  'key.revoked',
+  'host.allowed',
+  'report.created',
+  'report.deleted',
+  'account.exported',
+  'data.pruned',
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+/**
+ * One line of a workspace's activity log (Phase 3 "customer-facing audit log"): who did what, when.
+ * No IP address and no user agent are stored (data minimisation, PLAN 10). Deleted after AUDIT_KEEP_DAYS
+ * (TTL index), and with the account.
+ */
+export interface AuditDoc {
+  _id: ObjectId;
+  tenantId: ObjectId;
+  at: Date;
+  actorKind: 'user' | 'system';
+  /** The user who did it; null for the nightly jobs. */
+  actorId: ObjectId | null;
+  /** Name at that moment (the log stays readable if the name changes later). */
+  actorName: string;
+  action: AuditAction;
+  siteId: number | null;
+  /** One human sentence, e.g. "Revoked key tw_pub_ab12… of shop.example.com". */
+  summary: string;
+  expiresAt: Date;
+}
+
+/**
+ * An account deletion in progress (export-then-erase, PLAN 10.6). The account itself (user, workspace,
+ * sites, reports, activity log) is removed from MongoDB at once; this record drives what is left:
+ * Cloudflare KV keys, then the ClickHouse rows of the sites, until a count proves there is nothing left.
+ * When done it is kept as the receipt, without the e-mail address.
+ */
+export interface ErasureDoc {
+  /** The deleted workspace's id. */
+  _id: ObjectId;
+  siteIds: number[];
+  publicKeys: string[];
+  /** For the "erasure finished" e-mail only; removed when the erasure completes. */
+  email: string | null;
+  name: string | null;
+  requestedAt: Date;
+  status: 'pending' | 'completed';
+  kvDoneAt: Date | null;
+  /** Last time the ClickHouse delete was sent (it runs in the background on the server). */
+  dataDeleteSentAt: Date | null;
+  /** First check that found no rows left, after the settle time (late queue retries could still land). */
+  dataVerifiedAt: Date | null;
+  /** Rows found per table at the first check, for the receipt. */
+  rowsFound: { events: number; sessions: number; dropped_hits: number; rollup_15m_pages: number } | null;
+  /** Rows that came back after completion (late queue retries / replays) and were deleted by the watch. */
+  rowsAfterCompletion: number;
+  attempts: number;
+  lastError: string | null;
+  completedAt: Date | null;
+  updatedAt: Date;
+}
+export type ErasurePatch = Partial<Omit<ErasureDoc, '_id'>>;
 
 /** Thrown for a unique-index violation. `field` says which rule: shown to the user as a 409. */
 export class DuplicateError extends Error {
@@ -131,8 +208,8 @@ export interface ControlStore {
   /** Next numeric site id, never below `floor` (ids up to the floor are reserved for manual sites). */
   nextSiteId(floor: number): Promise<number>;
   insertSite(site: SiteDoc): Promise<void>;
-  /** Sites of a tenant that are not deleted. */
-  sitesOf(tenantId: ObjectId): Promise<SiteDoc[]>;
+  /** Sites of a tenant that are not deleted (or all of them, for the account export). */
+  sitesOf(tenantId: ObjectId, includeDeleted?: boolean): Promise<SiteDoc[]>;
   site(tenantId: ObjectId, id: number): Promise<SiteDoc | null>;
   /** A site of this tenant with this domain, deleted ones included (re-adding restores it). */
   siteByDomain(tenantId: ObjectId, domain: string): Promise<SiteDoc | null>;
@@ -162,11 +239,37 @@ export interface ControlStore {
 
   insertExport(doc: ExportDoc): Promise<void>;
   /** Newest first, expired ones left out (the TTL monitor runs about once a minute). */
-  exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number): Promise<ExportDoc[]>;
+  /** The list only: without the CSV itself (download reads one report with exportById). */
+  exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number): Promise<Omit<ExportDoc, 'csv'>[]>;
   exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date): Promise<ExportDoc | null>;
   countExports(tenantId: ObjectId, siteId: number, now: Date): Promise<number>;
   /** True if it existed. */
   deleteExport(tenantId: ObjectId, siteId: number, id: ObjectId): Promise<boolean>;
+
+  insertAudit(doc: AuditDoc): Promise<void>;
+  /** Newest first. `before` continues a page: entries strictly older than that (at, _id). */
+  auditOf(tenantId: ObjectId, options: { limit: number; siteId?: number; before?: { at: Date; id: ObjectId } }): Promise<AuditDoc[]>;
+
+  /** Users of a workspace (deleting an account removes all of them that belong to no other workspace). */
+  membersOf(tenantId: ObjectId): Promise<MembershipDoc[]>;
+  /**
+   * Account deletion, all or nothing (a MongoDB transaction): the workspace's sites are read INSIDE the
+   * transaction and their ids and keys become the erasure record's siteIds / publicKeys (so a key added
+   * in another tab meanwhile is either in the record or makes the transaction retry); the record is
+   * written and the workspace's users (those without another workspace), memberships, login sessions,
+   * reset links, sites, reports, activity log, KV outbox entries and the workspace itself are deleted.
+   * Returns the record as written.
+   */
+  eraseAccount(erasure: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, userIds: ObjectId[]): Promise<ErasureDoc>;
+  /**
+   * Erasures to work on: every pending one, and completed ones still watched (completed after
+   * `watchSince`: late rows and re-written KV keys are removed again). Least recently worked on first.
+   */
+  activeErasures(watchSince: Date, limit: number): Promise<ErasureDoc[]>;
+  /** Sites still stored for a workspace (a request that raced the deletion); deleted and returned. */
+  deleteSitesOf(tenantId: ObjectId): Promise<SiteDoc[]>;
+  erasureById(id: ObjectId): Promise<ErasureDoc | null>;
+  updateErasure(id: ObjectId, patch: ErasurePatch): Promise<void>;
 
   close(): Promise<void>;
 }

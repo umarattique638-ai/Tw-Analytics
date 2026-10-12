@@ -9,6 +9,8 @@ import type { AnalyticsReader } from './analytics';
 import type { Deps } from './app';
 import { defaultConfig, parseAllowlist } from './config';
 import type { ApiConfig } from './config';
+import { ClickHouseEraser } from './eraser';
+import type { AnalyticsEraser } from './eraser';
 import { CloudflareKv, UnconfiguredKv } from './kv';
 import type { SiteConfigSink } from './kv';
 import { mailerFromEnv } from './mail';
@@ -77,7 +79,7 @@ export async function storeFromEnv(env: Env, hosted: boolean): Promise<ControlSt
 export function servicesFromEnv(
   env: Env,
   hosted = false,
-): { kv: SiteConfigSink; analytics: AnalyticsReader; stats: StatsReader | null; mailer: Mailer } {
+): { kv: SiteConfigSink; analytics: AnalyticsReader; stats: StatsReader | null; mailer: Mailer; eraser: AnalyticsEraser | null } {
   const kv =
     env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID && env.CF_API_TOKEN
       ? new CloudflareKv(env.CF_ACCOUNT_ID, env.CF_KV_NAMESPACE_ID, env.CF_API_TOKEN)
@@ -86,11 +88,17 @@ export function servicesFromEnv(
     env.TW_CH_URL && env.TW_CH_READ_PASSWORD
       ? new ClickHouseClient(env.TW_CH_URL, env.TW_CH_READ_USER || 'tw_read', env.TW_CH_READ_PASSWORD)
       : null;
+  // Retention pruning and account erasure: a separate user that may delete rows (004_prune_user.sql).
+  const pruner =
+    env.TW_CH_URL && env.TW_CH_PRUNE_PASSWORD
+      ? new ClickHouseClient(env.TW_CH_URL, env.TW_CH_PRUNE_USER || 'tw_prune', env.TW_CH_PRUNE_PASSWORD, 'tailwatch', fetch, { timeoutMs: 10_000 })
+      : null;
   return {
     kv,
     analytics: clickhouse ? new ClickHouseReader(clickhouse) : new UnconfiguredReader(),
     stats: clickhouse ? new StatsReader(clickhouse) : null,
     mailer: mailerFromEnv(env, hosted),
+    eraser: pruner ? new ClickHouseEraser(pruner) : null,
   };
 }
 

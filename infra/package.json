@@ -11,6 +11,7 @@
     "mongo:verify": "node tools/mongo.mjs verify",
     "ch:reset": "node tools/clickhouse.mjs apply --reset",
     "ch:reader": "node tools/clickhouse.mjs reader",
+    "ch:pruner": "node tools/clickhouse.mjs pruner",
     "lists:generate": "node tools/lists.mjs generate",
     "lists:check": "node tools/lists.mjs check",
     "lists:update": "node tools/lists.mjs update",

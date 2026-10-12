@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { api } from './client';
-import type { KvIssue, Site, User } from './client';
+import type { KvIssue, Me, Role, Site, User } from './client';
 
 /**
  * Signed-in state for the dashboard: the user, their sites and the site being looked at.
@@ -10,6 +10,9 @@ import type { KvIssue, Site, User } from './client';
  */
 interface Session {
   user: User;
+  role: Role;
+  /** Retention choices of this deployment (days). */
+  retention: Me['retention'];
   sites: Site[];
   /** Sites whose changes have not reached Cloudflare yet (shown as a banner, retried by the server). */
   kvIssues: KvIssue[];
@@ -44,6 +47,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const [state, setState] = useState<'loading' | 'out' | 'in'>('loading');
   const [user, setUser] = useState<User | null>(null);
+  const [me, setMe] = useState<Pick<Me, 'role' | 'retention'>>({ role: 'viewer', retention: { choices: [], max: 0, default: 0 } });
   const [sites, setSites] = useState<Site[]>([]);
   const [kvIssues, setKvIssues] = useState<KvIssue[]>([]);
   const [currentId, setCurrentId] = useState<number | null>(remembered);
@@ -59,10 +63,11 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     let live = true;
     api
       .me()
-      .then(async ({ user }) => {
+      .then(async ({ user, role, retention }) => {
         const list = await reload();
         if (!live) return;
         setUser(user);
+        setMe({ role: role ?? 'viewer', retention: retention ?? { choices: [], max: 0, default: 0 } });
         setCurrentId((id) => (id && list.some((s) => s.id === id) ? id : (list[0]?.id ?? null)));
         setState('in');
       })
@@ -89,6 +94,8 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     if (!user) return null;
     return {
       user,
+      role: me.role,
+      retention: me.retention,
       sites,
       kvIssues,
       retrySync: async () => {
@@ -104,7 +111,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
         setState('out');
       },
     };
-  }, [user, sites, kvIssues, currentId, select, reload, upsert]);
+  }, [user, me, sites, kvIssues, currentId, select, reload, upsert]);
 
   if (state === 'loading') {
     return (

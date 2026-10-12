@@ -36,6 +36,16 @@ export class ClickHouseClient {
   ) {}
 
   async query<T>(sql: string, params: Record<string, string | number>): Promise<T[]> {
+    const text = await this.send(sql, params);
+    return (JSON.parse(text) as { data: T[] }).data;
+  }
+
+  /** A statement without a result (ALTER ... DELETE). */
+  async exec(sql: string, params: Record<string, string | number>): Promise<void> {
+    await this.send(sql, params);
+  }
+
+  private async send(sql: string, params: Record<string, string | number>): Promise<string> {
     const qs = new URLSearchParams({ default_format: 'JSON', output_format_json_quote_64bit_integers: '1' });
     if (this.options.sequentialConsistency) qs.set('select_sequential_consistency', '1');
     for (const [k, v] of Object.entries(params)) qs.set(`param_${k}`, String(v));
@@ -56,7 +66,7 @@ export class ClickHouseClient {
     }
     const text = await res.text();
     if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${text.slice(0, 300)}`);
-    return (JSON.parse(text) as { data: T[] }).data;
+    return text;
   }
 }
 

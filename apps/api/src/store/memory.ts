@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Long, ObjectId } from 'mongodb';
 import { violation } from './validate';
 import { DuplicateError } from './types';
-import type { ControlStore, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /**
  * In-memory ControlStore for tests. It enforces the same rules the real MongoDB enforces:
@@ -42,6 +42,8 @@ export class MemoryStore implements ControlStore {
   exports: ExportDoc[] = [];
   resets: PasswordResetDoc[] = [];
   outbox: KvIssueDoc[] = [];
+  audit: AuditDoc[] = [];
+  erasures: ErasureDoc[] = [];
   counter = Long.fromNumber(0);
 
   async createAccount({ user, tenant, membership }: { user: UserDoc; tenant: TenantDoc; membership: MembershipDoc }) {
@@ -98,8 +100,8 @@ export class MemoryStore implements ControlStore {
     this.unique(site);
     this.sites.push(clone(site));
   }
-  async sitesOf(tenantId: ObjectId) {
-    return clone(this.sites.filter((s) => same(s.tenantId, tenantId) && s.status !== 'deleted').sort((a, b) => a._id - b._id));
+  async sitesOf(tenantId: ObjectId, includeDeleted = false) {
+    return clone(this.sites.filter((s) => same(s.tenantId, tenantId) && (includeDeleted || s.status !== 'deleted')).sort((a, b) => a._id - b._id));
   }
   async site(tenantId: ObjectId, id: number) {
     return clone(this.sites.find((s) => s._id === id && same(s.tenantId, tenantId) && s.status !== 'deleted') ?? null);
@@ -177,7 +179,7 @@ export class MemoryStore implements ControlStore {
     return this.exports.filter((e) => same(e.tenantId, tenantId) && e.siteId === siteId && e.expiresAt.getTime() > now.getTime());
   }
   async exportsOf(tenantId: ObjectId, siteId: number, now: Date, limit: number) {
-    return clone(this.liveExports(tenantId, siteId, now).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit));
+    return clone(this.liveExports(tenantId, siteId, now).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit)).map(({ csv: _csv, ...rest }) => rest);
   }
   async exportById(tenantId: ObjectId, siteId: number, id: ObjectId, now: Date) {
     return clone(this.liveExports(tenantId, siteId, now).find((e) => same(e._id, id)) ?? null);
@@ -190,5 +192,69 @@ export class MemoryStore implements ControlStore {
     this.exports = this.exports.filter((e) => !(same(e._id, id) && same(e.tenantId, tenantId) && e.siteId === siteId));
     return this.exports.length < before;
   }
+  async insertAudit(doc: AuditDoc) {
+    check('audit_log', doc);
+    this.audit.push(clone(doc));
+  }
+  async auditOf(tenantId: ObjectId, o: { limit: number; siteId?: number; before?: { at: Date; id: ObjectId } }) {
+    const newerFirst = (a: AuditDoc, b: AuditDoc) => b.at.getTime() - a.at.getTime() || b._id.toHexString().localeCompare(a._id.toHexString());
+    return clone(
+      this.audit
+        .filter((e) => same(e.tenantId, tenantId) && (o.siteId === undefined || e.siteId === o.siteId))
+        .filter((e) => !o.before || e.at.getTime() < o.before.at.getTime() || (e.at.getTime() === o.before.at.getTime() && e._id.toHexString() < o.before.id.toHexString()))
+        .sort(newerFirst)
+        .slice(0, o.limit),
+    );
+  }
+
+  async membersOf(tenantId: ObjectId) {
+    return clone(this.memberships.filter((m) => same(m.tenantId, tenantId)));
+  }
+  async eraseAccount(input: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, userIds: ObjectId[]) {
+    const t = input._id;
+    const sites = this.sites.filter((s) => same(s.tenantId, t));
+    const erasure: ErasureDoc = { ...input, siteIds: sites.map((s) => s._id), publicKeys: sites.flatMap((s) => s.keys.map((k) => k.publicKey)) };
+    check('erasures', erasure);
+    if (this.erasures.some((e) => same(e._id, erasure._id))) throw new DuplicateError('other');
+    const has = (list: ObjectId[], id: ObjectId) => list.some((x) => same(x, id));
+    // A user who also belongs to another workspace keeps the account (only this membership goes).
+    const gone = userIds.filter((u) => !this.memberships.some((m) => same(m.userId, u) && !same(m.tenantId, t)));
+    this.erasures.push(clone(erasure));
+    this.memberships = this.memberships.filter((m) => !same(m.tenantId, t));
+    this.users = this.users.filter((u) => !has(gone, u._id));
+    this.sessions = this.sessions.filter((s) => !has(gone, s.userId));
+    this.resets = this.resets.filter((r) => !has(gone, r.userId));
+    this.sites = this.sites.filter((s) => !same(s.tenantId, t));
+    this.exports = this.exports.filter((e) => !same(e.tenantId, t));
+    this.audit = this.audit.filter((e) => !same(e.tenantId, t));
+    this.outbox = this.outbox.filter((o) => !same(o.tenantId, t));
+    this.tenants = this.tenants.filter((x) => !same(x._id, t));
+    return clone(erasure);
+  }
+  async activeErasures(watchSince: Date, limit: number) {
+    const pendingFirst = (a: ErasureDoc, b: ErasureDoc) => Number(b.status === 'pending') - Number(a.status === 'pending') || a.updatedAt.getTime() - b.updatedAt.getTime();
+    return clone(
+      this.erasures
+        .filter((e) => e.status === 'pending' || (e.completedAt && e.completedAt.getTime() > watchSince.getTime()))
+        .sort(pendingFirst)
+        .slice(0, limit),
+    );
+  }
+  async deleteSitesOf(tenantId: ObjectId) {
+    const gone = this.sites.filter((s) => same(s.tenantId, tenantId));
+    this.sites = this.sites.filter((s) => !same(s.tenantId, tenantId));
+    return clone(gone);
+  }
+  async erasureById(id: ObjectId) {
+    return clone(this.erasures.find((e) => same(e._id, id)) ?? null);
+  }
+  async updateErasure(id: ObjectId, patch: ErasurePatch) {
+    const i = this.erasures.findIndex((e) => same(e._id, id));
+    if (i < 0) return;
+    const next = { ...this.erasures[i]!, ...clone(patch) };
+    check('erasures', next);
+    this.erasures[i] = next;
+  }
+
   async close() {}
 }

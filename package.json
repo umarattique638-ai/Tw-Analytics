@@ -21,6 +21,7 @@
     "verify:stages": "pnpm typecheck && pnpm test && pnpm build && pnpm lists:check && pnpm verify:mongo && pnpm db:check && pnpm e2e:collector && pnpm live:consumer && pnpm e2e:consumer && pnpm e2e:precision && pnpm e2e:frameworks && pnpm live:api && pnpm e2e:api",
     "e2e:frameworks": "pnpm --filter @tailwatch/examples-e2e e2e",
     "db:clickhouse:reader": "pnpm --filter @tailwatch/infra ch:reader",
+    "db:clickhouse:pruner": "pnpm --filter @tailwatch/infra ch:pruner",
     "live:api": "pnpm --filter @tailwatch/api live",
     "e2e:api": "pnpm --filter @tailwatch/api e2e",
     "app": "pnpm --filter @tailwatch/web build && pnpm --filter @tailwatch/api build && pnpm --filter @tailwatch/api start",

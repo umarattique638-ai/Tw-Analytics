@@ -10,7 +10,10 @@ export interface ApiConfig {
   secureCookies: boolean;
   /** Site ids up to this number are reserved for hand-made sites (the owner's test sites 1 and 2). */
   siteIdFloor: number;
-  /** Raw-event retention promised to a new site (PLAN 10: a Phase 3 deliverable enforces it per plan). */
+  /**
+   * Retention of a new site, and the longest a site can choose (Phase 3: enforced by the nightly pruning
+   * job, in weekly batches). The ClickHouse table TTL (425 days) stays as a safety net above it.
+   */
   retentionDays: number;
   sessionDays: number;
   scrypt: ScryptCost;
@@ -27,6 +30,9 @@ export interface ApiConfig {
   /** Shared secret for the scheduled KV reconcile call (Vercel Cron sends it as a Bearer token). Null: route off. */
   cronSecret: string | null;
 }
+
+/** Retention a customer can choose for a site, in days (never above ApiConfig.retentionDays). */
+export const RETENTION_CHOICES = [30, 90, 180, 395] as const;
 
 /** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty -> null (open). */
 export function parseAllowlist(raw: string | undefined): string[] | null {

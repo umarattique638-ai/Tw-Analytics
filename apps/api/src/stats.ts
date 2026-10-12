@@ -101,6 +101,13 @@ GROUP BY pathname
 ORDER BY pageviews DESC, pathname
 LIMIT 10`,
 
+  pages_all: `SELECT pathname, countMerge(pageviews) AS pageviews, uniqMerge(visitors) AS visitors
+FROM {db}.rollup_15m_pages
+WHERE site_id = {site:UInt64} AND bucket >= toDateTime({from:String}, {tz:String}) AND bucket < toDateTime({until:String}, {tz:String})
+GROUP BY pathname
+ORDER BY pageviews DESC, pathname
+LIMIT 1000`,
+
   sources: `SELECT referrer_source AS source, sum(sign) AS sessions
 FROM {db}.sessions
 WHERE ${IN_RANGE('start')}
@@ -241,6 +248,17 @@ export interface EventsReport {
   range: Range;
   events: { name: string; kind: 'automatic' | 'custom'; events: number; last: number; firstSeen: number; isNew: boolean }[];
   highCardinality: { name: string; key: string; distinctValues: number }[];
+}
+
+/** One site's analytics in the account export: the stored history, as the dashboard would show it. */
+export interface SiteExport {
+  from: string;
+  to: string;
+  timezone: string;
+  days: { date: string; visitors: number; sessions: number; pageviews: number }[];
+  pages: { path: string; pageviews: number; visitorsEstimated: number }[];
+  events: { name: string; count: number; lastAt: string | null }[];
+  blocked: { reason: string; detail: string; country: string; asn: number; hits: number; lastAt: string | null }[];
 }
 
 export interface DropsReport {
@@ -392,6 +410,31 @@ export class StatsReader {
         return { name: r.name, kind, events: n(r.events), last: n(r.last), firstSeen: f, isNew: kind === 'custom' && f >= week };
       }),
       highCardinality: high.map((h) => ({ name: h.name, key: h.key, distinctValues: n(h.distinct_values) })),
+    };
+  }
+
+  /** Account export: every stored day of one site, local dates from `from` to `to` (inclusive). */
+  async exportSite(site: number, tz: string, from: string, to: string): Promise<SiteExport> {
+    const p = bounds(site, tz, from, to);
+    const [days, sessions, pages, events, drops] = await Promise.all([
+      this.run<{ bucket: string; visitors: string; pageviews: string }>('series_daily', p),
+      this.run<{ bucket: string; sessions: string }>('series_daily_sessions', p),
+      this.run<{ pathname: string; pageviews: string; visitors: string }>('pages_all', p),
+      this.run<{ name: string; events: string; last: string }>('events_by_name', p),
+      this.run<{ reason: string; detail: string; country_code: string; asn: string; hits: string; last: string }>('drops_list', p),
+    ]);
+    const sessionsBy = new Map(sessions.map((r) => [r.bucket, n(r.sessions)]));
+    const iso = (ms: unknown) => (n(ms) > 0 ? new Date(n(ms)).toISOString() : null);
+    const dates = [...new Set([...days.map((d) => d.bucket), ...sessionsBy.keys()])].sort();
+    const byDay = new Map(days.map((d) => [d.bucket, d]));
+    return {
+      from,
+      to,
+      timezone: tz,
+      days: dates.map((date) => ({ date, visitors: n(byDay.get(date)?.visitors), sessions: sessionsBy.get(date) ?? 0, pageviews: n(byDay.get(date)?.pageviews) })),
+      pages: pages.map((r) => ({ path: r.pathname, pageviews: n(r.pageviews), visitorsEstimated: n(r.visitors) })),
+      events: events.map((r) => ({ name: r.name, count: n(r.events), lastAt: iso(r.last) })),
+      blocked: drops.map((r) => ({ reason: r.reason, detail: r.detail, country: r.country_code, asn: n(r.asn), hits: n(r.hits), lastAt: iso(r.last) })),
     };
   }
 

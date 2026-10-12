@@ -8,25 +8,28 @@
  * KV sync on write, the verifier, the snippet generator. Stage 6 adds the Query API under /api/v1 too.
  */
 import { timingSafeEqual } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { ObjectId } from 'mongodb';
 import type { AnalyticsReader } from './analytics';
 import type { ApiConfig } from './config';
-import { signupAllowed } from './config';
+import { RETENTION_CHOICES, signupAllowed } from './config';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from './domain';
+import type { AnalyticsEraser } from './eraser';
+import { ERASURE_SETTLE_DAYS, ERASURE_WATCH_DAYS, advanceErasure, pruneRetention } from './jobs';
 import { deleteKeys, expectedEntries, kvProblem, putKeys, syncSite } from './kv';
-import { UnconfiguredMailer, resetPasswordMail } from './mail';
+import { UnconfiguredMailer, accountDeletedMail, resetPasswordMail } from './mail';
 import type { Mailer } from './mail';
 import type { SiteConfigSink } from './kv';
 import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from './passwords';
 import { newIdentitySecret, newKeyId, newPublicKey, newSessionToken, sha256Hex } from './secrets';
 import { snippetsFor } from './snippets';
-import { RANGE_KEYS, resolveRange } from './stats';
-import type { RangeKey, StatsReader } from './stats';
+import { RANGE_KEYS, addDays, localDate, resolveRange } from './stats';
+import type { RangeKey, SiteExport, StatsReader } from './stats';
 import { DuplicateError } from './store/types';
-import type { ControlStore, ExportDoc, KeyDoc, KvIssueDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
+import type { AuditAction, AuditDoc, ControlStore, ErasureDoc, ExportDoc, KeyDoc, KvIssueDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './store/types';
 import { VerifyInputError, runActiveCheck } from './verifier';
 import type { VerifierOptions } from './verifier';
 
@@ -39,6 +42,8 @@ export interface Deps {
   config: ApiConfig;
   /** Outgoing e-mail (password reset). Missing: reset by e-mail is "not set up". */
   mailer?: Mailer;
+  /** Deletes ClickHouse rows (retention, account erasure). Null when TW_CH_PRUNE_PASSWORD is not set. */
+  eraser?: AnalyticsEraser | null;
   now?: () => Date;
   verifier?: VerifierOptions;
 }
@@ -52,6 +57,10 @@ export const RESET_MINUTES = 60;
 export const EXPORT_KEEP_DAYS = 90;
 /** Saved reports per site at one time: enough for daily exports for the whole 90 days, and then some. */
 export const EXPORT_MAX = 200;
+/** Activity-log entries are deleted this many days after they were written (TTL index). */
+export const AUDIT_KEEP_DAYS = 400;
+/** What the account deletion form must receive, typed by the user. */
+export const DELETE_CONFIRMATION = 'DELETE';
 
 type Vars = { user: UserDoc; tenant: TenantDoc; token: string };
 type Ctx = Context<{ Variables: Vars }>;
@@ -99,6 +108,7 @@ function siteView(site: SiteDoc) {
     region: site.region,
     verifiedAt: site.verifiedAt?.toISOString() ?? null,
     createdAt: site.createdAt.toISOString(),
+    retentionDays: site.retentionDays,
     /** The key new snippets use: the newest active one. */
     publicKey: active[active.length - 1]?.publicKey ?? null,
     keys: site.keys.map((k) => ({
@@ -111,7 +121,7 @@ function siteView(site: SiteDoc) {
   };
 }
 
-function exportView(e: ExportDoc) {
+function exportView(e: Omit<ExportDoc, 'csv'>) {
   return {
     id: e._id.toHexString(),
     range: e.range,
@@ -127,6 +137,18 @@ function exportView(e: ExportDoc) {
 }
 
 const userView = (u: UserDoc) => ({ id: u._id.toHexString(), email: u.email, name: u.name ?? null });
+
+/** "tw_pub_AbC1…": enough to tell keys apart in the activity log, never the whole key. */
+const shortKey = (k: string) => `${k.slice(0, 11)}…`;
+const dayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
+const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+/** Cursor of the activity log: "<ms>.<id>" of the last entry shown. */
+const auditCursor = (e: AuditDoc) => `${e.at.getTime()}.${e._id.toHexString()}`;
+function parseAuditCursor(raw: string | undefined): { at: Date; id: ObjectId } | undefined {
+  const m = /^(\d{1,15})\.([0-9a-f]{24})$/.exec(raw ?? '');
+  return m ? { at: new Date(Number(m[1])), id: new ObjectId(m[2]) } : undefined;
+}
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   try {
@@ -172,6 +194,8 @@ export function createApp(deps: Deps) {
   /** The verifier fetches other people's servers: a few checks a minute per account and per address. */
   const verifyLimiter = new Limiter(20, 10 * 60_000);
   const verifyIpLimiter = new Limiter(40, 10 * 60_000);
+  /** Password checks of "delete account": its own counter, so it can neither lock out nor bypass sign-in. */
+  const deleteLimiter = new Limiter(5, 15 * 60_000);
 
   const app = new Hono<{ Variables: Vars }>().basePath('/api/v1');
 
@@ -278,9 +302,11 @@ export function createApp(deps: Deps) {
    * Undo of a half-done grant: KV is rewritten from the site as MongoDB has it NOW (re-read), never from the
    * copy loaded at the start of the request: a key revoked meanwhile must not be written back.
    */
-  const resyncFresh = async (siteId: number) => {
+  const resyncFresh = async (siteId: number, keysIfGone: string[] = []) => {
     const fresh = await store.siteById(siteId);
     if (fresh) await sync(fresh);
+    // The site was deleted meanwhile (its account was deleted in another tab): what we just activated must go.
+    else if (keysIfGone.length) await deleteKeys(kv, keysIfGone);
   };
 
   /** Re-sync sites with an outstanding KV issue from MongoDB (the source of truth). Returns how many are fixed. */
@@ -320,6 +346,41 @@ export function createApp(deps: Deps) {
     const updated = await store.updateSite(c.get('tenant')._id, site._id, site.updatedAt, patch, now());
     if (!updated) throw new HttpError(409, 'conflict', 'This site changed in another tab. Reload and try again.');
     return updated;
+  };
+
+  /**
+   * Activity log (Phase 3). Written after the change succeeded; a failure to write it is logged and never
+   * undoes or fails the change itself (the customer's action matters more than its log line).
+   */
+  const audit = async (tenantId: ObjectId, actor: UserDoc | null, action: AuditAction, siteId: number | null, summary: string) => {
+    const at = now();
+    try {
+      await store.insertAudit({
+        _id: new ObjectId(),
+        tenantId,
+        at,
+        actorKind: actor ? 'user' : 'system',
+        actorId: actor?._id ?? null,
+        actorName: (actor ? actor.name || actor.email : 'TailWatch').slice(0, 120),
+        action,
+        siteId,
+        summary: summary.slice(0, 300),
+        expiresAt: new Date(at.getTime() + AUDIT_KEEP_DAYS * 86_400_000),
+      });
+    } catch (error) {
+      console.error(JSON.stringify({ tw: 'audit_failed', action, message: error instanceof Error ? error.message : String(error) }));
+    }
+  };
+  /** The signed-in user did something (to a site, or to the account when site is null). */
+  const record = (c: Ctx, action: AuditAction, site: SiteDoc | null, summary: string) => audit(c.get('tenant')._id, c.get('user'), action, site?._id ?? null, summary);
+  /** For a user who is not signed in yet (login, password reset): finds the workspace, never throws. */
+  const auditUser = async (user: UserDoc, action: AuditAction, summary: string) => {
+    try {
+      const tenantId = (await store.membershipsOf(user._id))[0]?.tenantId;
+      if (tenantId) await audit(tenantId, user, action, null, summary);
+    } catch (error) {
+      console.error(JSON.stringify({ tw: 'audit_failed', action, message: error instanceof Error ? error.message : String(error) }));
+    }
   };
 
   // ---------------------------------------------------------------- public
@@ -364,6 +425,7 @@ export function createApp(deps: Deps) {
       throw error;
     }
     const extra = await startSession(c as Ctx, user, b.token === true);
+    await audit(tenant._id, user, 'account.created', null, `Created the account (${user.email})`);
     return c.json({ user: userView(user), ...extra }, 201);
   });
 
@@ -377,8 +439,13 @@ export function createApp(deps: Deps) {
     const user = email ? await store.userByEmail(email) : null;
     // Same work and the same answer whether the e-mail exists or not: no account oracle.
     const ok = await verifyPassword(password, user?.passwordHash ?? (await decoyHash(config.scrypt)));
-    if (!user || !ok || user.status !== 'active') throw new HttpError(401, 'invalid_credentials', 'Wrong e-mail or password.');
+    if (!user || !ok || user.status !== 'active') {
+      // A wrong password for a real account is shown in that account's activity log (someone tried).
+      if (user && user.status === 'active') await auditUser(user, 'auth.login_failed', 'Failed sign-in: wrong password');
+      throw new HttpError(401, 'invalid_credentials', 'Wrong e-mail or password.');
+    }
     const extra = await startSession(c as Ctx, user, b.token === true);
+    await auditUser(user, 'auth.login', 'Signed in');
     return c.json({ user: userView(user), ...extra });
   });
 
@@ -443,6 +510,7 @@ export function createApp(deps: Deps) {
     await store.deletePasswordResetsOf(user._id);
     // `token` in this body is the reset token, so a client that wants a Bearer token asks with `session: true`.
     const extra = await startSession(c as Ctx, user, b.session === true);
+    await auditUser(user, 'auth.password_reset', 'Changed the password with an e-mailed reset link (signed out on every device)');
     return c.json({ user: userView(user), ...extra });
   });
 
@@ -452,16 +520,26 @@ export function createApp(deps: Deps) {
   app.use('/me', auth);
   app.use('/sites', auth);
   app.use('/sites/*', auth);
+  app.use('/audit', auth);
+  app.use('/account/*', auth);
 
   app.post('/auth/logout', async (c) => {
     await store.deleteSession(sha256Hex(c.get('token')));
     deleteCookie(c, SESSION_COOKIE, { path: '/', secure: config.secureCookies });
+    await record(c, 'auth.logout', null, 'Signed out');
     return c.json({ ok: true });
   });
 
-  app.get('/me', (c) => {
+  app.get('/me', async (c) => {
     const t = c.get('tenant');
-    return c.json({ user: userView(c.get('user')), tenant: { id: t._id.toHexString(), plan: t.plan, region: t.region } });
+    const user = c.get('user');
+    const role = (await store.membershipsOf(user._id)).find((m) => m.tenantId.equals(t._id))?.role ?? 'viewer';
+    return c.json({
+      user: userView(user),
+      tenant: { id: t._id.toHexString(), plan: t.plan, region: t.region },
+      role,
+      retention: { choices: RETENTION_CHOICES.filter((d) => d <= config.retentionDays), max: config.retentionDays, default: config.retentionDays },
+    });
   });
 
   app.get('/sites', async (c) => {
@@ -516,7 +594,7 @@ export function createApp(deps: Deps) {
         site = await patchSite(c, existing, patch);
       } catch (error) {
         await deleteKeys(kv, [fresh.publicKey]);
-        await resyncFresh(existing._id);
+        await resyncFresh(existing._id, existing.keys.map((k) => k.publicKey));
         throw error;
       }
     } else {
@@ -544,6 +622,8 @@ export function createApp(deps: Deps) {
         throw error;
       }
     }
+    if (existing) await record(c, 'site.restored', site, `Added ${domain} again (its earlier data is back; new key ${shortKey(site.keys[site.keys.length - 1]!.publicKey)})`);
+    else await record(c, 'site.created', site, `Added ${domain} (timezone ${timezone})`);
     return c.json({ site: siteView(site), sync: { ok: true } }, 201);
   });
 
@@ -566,17 +646,43 @@ export function createApp(deps: Deps) {
       if (b.status !== 'active' && b.status !== 'paused') throw new HttpError(400, 'invalid_status', 'Status is active or paused.');
       patch.status = b.status;
     }
+    if (b.retentionDays !== undefined) {
+      // Shortening retention deletes data: owners and admins only (viewers come with invites).
+      const role = (await store.membershipsOf(c.get('user')._id)).find((m) => m.tenantId.equals(c.get('tenant')._id))?.role;
+      if (role !== 'owner' && role !== 'admin') throw new HttpError(403, 'not_allowed', 'Only the owner or an admin can change how long data is kept.');
+      const days = Number(b.retentionDays);
+      const allowed = RETENTION_CHOICES.filter((d) => d <= config.retentionDays) as number[];
+      if (!allowed.includes(days)) throw new HttpError(400, 'invalid_retention', `Keep data for ${allowed.join(', ')} days.`);
+      patch.retentionDays = days;
+    }
+    /** One activity line per thing that really changed. */
+    const log = async (updated: SiteDoc) => {
+      if (patch.timezone && patch.timezone !== site.timezone) await record(c, 'site.timezone_changed', updated, `Changed the timezone of ${site.domain} from ${site.timezone} to ${patch.timezone}`);
+      if (patch.retentionDays && patch.retentionDays !== site.retentionDays) {
+        const shorter = patch.retentionDays < site.retentionDays;
+        await record(
+          c,
+          'site.retention_changed',
+          updated,
+          `Changed how long ${site.domain} keeps data from ${site.retentionDays} to ${patch.retentionDays} days${shorter ? ' (older data is deleted within a week)' : ''}`,
+        );
+      }
+      if (patch.status && patch.status !== site.status) await record(c, patch.status === 'paused' ? 'site.paused' : 'site.resumed', updated, `${patch.status === 'paused' ? 'Paused' : 'Resumed'} tracking on ${site.domain}`);
+    };
     if (patch.status === 'active' && site.status !== 'active') {
       // Resume = grant: the collector must accept the key again before the dashboard says so.
       await activateFirst({ ...site, ...patch } as SiteDoc);
       const updated = await patchSite(c, site, patch).catch(async (error) => {
-        await resyncFresh(site._id);
+        await resyncFresh(site._id, site.keys.map((k) => k.publicKey));
         throw error;
       });
+      await log(updated);
       return c.json({ site: siteView(updated), sync: { ok: true } });
     }
     const updated = await patchSite(c, site, patch);
-    return c.json({ site: siteView(updated), sync: patch.status ? await sync(updated) : { ok: true } });
+    const synced = patch.status ? await sync(updated) : { ok: true };
+    await log(updated);
+    return c.json({ site: siteView(updated), sync: synced });
   });
 
   app.delete('/sites/:id', async (c) => {
@@ -586,8 +692,11 @@ export function createApp(deps: Deps) {
       status: 'deleted',
       keys: site.keys.map((k) => ({ ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at })),
     });
-    // Collected data is not deleted here (the dashboard says so); retention / erasure is Phase 3.
-    return c.json({ ok: true, sync: await sync(updated) });
+    // Collected data is not deleted here (the dashboard says so): it follows the site's retention, and
+    // re-adding the domain brings it back. Deleting the ACCOUNT erases it (POST /account/delete).
+    const synced = await sync(updated);
+    await record(c, 'site.deleted', updated, `Deleted ${site.domain} (tracking stopped; collected data is kept for ${site.retentionDays} days)`);
+    return c.json({ ok: true, sync: synced });
   });
 
   app.post('/sites/:id/keys', async (c) => {
@@ -605,9 +714,10 @@ export function createApp(deps: Deps) {
       updated = await patchSite(c, site, { keys: [...site.keys, fresh] });
     } catch (error) {
       await deleteKeys(kv, [fresh.publicKey]);
-      await resyncFresh(site._id);
+      await resyncFresh(site._id, site.keys.map((k) => k.publicKey));
       throw error;
     }
+    await record(c, 'key.created', updated, `Added key ${shortKey(fresh.publicKey)} to ${site.domain}`);
     return c.json({ site: siteView(updated), sync: { ok: true } }, 201);
   });
 
@@ -623,7 +733,9 @@ export function createApp(deps: Deps) {
     const updated = await patchSite(c, site, {
       keys: site.keys.map((k) => (k.id === keyId ? { ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at } : k)),
     });
-    return c.json({ site: siteView(updated), sync: await sync(updated) });
+    const synced = await sync(updated);
+    if (target.status === 'active') await record(c, 'key.revoked', updated, `Revoked key ${shortKey(target.publicKey)} of ${site.domain}`);
+    return c.json({ site: siteView(updated), sync: synced });
   });
 
   app.post('/sites/:id/sync', async (c) => {
@@ -778,6 +890,7 @@ export function createApp(deps: Deps) {
       expiresAt: new Date(at.getTime() + EXPORT_KEEP_DAYS * 86_400_000),
     };
     await store.insertExport(doc);
+    await record(c, 'report.created', site, `Made a report of ${site.domain}: ${range.from === range.to ? range.from : `${range.from} to ${range.to}`}`);
     return c.json({ export: exportView(doc) }, 201);
   });
 
@@ -790,8 +903,11 @@ export function createApp(deps: Deps) {
 
   app.delete('/sites/:id/exports/:exportId', async (c) => {
     const site = await loadSite(c);
-    const gone = await store.deleteExport(c.get('tenant')._id, site._id, exportId(c));
+    const id = exportId(c);
+    const report = await store.exportById(c.get('tenant')._id, site._id, id, now()).catch(() => null); // only for the log line
+    const gone = await store.deleteExport(c.get('tenant')._id, site._id, id);
     if (!gone) throw new HttpError(404, 'not_found', 'No such report.');
+    await record(c, 'report.deleted', site, `Deleted the report ${report?.filename ?? id.toHexString()}`);
     return c.json({ ok: true });
   });
 
@@ -808,10 +924,249 @@ export function createApp(deps: Deps) {
     const next: SiteDoc = { ...site, allowedHosts: [...site.allowedHosts, host] };
     await activateFirst(next);
     const updated = await patchSite(c, site, { allowedHosts: next.allowedHosts }).catch(async (error) => {
-      await resyncFresh(site._id);
+      await resyncFresh(site._id, site.keys.map((k) => k.publicKey));
       throw error;
     });
+    await record(c, 'host.allowed', updated, `Allowed ${host} to send data for ${site.domain}`);
     return c.json({ site: siteView(updated), sync: { ok: true } });
+  });
+
+  // ---------------------------------------------------------------- Phase 3: activity log
+
+  /** Newest first, 50 at a time; `before` continues from the last entry shown, `site` filters. */
+  app.get('/audit', async (c) => {
+    const tenantId = c.get('tenant')._id;
+    const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
+    const siteRaw = c.req.query('site');
+    const siteId = siteRaw ? Number(siteRaw) : undefined;
+    if (siteId !== undefined && (!Number.isSafeInteger(siteId) || siteId < 1)) throw new HttpError(400, 'invalid_site', 'site is a site id.');
+    const entries = await store.auditOf(tenantId, { limit: limit + 1, siteId, before: parseAuditCursor(c.req.query('before')) });
+    const page = entries.slice(0, limit);
+    const domains = new Map((await store.sitesOf(tenantId, true)).map((s) => [s._id, s.domain]));
+    const me = c.get('user')._id;
+    return c.json({
+      keepDays: AUDIT_KEEP_DAYS,
+      entries: page.map((e) => ({
+        id: e._id.toHexString(),
+        at: e.at.toISOString(),
+        action: e.action,
+        actor: { kind: e.actorKind, name: e.actorName, you: !!e.actorId && e.actorId.equals(me) },
+        siteId: e.siteId,
+        domain: e.siteId !== null ? (domains.get(e.siteId) ?? null) : null,
+        summary: e.summary,
+      })),
+      next: entries.length > limit ? auditCursor(page[page.length - 1]!) : null,
+    });
+  });
+
+  // ---------------------------------------------------------------- Phase 3: export, then erase
+
+  /**
+   * "Download your data" (GDPR Art 20, and step 1 of deleting the account): one JSON file with the account,
+   * every site (deleted ones too, their data is still stored), each site's analytics over its whole stored
+   * history, the list of saved reports and the activity log. Read-only; never the identity secrets.
+   * Sent gzip-compressed when the browser accepts it (every browser does): a big account stays far below
+   * Vercel's response size limit. Saved reports are listed, not repeated (they are the same daily numbers).
+   */
+  app.get('/account/export', async (c) => {
+    const tenant = c.get('tenant');
+    const user = c.get('user');
+    const at = now();
+    const sites = await store.sitesOf(tenant._id, true);
+    // Three sites at a time (5 queries each): enough for speed, gentle on ClickHouse. Vercel stops a
+    // request at 30 s: a very large account gets a clear answer instead of a cut-off file.
+    const analytics: (SiteExport | null)[] = [];
+    const deadline = Date.now() + 22_000;
+    for (let i = 0; i < sites.length; i += 3) {
+      if (Date.now() > deadline) {
+        throw new HttpError(503, 'export_too_large', 'Your account has too much data to download at once. Write to us and we send you the file.');
+      }
+      analytics.push(
+        ...(await Promise.all(
+          sites.slice(i, i + 3).map((site) => {
+            if (!deps.stats) return Promise.resolve(null);
+            const to = localDate(at, site.timezone);
+            return reading(() => deps.stats!.exportSite(site._id, site.timezone, addDays(to, -site.retentionDays), to));
+          }),
+        )),
+      );
+    }
+    const reportsBySite = await Promise.all(sites.map((site) => store.exportsOf(tenant._id, site._id, at, EXPORT_MAX)));
+    const activity: AuditDoc[] = [];
+    for (let before: { at: Date; id: ObjectId } | undefined; activity.length < 5000; ) {
+      const page = await store.auditOf(tenant._id, { limit: 500, before });
+      activity.push(...page);
+      if (page.length < 500) break;
+      const last = page[page.length - 1]!;
+      before = { at: last.at, id: last._id };
+    }
+    const data = {
+      format: 'tailwatch-export/1',
+      exportedAt: at.toISOString(),
+      notes: [
+        "Days are local calendar days in each site's timezone. Visitors per day are exact; visitorsEstimated on pages is an estimate (PLAN 5). Pages: the 1,000 most viewed per site.",
+        'TailWatch stores no IP address and no cookie id: visitors are a hash that changes every day, so there is nothing that identifies a person.',
+        deps.stats ? "analytics covers each site's whole stored history (its retention)." : 'analytics is null: the analytics database is not configured on this server.',
+      ],
+      user: { name: user.name ?? null, email: user.email, createdAt: user.createdAt.toISOString() },
+      workspace: { id: tenant._id.toHexString(), plan: tenant.plan, region: tenant.region, createdAt: tenant.createdAt.toISOString() },
+      sites: sites.map((site, i) => ({
+        id: site._id,
+        domain: site.domain,
+        status: site.status,
+        timezone: site.timezone,
+        retentionDays: site.retentionDays,
+        allowedHosts: site.allowedHosts,
+        createdAt: site.createdAt.toISOString(),
+        verifiedAt: site.verifiedAt?.toISOString() ?? null,
+        keys: site.keys.map((k) => ({ publicKey: k.publicKey, status: k.status, createdAt: k.createdAt.toISOString(), revokedAt: k.revokedAt?.toISOString() ?? null })),
+        analytics: analytics[i] ?? null,
+        reports: reportsBySite[i]!.map((r) => ({ filename: r.filename, range: r.range, from: r.from, to: r.to, rows: r.rows, createdAt: r.createdAt.toISOString() })),
+      })),
+      activity: activity.map((e) => ({ at: e.at.toISOString(), who: e.actorName, action: e.action, siteId: e.siteId, summary: e.summary })),
+    };
+    const json = JSON.stringify(data);
+    await record(c, 'account.exported', null, `Downloaded all account data (${count(sites.length, 'site')})`);
+    c.header('content-type', 'application/json; charset=utf-8');
+    c.header('content-disposition', `attachment; filename="tailwatch-export-${localDate(at, 'UTC')}.json"`);
+    if (/\bgzip\b/.test(c.req.header('accept-encoding') ?? '')) {
+      c.header('content-encoding', 'gzip');
+      c.header('vary', 'accept-encoding');
+      return c.body(new Uint8Array(gzipSync(json)));
+    }
+    return c.body(json);
+  });
+
+  /**
+   * Delete the account (owner only, password + typed confirmation). Everything in MongoDB goes at once, in
+   * one transaction, and an erasure record remembers what is left: the sites' Cloudflare KV keys and their
+   * ClickHouse rows. Both are started here (ClickHouse with a time limit: Vercel stops at 30 s); the
+   * nightly job finishes, verifies after ERASURE_SETTLE_DAYS that nothing is left, e-mails the owner, and
+   * keeps watching for ERASURE_WATCH_DAYS.
+   */
+  app.post('/account/delete', async (c) => {
+    const b = await body(c);
+    const user = c.get('user');
+    const tenant = c.get('tenant');
+    if (str(b.confirm) !== DELETE_CONFIRMATION) throw new HttpError(400, 'confirm_required', `Type ${DELETE_CONFIRMATION} to confirm.`);
+    if (!deleteLimiter.take(`user:${user._id.toHexString()}`, Date.now())) {
+      throw new HttpError(429, 'rate_limited', 'Too many attempts. Wait 15 minutes and try again.');
+    }
+    if (!user.passwordHash || !(await verifyPassword(str(b.password), user.passwordHash))) {
+      throw new HttpError(401, 'invalid_password', 'Wrong password.');
+    }
+    const members = await store.membersOf(tenant._id);
+    if (members.find((m) => m.userId.equals(user._id))?.role !== 'owner') {
+      throw new HttpError(403, 'owner_only', 'Only the owner of this workspace can delete it.');
+    }
+    const at = now();
+    // siteIds and publicKeys are filled by the store from what its transaction deletes.
+    const erasure = await store.eraseAccount(
+      {
+        _id: tenant._id,
+        email: user.email,
+        name: user.name ?? null,
+        requestedAt: at,
+        status: 'pending',
+        kvDoneAt: null,
+        dataDeleteSentAt: null,
+        dataVerifiedAt: null,
+        rowsFound: null,
+        rowsAfterCompletion: 0,
+        attempts: 0,
+        lastError: null,
+        completedAt: null,
+        updatedAt: at,
+      },
+      members.map((m) => m.userId),
+    );
+    const sites = erasure.siteIds;
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: config.secureCookies });
+    console.log(JSON.stringify({ tw: 'account_deleted', erasure: tenant._id.toHexString(), sites: sites.length }));
+
+    // The e-mail first: it must not depend on how fast Cloudflare or ClickHouse answer.
+    if (mailer.configured) {
+      try {
+        await mailer.send(accountDeletedMail(user.email, user.name ?? null, sites.length, ERASURE_SETTLE_DAYS));
+      } catch (error) {
+        console.error(JSON.stringify({ tw: 'mail_failed', kind: 'account_deleted', message: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+    // Then the first step of the erasure (best effort; the nightly job retries everything).
+    const progress = await advanceErasure({ store, kv, eraser: deps.eraser ?? null, mailer }, erasure, at, { finish: false, dataBudgetMs: 5_000 }).catch((error) => {
+      console.error(JSON.stringify({ tw: 'erasure_start_failed', message: error instanceof Error ? error.message : String(error) }));
+      return erasure;
+    });
+    return c.json({
+      ok: true,
+      erasure: {
+        id: tenant._id.toHexString(),
+        sites: sites.length,
+        trackingStopped: !!progress.kvDoneAt,
+        dataDeleteSent: !!progress.dataDeleteSentAt || (progress.rowsFound !== null && Object.values(progress.rowsFound).every((n) => n === 0)),
+        finishesWithinDays: ERASURE_SETTLE_DAYS + 1,
+      },
+    });
+  });
+
+  // ---------------------------------------------------------------- scheduled: retention + erasures
+
+  /**
+   * The nightly maintenance run (Vercel Cron, CRON_SECRET), in a 25 s budget:
+   *   1. account erasures: one step forward each (KV, ClickHouse deletes, verify, finish);
+   *   2. retention: per site, rows older than its retention are deleted, and the workspace's activity log
+   *      says so. Off (and reported) when TW_CH_PRUNE_PASSWORD is not set.
+   */
+  app.get('/internal/maintenance', async (c) => {
+    if (!config.cronSecret || !sameSecret(c.req.header('authorization') ?? '', `Bearer ${config.cronSecret}`)) {
+      throw new HttpError(404, 'not_found', 'No such endpoint.');
+    }
+    const deadline = Date.now() + 25_000;
+    const eraser = deps.eraser ?? null;
+    const jobDeps = { store, kv, eraser, mailer };
+    const erasures = { advanced: 0, completed: 0, failed: 0 };
+    for (const e of await store.activeErasures(new Date(now().getTime() - ERASURE_WATCH_DAYS * 86_400_000), 50)) {
+      if (Date.now() > deadline) break;
+      try {
+        const next = await advanceErasure(jobDeps, e, now());
+        erasures.advanced += 1;
+        if (next.status === 'completed' && e.status === 'pending') erasures.completed += 1;
+        if (next.lastError) erasures.failed += 1;
+      } catch (error) {
+        erasures.failed += 1;
+        console.error(JSON.stringify({ tw: 'erasure_failed', erasure: e._id.toHexString(), message: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+
+    const retention: { configured: boolean; sitesPruned: number; rows: number; error?: string } = { configured: !!eraser, sitesPruned: 0, rows: 0 };
+    if (eraser && Date.now() < deadline) {
+      try {
+        const at = now();
+        for (const p of await pruneRetention(eraser, await store.allSites(), at, deadline)) {
+          retention.sitesPruned += 1;
+          const r = p.rows;
+          retention.rows += r.events + r.sessions + r.dropped_hits + r.rollup_15m_pages;
+          const parts = [
+            r.events && count(r.events, 'event'),
+            r.sessions && count(r.sessions, 'session row'),
+            r.dropped_hits && count(r.dropped_hits, 'blocked-hit row'),
+            r.rollup_15m_pages && count(r.rollup_15m_pages, 'page-total row'),
+          ].filter(Boolean);
+          await audit(
+            p.site.tenantId,
+            null,
+            'data.pruned',
+            p.site._id,
+            `Removed data of ${p.site.domain} older than ${p.site.retentionDays} days (before ${dayFmt.format(p.cutoff)}): ${parts.join(', ')}`,
+          );
+        }
+      } catch (error) {
+        retention.error = error instanceof Error ? error.message.slice(0, 200) : String(error);
+        console.error(JSON.stringify({ tw: 'retention_failed', message: retention.error }));
+      }
+    }
+    console.log(JSON.stringify({ tw: 'maintenance', erasures, retention }));
+    return c.json({ erasures, retention });
   });
 
   // ---------------------------------------------------------------- scheduled: KV reconcile

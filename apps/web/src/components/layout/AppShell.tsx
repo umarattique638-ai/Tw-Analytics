@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Activity, BarChart2, Check, ChevronsUpDown, Globe, LogOut, Menu, Plus, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react';
+import { Activity, BarChart2, Check, ChevronsUpDown, Globe, History, LogOut, Menu, Plus, Settings, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import logo from '../../assets/lg.png';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
@@ -18,6 +18,8 @@ const items: Item[] = [
   { label: 'Events', icon: Sparkles, to: '/events' },
   { label: 'Suspicious activity', icon: ShieldAlert, to: '/suspicious' },
   { label: 'Reports', icon: BarChart2, to: '/reports' },
+  { label: 'Activity', icon: History, to: '/activity' },
+  { label: 'Settings', icon: Settings, to: '/settings' },
 ];
 
 const itemCls = (active: boolean) =>
@@ -223,7 +225,7 @@ export default function AppShell() {
           message={
             <>
               <span className="font-medium text-slate-700 dark:text-slate-200">{toDelete.domain}</span> stops collecting and is removed from
-              your account. Data already collected is kept: adding the domain again brings it back.
+              your account. Data already collected is kept for the site's retention ({toDelete.retentionDays} days): adding the domain again brings it back.
               {deleteError && <span className="mt-2 block text-red-600 dark:text-red-400">{deleteError}</span>}
             </>
           }

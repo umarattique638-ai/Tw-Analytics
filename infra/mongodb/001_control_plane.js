@@ -319,6 +319,104 @@ ensureCollection('kv_outbox', {
   additionalProperties: false,
 });
 
+// Phase 3: the workspace activity log ("who changed what, when"). No IP address or user agent.
+ensureCollection('audit_log', {
+  bsonType: 'object',
+  required: ['_id', 'tenantId', 'at', 'actorKind', 'actorId', 'actorName', 'action', 'siteId', 'summary', 'expiresAt'],
+  properties: {
+    _id: { bsonType: 'objectId' },
+    tenantId: { bsonType: 'objectId' },
+    at: date,
+    actorKind: { enum: ['user', 'system'] },
+    actorId: { bsonType: ['objectId', 'null'] },
+    actorName: { bsonType: 'string', maxLength: 120 },
+    action: {
+      enum: [
+        'account.created',
+        'auth.login',
+        'auth.login_failed',
+        'auth.logout',
+        'auth.password_reset',
+        'site.created',
+        'site.restored',
+        'site.paused',
+        'site.resumed',
+        'site.timezone_changed',
+        'site.retention_changed',
+        'site.deleted',
+        'key.created',
+        'key.revoked',
+        'host.allowed',
+        'report.created',
+        'report.deleted',
+        'account.exported',
+        'data.pruned',
+      ],
+    },
+    siteId: { bsonType: ['long', 'int', 'null'] },
+    summary: { bsonType: 'string', minLength: 1, maxLength: 300 },
+    expiresAt: {
+      bsonType: 'date',
+      description: 'at + 400 days. A TTL index deletes the entry then. No IP address or user agent is stored.',
+    },
+  },
+  additionalProperties: false,
+});
+
+// Phase 3: account deletion (export-then-erase). The receipt stays after completion, without the e-mail.
+const rowCount = { bsonType: ['long', 'int', 'double'], minimum: 0 };
+ensureCollection('erasures', {
+  bsonType: 'object',
+  required: [
+    '_id',
+    'siteIds',
+    'publicKeys',
+    'email',
+    'name',
+    'requestedAt',
+    'status',
+    'kvDoneAt',
+    'dataDeleteSentAt',
+    'dataVerifiedAt',
+    'rowsFound',
+    'rowsAfterCompletion',
+    'attempts',
+    'lastError',
+    'completedAt',
+    'updatedAt',
+  ],
+  properties: {
+    _id: { bsonType: 'objectId', description: 'Id of the deleted workspace (tenant).' },
+    siteIds: { bsonType: 'array', items: { bsonType: ['long', 'int'] } },
+    publicKeys: { bsonType: 'array', items: { bsonType: 'string', pattern: '^tw_pub_[A-Za-z0-9]{32}$' } },
+    email: {
+      bsonType: ['string', 'null'],
+      maxLength: 320,
+      description: "Only to send the 'erasure finished' e-mail; set to null when the erasure completes.",
+    },
+    name: { bsonType: ['string', 'null'], maxLength: 120 },
+    requestedAt: date,
+    status: { enum: ['pending', 'completed'] },
+    kvDoneAt: dateOrNull,
+    dataDeleteSentAt: dateOrNull,
+    dataVerifiedAt: dateOrNull,
+    rowsFound: {
+      bsonType: ['object', 'null'],
+      properties: { events: rowCount, sessions: rowCount, dropped_hits: rowCount, rollup_15m_pages: rowCount },
+      additionalProperties: false,
+    },
+    rowsAfterCompletion: {
+      ...rowCount,
+      description: 'Rows that arrived after the erasure was complete (late queue retries) and were deleted by the 30-day watch.',
+    },
+    attempts: { bsonType: 'int', minimum: 0 },
+    lastError: { bsonType: ['string', 'null'], maxLength: 500 },
+    completedAt: dateOrNull,
+    updatedAt: date,
+  },
+  additionalProperties: false,
+});
+
 database.users.createIndex(
   { emailNormalized: 1 },
   {
@@ -353,6 +451,9 @@ database.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ userId: 1 });
 database.kv_outbox.createIndex({ tenantId: 1 });
+database.audit_log.createIndex({ tenantId: 1, at: -1, _id: -1 });
+database.audit_log.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+database.erasures.createIndex({ status: 1, updatedAt: 1 });
 
 database.counters.updateOne(
   { _id: 'site_id' },

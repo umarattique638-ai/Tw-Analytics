@@ -123,4 +123,25 @@ describe.skipIf(!URL_)('control plane on the real MongoDB', () => {
     expect(await db.collection('sessions').countDocuments()).toBe(0);
     expect((await call('GET', '/me')).status).toBe(401);
   });
+
+  it('Phase 3: the activity log passes the validator (a refused entry would only be logged, so count them)', async () => {
+    expect((await call('POST', '/auth/login', { email: 'live@example.com', password: 'correct horse' })).status).toBe(200);
+    const site = (await call('GET', '/sites')).body.sites[0];
+    expect((await call('PATCH', `/sites/${site.id}`, { retentionDays: 90 })).body.site.retentionDays).toBe(90);
+    const actions = (await call('GET', '/audit')).body.entries.map((e: { action: string }) => e.action);
+    expect(actions.slice(0, 3)).toEqual(['site.retention_changed', 'auth.login', 'auth.logout']);
+    expect(actions).toContain('account.created');
+    expect(await db.collection('audit_log').countDocuments()).toBe(actions.length);
+  });
+
+  it('Phase 3: deleting the account removes everything in one transaction; the erasure record passes the validator', async () => {
+    const r = await call('POST', '/account/delete', { password: 'correct horse', confirm: 'DELETE' });
+    expect(r.status).toBe(200);
+    for (const name of ['users', 'tenants', 'memberships', 'sessions', 'sites', 'exports', 'audit_log', 'kv_outbox', 'password_resets']) {
+      expect(await db.collection(name).countDocuments(), name).toBe(0);
+    }
+    const erasure = await db.collection('erasures').findOne({});
+    expect(erasure).toMatchObject({ status: 'pending', email: 'Live@Example.com' });
+    expect(kv.entries.size).toBe(0);
+  });
 });

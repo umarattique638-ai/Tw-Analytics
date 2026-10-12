@@ -10,6 +10,8 @@ import DashboardPage from './pages/DashboardPage';
 import EventsPage from './pages/EventsPage';
 import SuspiciousPage from './pages/SuspiciousPage';
 import ReportsPage from './pages/ReportsPage';
+import ActivityPage from './pages/ActivityPage';
+import SettingsPage from './pages/SettingsPage';
 import AuthLayout from './components/layout/AuthLayout';
 import AppShell from './components/layout/AppShell';
 import SetupLayout from './components/layout/SetupLayout';
@@ -35,6 +37,8 @@ export default function App() {
         <Route path="/events" element={<EventsPage />} />
         <Route path="/suspicious" element={<SuspiciousPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
 
         {/* Setup steps dashboard ke andar hi */}
         <Route element={<SetupLayout />}>

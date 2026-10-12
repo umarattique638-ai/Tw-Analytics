@@ -406,6 +406,47 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
       (24 h retention) into R2 dlq/ and replayed every 15 minutes by a cron (12 files a run), parked in
       dlq-dead/ after 6 replays. Drop messages are de-duplicated by queue message id like events.
 
+19. DECIDED 2026-10-12 (owner: Phase 3 items a, b, c first - retention, export-then-erase, audit log; billing last):
+   a. Retention (PLAN 9.2 P3, 10.6 Art 5(1)(e)): per SITE, `sites.retentionDays`, choices 30 / 90 / 180 / 395
+      days (395 = 13 months, the default and the maximum until plans exist; `config.retentionDays`). A
+      nightly Vercel Cron (/api/v1/internal/maintenance, CRON_SECRET) groups sites by retention and works in
+      WEEKLY batches: once some rows are 6 days past the cutoff (UTC midnight minus N days), every row older
+      than the cutoff in events / sessions / dropped_hits / rollup_15m_pages is counted and gets
+      `ALTER TABLE ... DELETE`, only for tables that have such rows (a quiet night = 1 count query, no
+      rewrite; a delete rewrites the parts it touches, so weekly = 7x less rewriting). Data is therefore
+      gone at most 7 days after its retention. Deleted sites follow their retention too (re-adding still
+      restores what is left). Only owner/admin may change it (server check). The 425-day table TTL stays as
+      the safety net. The workspace activity log says what was removed.
+   b. A separate ClickHouse user `tw_prune` (infra/clickhouse/004_prune_user.sql: SELECT + ALTER DELETE on
+      the four tables, nothing else). tw_read stays read-only, tw_insert insert-only. Without
+      TW_CH_PRUNE_PASSWORD nothing is pruned and an erasure waits and says why (never claims success).
+      Lightweight `DELETE FROM` was rejected: on 24.8 it needs ALTER UPDATE(_row_exists).
+   c. Export-then-erase (PLAN 10.6 Art 17/20): Settings > "Download all data" = one JSON (account, every site
+      incl. deleted ones with keys but never identity secrets, per-day visitors/sessions/pageviews over the
+      whole stored history, the 1,000 top pages, events, blocked traffic, the list of saved reports, activity
+      log), built from the documented queries (docs/QUERIES.md, new `pages_all`), sent gzip-compressed (a
+      big account stays under Vercel's response size limit). Delete account = owner only, password + typed
+      DELETE. In ONE MongoDB transaction: an `erasures` record is written and the users (that belong to no
+      other workspace), memberships, login sessions, reset links, sites, reports, activity log, kv_outbox and
+      the workspace are deleted. The first e-mail goes out, then the first erasure step runs (ClickHouse
+      with an 8 s limit, Vercel stops at 30 s). Every step (at once, then nightly): sites that a racing
+      request created for the deleted workspace are deleted and added to the erasure; EVERY site key is
+      deleted from KV again (a racing request could have written one back); the ClickHouse rows of the
+      sites get ALTER DELETE (re-sent after 6 h if rows remain). The erasure is COMPLETE only when a count
+      finds 0 rows at least 2 days after the request (queue retries / DLQ replays can still land), then a
+      last e-mail is sent and the e-mail address is removed from the record (the receipt keeps site ids,
+      row counts and dates only). After completion it is WATCHED for 30 days (same steps, no e-mail; late
+      rows counted in rowsAfterCompletion), the same 30 days as the R2 lifecycle of the raw archive. Copies outside our databases: the R2 raw
+      archive and dlq-dead/ expire after 30 days by an R2 lifecycle rule (docs/ERASURE.md); Durable Object
+      state expires on its own (sessions 30 min, de-dup markers and intents 7 days).
+   d. Activity log (customer-facing audit log): MongoDB `audit_log`, one line per change, written after the
+      change succeeded and never able to fail it: sign-ins, failed sign-ins on an existing account,
+      logout, password reset, site added / restored / paused / resumed / timezone / retention / deleted,
+      key added / revoked (first 11 characters only), host allowed, report made / deleted, data download,
+      and the nightly pruning (actor "TailWatch"). Stored: who (user id + name at that moment), what, which
+      site, one sentence, when. NO IP address and NO user agent (minimisation). Kept 400 days (TTL), and
+      deleted with the account. Dashboard: Activity page (per site filter, 50 per page).
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.
@@ -472,6 +513,8 @@ LIVE 2026-10-08: collector + consumer deployed on the owner's Cloudflare Free ac
 Stage 3 storage + consumer: DONE 2026-10-07 [x] owner's Windows + ClickHouse Cloud 26.6: live 6/6, pipeline e2e 5/5, first row in 2.40 s [x] schema applied to the owner's ClickHouse Cloud 26.6 | [x] live suite on Cloud: sessions/rollup/replay/UInt64 pass (row-equality failure was a test JSON-reading bug, fixed) | [x] fixtures in -> exact rows out (real ClickHouse) | [x] session metrics right inside ClickHouse | [x] rollup = raw GROUP BY | [x] replay -> no duplicates (tokens + Durable Object de-dup) | [x] R2 holds the raw file (workerd) | [x] milestone: HTTP pageview -> ClickHouse row in ~1.1 s | [ ] real deploy (R2 bucket, queues, DO migration, ClickHouse user)
 Stage 4 tracker: 4.0 deploy [x] | 4.1-4.3 core + browser + CDN build [x] owner's Windows: all tests pass; LIVE 2026-10-08: tw.js served by the collector, demo site (site 2) -> 16 correct rows in ClickHouse Cloud, seq 1-16 with no gap, no duplicate pageview, engagement on tab switch, signup props | 4.4 adapters [x] @tailwatch/react, @tailwatch/next, @tailwatch/vue, @tailwatch/svelte (svelte: no example app yet) | 4.5 done-when [x] in the sandbox: Next.js 16 App Router (Navigation API and fallback), Vite 8 + React Router 7, Vue + hash router, all in dev/StrictMode: exactly one pageview per navigation incl. the first [ ] owner's Windows run of e2e:frameworks    Stage 5 control plane: DONE 2026-10-08 [x] sandbox: API 40 unit + verifier tests, onboarding e2e in Chromium [x] owner's Windows: typecheck/test/build, live:api 7/7 on local MongoDB rs0, e2e:api 2/2 [x] LIVE done-when: the owner signed up at http://localhost:8788, added tailwatch-demo.umarattique638.workers.dev (site 101), pasted the snippet, verifier 7/7 green, first pageview arrived on the verify screen, dashboard opened. Nobody touched a database.    Stage 6 dashboard: [x] in the sandbox: Query API proven on the ClickHouse engine (chDB 26.9) with known rows incl. DST (10/10), HTTP layer 5, dashboard e2e in Chromium (every page shows the API's numbers; no sample value survives) [ ] owner: live:api against ClickHouse Cloud, then the real dashboard    Stage 7 precision: [x] in the sandbox: labelled regression corpus 64 humans counted / 71 bots dropped, 0 false positives, 0 misses (after an independent false-positive review); ⭐ Plausible's Puppeteer test on workerd + real ClickHouse engine: 0 of 95 sessions counted, 192 of 192 hits itemised (+10 stealth sessions also 0) [x] owner's Windows + ClickHouse Cloud: e2e:precision 0 of 95 (202/202 hits itemised), e2e:collector 20/20, e2e:frameworks 3/3, e2e:api 3/3 [x] LIVE 2026-10-08: consumer + collector (tw.js v3) deployed; bots:live from the owner's PC against site 101: TailWatch counted 0 of 95 sessions, 192 hits dropped with a reason (automation 73, ua_denylist 63, headless:js_ua_mismatch 56). STAGE 7 DONE.
     Extra (owner request 2026-10-08): a second customer site, kept OUTSIDE this repo on the owner's Desktop (kiln-shop): React + react-router-dom shop (BrowserRouter, 4 pages + product detail, wishlist, cart, demo checkout) on Cloudflare static assets (kiln-shop.umarattique638.workers.dev), tracked with the script-tag snippet + tw('track') custom events add_to_cart / add_to_wishlist / checkout.
+
+Phase 3 product shell (decision 19): [x] retention per site + nightly pruning (tw_prune) | [x] export-then-erase (account delete, erasure verified by count, receipt without e-mail) | [x] activity log | [ ] teams, roles, invites | [ ] plans + quota | [ ] billing. Sandbox 2026-10-12: unit, live ClickHouse 24.8 (tw_prune grants only), browser e2e. [ ] owner: tw_prune user, Vercel env, R2 lifecycle, deploy.
 
 Leftovers from the first attempt: CLOSED 2026-10-09. They were replaced IN PLACE on 2026-10-08: the live system
 now uses exactly those names (Workers tailwatch-collector and tailwatch-consumer, queue tailwatch-events +

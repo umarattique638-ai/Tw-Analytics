@@ -55,7 +55,11 @@ writeFileSync(
       ],
       // Once a day (Hobby plan limit): make Cloudflare KV match MongoDB. Vercel sends CRON_SECRET as a
       // Bearer token when that environment variable is set; without it the route answers 404.
-      crons: [{ path: '/api/v1/internal/reconcile', schedule: '17 3 * * *' }],
+      crons: [
+        { path: '/api/v1/internal/reconcile', schedule: '17 3 * * *' },
+        // Retention pruning + account erasures (Phase 3). Vercel Hobby: once a day, within the hour.
+        { path: '/api/v1/internal/maintenance', schedule: '41 2 * * *' },
+      ],
     },
     null,
     2,

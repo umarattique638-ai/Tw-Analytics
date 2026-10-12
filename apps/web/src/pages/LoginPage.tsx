@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import FormError from '../components/ui/FormError';
@@ -10,6 +10,8 @@ import { api } from '../api/client';
 // "Continue with Google" returns once OAuth exists. "Forgot password?" e-mails a reset link (/forgot-password).
 export default function LoginPage() {
   const navigate = useNavigate();
+  /** A message from the page that sent us here (account deleted). */
+  const notice = (useLocation().state as { notice?: string } | null)?.notice ?? null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +34,11 @@ export default function LoginPage() {
   return (
     <>
       <PageHeader title="Welcome back" sub="Log in to see your analytics." />
+      {notice && (
+        <p role="status" className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-medium text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200">
+          {notice}
+        </p>
+      )}
 
       <form className="grid gap-5" onSubmit={onSubmit}>
         <Field label="Work email" type="email" name="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />

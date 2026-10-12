@@ -35,7 +35,7 @@ WHERE site_id = {site:UInt64} AND start >= toDateTime64({from:String}, 3, {tz:St
 
 ## series_daily
 
-Visitors over time (7 / 30 days): visitors and page views per local day
+Visitors over time (7 / 30 days): visitors and page views per local day. Also the account export (whole stored history)
 
 ```sql
 SELECT toString(toDate(timestamp, {tz:String})) AS bucket, uniqExact(visitor_hash) AS visitors, countIf(name = 'pageview') AS pageviews
@@ -46,7 +46,7 @@ GROUP BY bucket
 
 ## series_daily_sessions
 
-Visitors over time (7 / 30 days): sessions per local day
+Visitors over time (7 / 30 days): sessions per local day. Also the account export
 
 ```sql
 SELECT toString(toDate(start, {tz:String})) AS bucket, sum(sign) AS sessions
@@ -88,6 +88,19 @@ WHERE site_id = {site:UInt64} AND bucket >= toDateTime({from:String}, {tz:String
 GROUP BY pathname
 ORDER BY pageviews DESC, pathname
 LIMIT 10
+```
+
+## pages_all
+
+Account export (Settings > Download your data): every page of a site over its stored history
+
+```sql
+SELECT pathname, countMerge(pageviews) AS pageviews, uniqMerge(visitors) AS visitors
+FROM {db}.rollup_15m_pages
+WHERE site_id = {site:UInt64} AND bucket >= toDateTime({from:String}, {tz:String}) AND bucket < toDateTime({until:String}, {tz:String})
+GROUP BY pathname
+ORDER BY pageviews DESC, pathname
+LIMIT 1000
 ```
 
 ## sources
@@ -178,7 +191,7 @@ ORDER BY hits DESC
 
 ## drops_list
 
-Suspicious activity page
+Suspicious activity page. Also the account export (the latest 200 groups)
 
 ```sql
 SELECT reason, detail, country_code, asn, sum(hits) AS hits, toUnixTimestamp64Milli(max(at)) AS last
@@ -191,7 +204,7 @@ LIMIT 200
 
 ## events_by_name
 
-Events page: count and last seen per event name
+Events page: count and last seen per event name. Also the account export (whole stored history)
 
 ```sql
 SELECT name, count() AS events, toUnixTimestamp64Milli(max(received_at)) AS last
