@@ -143,7 +143,7 @@ export default function AppShell() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-[radial-gradient(ellipse_at_50%_-30%,rgba(45,212,191,0.13),transparent_65%)] dark:bg-[radial-gradient(ellipse_at_50%_-30%,rgba(45,212,191,0.08),transparent_65%)]"
           />
-          <div className={`relative mx-auto flex w-full max-w-[1400px] flex-col ${isSetup ? 'my-auto shrink-0' : 'flex-1'}`}>
+          <div className={`relative mx-auto flex w-full  flex-col ${isSetup ? 'my-auto shrink-0' : 'flex-1'}`}>
             <SyncBanner />
             <Suspense fallback={<PageLoading />}>
               <Outlet />
