@@ -1,6 +1,5 @@
 import { Clock3 } from 'lucide-react';
 import ConfirmDialog from '../ui/ConfirmDialog';
-import Notice from '../ui/Notice';
 import Panel from '../ui/Panel';
 import SegmentedControl from '../ui/SegmentedControl';
 import type { Site } from '../../api/client';
@@ -42,11 +41,6 @@ export default function RetentionPanel({ sites, choices, canEdit, onSaved }: { s
       <p className="mt-4 text-[13px] text-slate-500 dark:text-slate-400">
         A deleted site keeps its data for its retention too, so adding it again brings the history back.{canEdit ? '' : ' Only the owner or an admin can change this.'}
       </p>
-      {r.notice && (
-        <Notice tone={r.notice.tone} className="mt-4">
-          {r.notice.text}
-        </Notice>
-      )}
       {r.pending && (
         <ConfirmDialog
           title={`Keep ${retentionLabel(r.pending.days)} for ${r.pending.site.domain}?`}

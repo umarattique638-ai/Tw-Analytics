@@ -14,7 +14,6 @@ import EmptyState from '../components/ui/EmptyState';
 import Notice from '../components/ui/Notice';
 import Panel from '../components/ui/Panel';
 import PageHeader from '../components/ui/PageHeader';
-import TextLink from '../components/ui/TextLink';
 import type { Site, User } from '../api/client';
 import { capital, change, countryName, num, percent, share } from '../lib/format';
 import { greeting, useCsvExport, useLive, useOverview } from '../hooks/useDashboard';
@@ -72,17 +71,6 @@ function Overview({ site, name }: { site: Site; name: string }) {
         }
       />
 
-      {csv.result && (
-        <Notice tone={csv.result.ok ? 'success' : 'error'}>
-          {csv.result.text}
-          {csv.result.ok && (
-            <>
-              {'. '}
-              <TextLink to="/reports">Open saved reports</TextLink>
-            </>
-          )}
-        </Notice>
-      )}
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { account, api } from '../api/client';
 import type { Erasure, Site } from '../api/client';
 import { useAction } from './useAction';
-import { useNotice } from './useNotice';
+import { notify } from '../lib/notify';
 
 /** 30 -> "30 days", 180 -> "6 months", 395 -> "13 months". */
 export const retentionLabel = (days: number) => (days === 395 ? '13 months' : days === 180 ? '6 months' : days === 365 ? '12 months' : `${days} days`);
@@ -14,7 +14,6 @@ export const retentionLabel = (days: number) => (days === 395 ? '13 months' : da
 export function useRetention(onSaved: (site: Site) => void) {
   const [busySite, setBusySite] = useState<number | null>(null);
   const [pending, setPending] = useState<{ site: Site; days: number } | null>(null);
-  const { notice, show } = useNotice();
 
   const save = useCallback(
     async (site: Site, days: number) => {
@@ -22,21 +21,20 @@ export function useRetention(onSaved: (site: Site) => void) {
       try {
         const { site: updated } = await api.updateSite(site.id, { retentionDays: days });
         onSaved(updated);
-        show(
-          'success',
+        notify.success(
           days < site.retentionDays
             ? `${site.domain} now keeps ${retentionLabel(days)}. Older data is deleted within a week.`
             : `${site.domain} now keeps ${retentionLabel(days)}.`,
         );
         setPending(null);
       } catch (e) {
-        show('error', e instanceof Error ? e.message : 'Could not save.');
+        notify.error(e, 'Could not save.');
         setPending(null);
       } finally {
         setBusySite(null);
       }
     },
-    [onSaved, show],
+    [onSaved],
   );
 
   const choose = useCallback(
@@ -48,18 +46,23 @@ export function useRetention(onSaved: (site: Site) => void) {
     [save],
   );
 
-  return { choose, pending, confirm: () => pending && save(pending.site, pending.days), cancel: () => setPending(null), busySite, notice };
+  return { choose, pending, confirm: () => pending && save(pending.site, pending.days), cancel: () => setPending(null), busySite };
 }
 
-/** "Download all data": fetches the export first, so an error is shown instead of being saved as the file. */
+/** "Download all data": fetches the export first, so an error is shown (a toast) instead of being saved as the file. */
 export function useAccountExport() {
   const [done, setDone] = useState(false);
-  const { run, busy, error } = useAction(async () => {
+  const { run, busy } = useAction(async () => {
     setDone(false);
-    await account.download();
-    setDone(true);
-  }, 'The download failed.');
-  return { download: run, busy, done, error };
+    try {
+      await account.download();
+      setDone(true);
+      notify.success('Downloaded. Keep the file somewhere safe.');
+    } catch (e) {
+      notify.error(e, 'The download failed.');
+    }
+  });
+  return { download: run, busy, done };
 }
 
 /** "Delete account": password + the word DELETE; resolves with what happens next (the erasure). */

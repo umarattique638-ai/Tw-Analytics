@@ -3,7 +3,6 @@ import NoSiteYet from '../components/dashboard/NoSiteYet';
 import NewReport from '../components/reports/NewReport';
 import SavedReports from '../components/reports/SavedReports';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
-import Notice from '../components/ui/Notice';
 import PageHeader from '../components/ui/PageHeader';
 import type { Report, Site } from '../api/client';
 import { useReports } from '../hooks/useReports';
@@ -23,7 +22,6 @@ function Reports({ site }: { site: Site }) {
   return (
     <div className="grid gap-6">
       <PageHeader title="Reports" description={`Download your numbers as CSV. Every report is saved here for ${r.keepDays} days.`} />
-      {r.notice && <Notice tone={r.notice.tone}>{r.notice.text}</Notice>}
       <NewReport timezone={site.timezone} creating={r.creating} onCreate={r.create} />
       <SavedReports siteId={site.id} list={r.list} keepDays={r.keepDays} max={r.max} loadError={r.loadError} fresh={r.fresh} onReload={r.reload} onDelete={setToDelete} />
 

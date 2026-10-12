@@ -1,12 +1,11 @@
 import { CheckCircle2, Download, FileJson } from 'lucide-react';
 import Button from '../ui/Button';
-import FormError from '../ui/FormError';
 import Panel from '../ui/Panel';
 import { useAccountExport } from '../../hooks/useAccount';
 
 /** "Download all data": everything stored for the account, as one JSON file. */
 export default function ExportPanel() {
-  const { download, busy, done, error } = useAccountExport();
+  const { download, busy, done } = useAccountExport();
   return (
     <Panel title="Download your data" subtitle="Everything we store for your account, in one file">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
@@ -20,20 +19,10 @@ export default function ExportPanel() {
           </p>
         </div>
         <Button className="flex-none" onClick={() => download()} loading={busy} data-testid="export-account">
-          {!busy && <Download className="size-4" aria-hidden="true" />}
-          {busy ? 'Preparing…' : 'Download all data'}
+          {!busy && (done ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />)}
+          {busy ? 'Preparing…' : done ? 'Download again' : 'Download all data'}
         </Button>
       </div>
-      {done && (
-        <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-          <CheckCircle2 className="size-4" aria-hidden="true" /> Downloaded. Keep the file somewhere safe.
-        </p>
-      )}
-      {error && (
-        <div className="mt-4">
-          <FormError message={error} />
-        </div>
-      )}
     </Panel>
   );
 }

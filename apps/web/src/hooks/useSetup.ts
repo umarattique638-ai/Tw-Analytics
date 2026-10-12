@@ -4,6 +4,7 @@ import type { Site, Snippet, Sync } from '../api/client';
 import { timezoneOptions } from '../lib/timezones';
 import { useAction } from './useAction';
 import { useDebouncedValue } from './useDebouncedValue';
+import { notify } from '../lib/notify';
 
 /**
  * Step 1, "Add your site": the domain, the timezone, and the hosts the API will accept for that domain
@@ -30,6 +31,7 @@ export function useAddSite(onAdded: (site: Site, sync: Sync) => void) {
 
   const { run, busy, error } = useAction(async () => {
     const { site, sync } = await api.addSite(domain, timezone);
+    notify.success(`${site.domain} added`, { description: 'Next: paste the script on your site.' });
     onAdded(site, sync);
   }, 'Could not add the site.');
 

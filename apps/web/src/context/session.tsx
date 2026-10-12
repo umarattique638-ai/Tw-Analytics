@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { SESSION_ENDED, api } from '../api/client';
 import type { KvIssue, Me, Role, Site, User } from '../api/client';
+import { notify } from '../lib/notify';
 
 /**
  * Signed-in state for the dashboard: the user, their sites and the site being looked at.
@@ -53,6 +54,8 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   const [sites, setSites] = useState<Site[]>([]);
   const [kvIssues, setKvIssues] = useState<KvIssue[]>([]);
   const [currentId, setCurrentId] = useState<number | null>(remembered);
+  const signedIn = useRef(false);
+  signedIn.current = state === 'in';
 
   const reload = useCallback(async () => {
     const { sites, kvIssues } = await api.sites();
@@ -64,6 +67,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   // A request anywhere found the session gone: back to Log in.
   useEffect(() => {
     const ended = () => {
+      if (signedIn.current) notify.info('Your session ended', { description: 'Log in again to continue.' });
       setUser(null);
       setState('out');
     };

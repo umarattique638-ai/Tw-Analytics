@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { reports, startDownload } from '../api/client';
 import type { RangeKey, Report } from '../api/client';
-import { useNotice } from './useNotice';
+import { notify } from '../lib/notify';
 
 /** Saved CSV reports of a site: list, make (and download), delete. */
 export function useReports(siteId: number) {
@@ -12,7 +12,6 @@ export function useReports(siteId: number) {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
-  const { notice, show, clear } = useNotice();
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -28,28 +27,26 @@ export function useReports(siteId: number) {
 
   useEffect(() => {
     setList(null);
-    clear();
     load();
-  }, [load, clear]);
+  }, [load]);
 
   const create = useCallback(
     async (range: RangeKey) => {
       if (creating) return;
       setCreating(true);
-      clear();
       try {
         const { export: r } = await reports.create(siteId, range);
         setList((l) => [r, ...(l ?? [])]);
         setFresh(r.id);
         startDownload(reports.downloadUrl(siteId, r.id), r.filename);
-        show('success', `Report saved and downloading: ${r.filename}`);
+        notify.success('Report saved and downloading', { description: r.filename });
       } catch (e) {
-        show('error', e instanceof Error ? e.message : 'The report could not be made.');
+        notify.error(e, 'The report could not be made.');
       } finally {
         setCreating(false);
       }
     },
-    [creating, siteId, show, clear],
+    [creating, siteId],
   );
 
   const remove = useCallback(
@@ -58,17 +55,17 @@ export function useReports(siteId: number) {
       try {
         await reports.remove(siteId, report.id);
         setList((l) => (l ?? []).filter((r) => r.id !== report.id));
-        show('success', 'Report deleted.');
+        notify.success('Report deleted', { description: report.filename });
         return true;
       } catch (e) {
-        show('error', e instanceof Error ? e.message : 'The report could not be deleted.');
+        notify.error(e, 'The report could not be deleted.');
         return false;
       } finally {
         setDeleting(false);
       }
     },
-    [siteId, show],
+    [siteId],
   );
 
-  return { list, keepDays, max, loadError, reload: load, create, creating, remove, deleting, fresh, notice };
+  return { list, keepDays, max, loadError, reload: load, create, creating, remove, deleting, fresh };
 }

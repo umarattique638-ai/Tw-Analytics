@@ -3,6 +3,7 @@ import { CloudOff, RotateCw } from 'lucide-react';
 import Button from '../ui/Button';
 import { useSession } from '../../hooks/useSession';
 import { useAction } from '../../hooks/useAction';
+import { notify } from '../../lib/notify';
 
 /**
  * Shown while a change has not reached Cloudflare KV yet (decision 18): the collector may still accept a
@@ -11,7 +12,13 @@ import { useAction } from '../../hooks/useAction';
  */
 export default function SyncBanner() {
   const { kvIssues, retrySync, reload } = useSession();
-  const { run: retry, busy, error } = useAction(retrySync, 'Retry failed.');
+  const { run: retry, busy } = useAction(async () => {
+    try {
+      await retrySync();
+    } catch (e) {
+      notify.error(e, 'Retry failed.');
+    }
+  });
 
   // While something is pending, look again every minute (the server retries on these calls).
   useEffect(() => {
@@ -34,7 +41,6 @@ export default function SyncBanner() {
         <p className="font-semibold">Some changes have not reached the collector yet: {names}</p>
         <p className="mt-0.5 opacity-90">{kvIssues[0]!.error}</p>
         <p className="mt-0.5 text-xs opacity-75">Your changes are saved. We retry by ourselves; until then a revoked key or a paused site may still collect.</p>
-        {error && <p className="mt-1 text-xs font-medium text-red-700 dark:text-red-300">{error}</p>}
       </div>
       <Button variant="secondary" size="sm" onClick={() => retry()} disabled={busy}>
         <RotateCw className={`size-4 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" /> Retry now

@@ -6,6 +6,7 @@ import Field from '../ui/Field';
 import FormError from '../ui/FormError';
 import Panel from '../ui/Panel';
 import { textLinkCls } from '../ui/TextLink';
+import { notify } from '../../lib/notify';
 import { useAccountExport, useDeleteAccount } from '../../hooks/useAccount';
 
 const Step = ({ n }: { n: number }) => (
@@ -14,19 +15,20 @@ const Step = ({ n }: { n: number }) => (
   </span>
 );
 
+const toastDeleted = (stopped: boolean, days: number) =>
+  notify.success(`Your account was deleted. ${stopped ? 'Tracking has stopped.' : 'Tracking stops within a day.'}`, {
+    description: `Collected analytics are erased within ${days} days; we e-mail you when it is done.`,
+  });
+
 /** Owner only: delete the account, after the password and the word DELETE. */
 export default function DeleteAccountPanel({ siteCount }: { siteCount: number }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const exporting = useAccountExport();
-  const del = useDeleteAccount((erasure) =>
-    navigate('/login', {
-      replace: true,
-      state: {
-        notice: `Your account was deleted. ${erasure.trackingStopped ? 'Tracking has stopped.' : 'Tracking stops within a day.'} Collected analytics are erased within ${erasure.finishesWithinDays} days; we e-mail you when it is done.`,
-      },
-    }),
-  );
+  const del = useDeleteAccount((erasure) => {
+    toastDeleted(erasure.trackingStopped, erasure.finishesWithinDays);
+    navigate('/login', { replace: true });
+  });
 
   return (
     <Panel tone="danger" title="Delete account" subtitle="Permanently removes your workspace and erases all collected data">
@@ -60,7 +62,6 @@ export default function DeleteAccountPanel({ siteCount }: { siteCount: number })
                   {exporting.done ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />}
                   {exporting.busy ? 'Preparing…' : exporting.done ? 'Downloaded' : 'Download all data'}
                 </button>
-                {exporting.error && <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{exporting.error}</p>}
               </div>
             </li>
             <li className="flex gap-3">

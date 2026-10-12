@@ -2,14 +2,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import FormError from '../components/ui/FormError';
-import Notice from '../components/ui/Notice';
 import PageHeader from '../components/ui/PageHeader';
 import TextLink, { textLinkCls } from '../components/ui/TextLink';
 import { muted } from '../components/ui/styles';
 import { useLoginForm } from '../hooks/useAuthForms';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-type From = { from?: string; notice?: string } | null;
+type From = { from?: string } | null;
 /** Only paths inside this app (never "//other.site"). */
 const safeFrom = (p?: string) => (p && p.startsWith('/') && !p.startsWith('//') && p !== '/login' ? p : '/dashboard');
 
@@ -22,11 +21,6 @@ export default function LoginPage() {
   return (
     <>
       <PageHeader compact title="Welcome back" description="Log in to see your analytics." />
-      {state?.notice && (
-        <Notice tone="success" className="mb-5">
-          {state.notice}
-        </Notice>
-      )}
 
       <form
         className="grid gap-5"

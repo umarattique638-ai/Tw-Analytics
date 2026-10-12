@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { api } from '../api/client';
 import type { Site } from '../api/client';
+import { notify } from '../lib/notify';
 
 /**
  * Deleting a site from the sidebar. The site is gone once the API says so, even if reloading the list
@@ -23,6 +24,7 @@ export function useDeleteSite(opts: { reload: () => Promise<Site[]>; currentId: 
       setBusy(false);
       return;
     }
+    notify.success(`${target.domain} deleted`, { description: 'It no longer collects. Adding it again brings the data back.' });
     const remaining = await reload().catch(() => null);
     if (remaining && currentId === target.id) {
       if (remaining.length) select(remaining[0]!.id);

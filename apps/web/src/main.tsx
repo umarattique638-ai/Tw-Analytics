@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import Toaster from './components/common/Toaster';
 import './index.css';
 
 const root = document.getElementById('root');
@@ -13,6 +14,7 @@ createRoot(root).render(
     <ErrorBoundary>
       <BrowserRouter>
         <App />
+        <Toaster />
       </BrowserRouter>
     </ErrorBoundary>
   </StrictMode>,

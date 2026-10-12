@@ -68,3 +68,32 @@ input:-webkit-autofill:focus {
     --tw-tip-border: rgba(148, 163, 184, 0.2);
   }
 }
+
+/* Toasts (sonner): our font, our colours for the icons. */
+[data-sonner-toaster] {
+  --font-family: var(--font-sans);
+  font-family: var(--font-sans);
+}
+.tw-toast {
+  font-size: 14px;
+  border-radius: 12px !important;
+}
+.tw-toast [data-title] {
+  font-weight: 600;
+}
+.tw-toast[data-type="success"] [data-icon] { color: #059669; }
+.tw-toast[data-type="error"] [data-icon] { color: #e11d48; }
+.tw-toast[data-type="warning"] [data-icon] { color: #d97706; }
+.tw-toast[data-type="info"] [data-icon] { color: #0f766e; }
+.tw-toast [data-button] {
+  background: #0f766e !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  .tw-toast[data-type="success"] [data-icon] { color: #34d399; }
+  .tw-toast[data-type="error"] [data-icon] { color: #fb7185; }
+  .tw-toast[data-type="warning"] [data-icon] { color: #fbbf24; }
+  .tw-toast[data-type="info"] [data-icon] { color: #2dd4bf; }
+  .tw-toast [data-button] { background: #14b8a6 !important; color: #020617 !important; }
+}

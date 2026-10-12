@@ -34,7 +34,6 @@ function Suspicious({ site, onSite }: { site: Site; onSite: (s: Site) => void })
       <PageHeader title="Suspicious activity" description="Every hit we dropped, with the reason. Nothing is discarded silently." actions={<RangeSelect value={range} onChange={setRange} />} />
 
       {report.error && <Notice tone="error">{report.error}</Notice>}
-      {hosts.message && <Notice tone={hosts.message.ok ? 'success' : 'error'}>{hosts.message.text}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard icon={ShieldAlert} label="Hits dropped" value={ready ? num(total) : null} />
