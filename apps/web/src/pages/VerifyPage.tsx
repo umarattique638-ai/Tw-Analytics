@@ -26,7 +26,7 @@ const DROP_TEXT: Record<string, string> = {
   consumer_invalid: 'Hits that could not be read',
 };
 
-/** Setup step 3: the server opens the page like a visitor, and we wait for the first real pageview. */
+/** Setup step 3: the server checks the page step by step; the site is verified when all pass and a first pageview arrived. */
 export default function VerifyPage() {
   useDocumentTitle('Check the install');
   const navigate = useNavigate();
@@ -38,7 +38,7 @@ export default function VerifyPage() {
 
   if (!current) return <Navigate to="/sites/new" replace />;
 
-  const { steps, allGood, failed, running, revealed, received, status } = check;
+  const { steps, allGood, failed, passed, running, received, status } = check;
   const label = allGood ? 'All checks passed' : running ? 'Checking your site…' : failed ? 'Something needs fixing' : `${check.done} of ${steps.length} checks done`;
   const openUrl = safePageUrl(check.url) ?? `https://${current.domain}/`;
 
@@ -49,7 +49,7 @@ export default function VerifyPage() {
         title="Check the install"
         description={
           <>
-            We open <b className="text-slate-700 dark:text-slate-200">{current.domain}</b> like a visitor would and check every step. Our own visits never count in your stats.
+            We open <b className="text-slate-700 dark:text-slate-200">{current.domain}</b> like a visitor would, step by step, and stop at the first problem. Our own visits never count in your stats.
           </>
         }
       />
@@ -89,7 +89,7 @@ export default function VerifyPage() {
         </div>
       )}
 
-      {revealed && !received && !failed && (
+      {passed && !received && (
         <div className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-teal-200 bg-teal-50/70 p-4 text-sm text-teal-900 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-100">
           <span className="min-w-0 flex-1">The script is installed correctly. Visit your site once and this page finishes by itself.</span>
           <a
@@ -137,7 +137,7 @@ export default function VerifyPage() {
 
       {!allGood && (
         <p className={`mt-4 text-[13px] leading-relaxed ${muted}`}>
-          Added the script with Google Tag Manager or a plugin? Then it is not in the page source, and the first pageview is the proof.{' '}
+          Your dashboard opens when every step is green and the first visit has arrived. Fix the first red step, publish the change, then check again.{' '}
           {!otherPage && !failed && (
             <button type="button" onClick={() => setOtherPage(true)} className={`${textLinkCls} !font-medium`}>
               Check a different page
@@ -147,10 +147,8 @@ export default function VerifyPage() {
       )}
 
       <div className="mt-6 flex flex-wrap gap-2.5 border-t border-slate-100 pt-5 dark:border-slate-800">
-        <Button variant={received ? 'primary' : 'secondary'} onClick={() => navigate('/dashboard', { state: received ? undefined : { skipSetup: true } })}>
-          {received ? 'Go to dashboard' : 'Skip for now'}
-        </Button>
-        <Button variant="ghost" onClick={() => navigate('/install')}>
+        {check.verified && <Button onClick={() => navigate('/dashboard')}>Go to dashboard</Button>}
+        <Button variant={check.verified ? 'ghost' : 'secondary'} onClick={() => navigate('/install')}>
           Back to the script
         </Button>
       </div>

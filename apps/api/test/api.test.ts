@@ -449,7 +449,7 @@ describe('keys: rotation without losing a hit', () => {
 });
 
 describe('④/⑤ passive check: waiting for the first pageview', () => {
-  it('reports activity and drops, and marks the site verified on the first pageview', async () => {
+  it('reports activity and drops; a pageview alone does not verify the site', async () => {
     const s = setup();
     const c = await signedUp(s);
     const { site } = (await c.post('/sites', { domain: 'example.com', timezone: 'UTC' })).body;
@@ -463,9 +463,45 @@ describe('④/⑤ passive check: waiting for the first pageview', () => {
     };
     st = (await c.get(`/sites/${site.id}/status`)).body;
     expect(st.pageviews).toBe(1);
-    expect(st.verifiedAt).not.toBeNull();
+    expect(st.verifiedAt).toBeNull();
     expect(st.drops[0].reason).toBe('hostname');
-    expect((await c.get(`/sites/${site.id}`)).body.site.verifiedAt).toBe(st.verifiedAt);
+    expect((await c.get(`/sites/${site.id}`)).body.site.verifiedAt).toBeNull();
+  });
+
+  it('the site is verified only when every check passes AND a pageview has arrived', async () => {
+    let html = '<html><head></head></html>';
+    const fetchImpl = (async (input: URL | string) => {
+      const url = String(input);
+      if (url === 'https://example.com/') return new Response(html, { headers: { 'content-type': 'text/html' } });
+      if (url.startsWith(`${COLLECTOR}/tw.js`)) return new Response('tw', { headers: { 'content-type': 'application/javascript' } });
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    const s = setup({}, fetchImpl);
+    const c = await signedUp(s);
+    const { site } = (await c.post('/sites', { domain: 'example.com', timezone: 'UTC' })).body;
+    const pageview = { events: 1, pageviews: 1, last: { at: '2026-10-08T10:00:00.000Z', name: 'pageview', path: '/' }, drops: [] };
+
+    // A pageview, but the snippet is missing: not verified, and the check stops at the first failure.
+    s.analytics.next = pageview;
+    let r = (await c.post(`/sites/${site.id}/verify`, {})).body;
+    expect(r.ok).toBe(false);
+    expect(r.checks.map((x: { id: string; status: string }) => `${x.id}:${x.status}`)).toEqual([
+      'reach:pass', 'present:fail', 'noscript:skip', 'once:skip', 'script:skip', 'csp:skip', 'id:skip',
+    ]);
+    expect(r.verifiedAt).toBeNull();
+
+    // Every check passes, but no pageview yet: still not verified.
+    html = `<html><head><script async src="${COLLECTOR}/tw.js?id=${site.publicKey}"></script></head></html>`;
+    s.analytics.next = { events: 0, pageviews: 0, last: null, drops: [] };
+    r = (await c.post(`/sites/${site.id}/verify`, {})).body;
+    expect(r.ok).toBe(true);
+    expect(r.verifiedAt).toBeNull();
+
+    // Both: verified.
+    s.analytics.next = pageview;
+    r = (await c.post(`/sites/${site.id}/verify`, {})).body;
+    expect(r.verifiedAt).not.toBeNull();
+    expect((await c.get(`/sites/${site.id}`)).body.site.verifiedAt).toBe(r.verifiedAt);
   });
 
   it('a ClickHouse failure is a 503 with a readable message', async () => {

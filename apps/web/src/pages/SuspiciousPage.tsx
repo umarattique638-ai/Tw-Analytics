@@ -1,5 +1,6 @@
 import { Bot, Link2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import KpiCard from '../components/dashboard/KpiCard';
+import FinishSetup from '../components/dashboard/FinishSetup';
 import NoSiteYet from '../components/dashboard/NoSiteYet';
 import RangeSelect, { rangeLong } from '../components/dashboard/RangeSelect';
 import DropReasons from '../components/suspicious/DropReasons';
@@ -19,7 +20,9 @@ import { useSession } from '../hooks/useSession';
 export default function SuspiciousPage() {
   useDocumentTitle('Suspicious activity');
   const { current, upsert } = useSession();
-  return current ? <Suspicious site={current} onSite={upsert} /> : <NoSiteYet />;
+  if (!current) return <NoSiteYet />;
+  if (!current.verifiedAt) return <FinishSetup site={current} />;
+  return <Suspicious site={current} onSite={upsert} />;
 }
 
 function Suspicious({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {

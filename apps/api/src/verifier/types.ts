@@ -13,6 +13,7 @@ export interface CheckResult {
 }
 export interface ActiveResult {
   url: string;
+  /** Every step passed. */
   ok: boolean;
   checks: CheckResult[];
 }
@@ -24,15 +25,17 @@ export interface FoundTag {
   hidden: 'comment' | 'noscript' | null;
 }
 
-/** The step names, in the order they run (the dashboard shows the same list). */
+/** The steps, in the order they run (the order a browser goes through); the dashboard shows the same list. */
+export const CHECK_ORDER: CheckId[] = ['reach', 'present', 'noscript', 'once', 'script', 'csp', 'id'];
+
 export const LABELS: Record<CheckId, string> = {
   reach: 'Site reachable',
   present: 'Snippet in page source',
   noscript: 'Not in noscript or a comment',
   once: 'Only one snippet',
-  id: 'Site key matches',
   script: 'Script loads',
   csp: 'Content-Security-Policy allows it',
+  id: 'Site key matches',
 };
 
 export interface VerifierOptions {

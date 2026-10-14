@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { edgeBotReason } from '@tailwatch/contract';
-import { VERIFIER_USER_AGENT, cspAllows, findSnippets, runActiveCheck } from '../src/verifier';
+import { CHECK_ORDER, VERIFIER_USER_AGENT, cspAllows, findSnippets, runActiveCheck } from '../src/verifier';
 
 const KEY = 'tw_pub_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const OLD = 'tw_pub_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+const OTHER = 'tw_pub_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ';
 const C = 'https://collector.test';
 const site = {
   domain: 'example.com',
@@ -30,14 +31,13 @@ function web(pages: Record<string, { status?: number; body?: string; type?: stri
   return { fetchImpl, agents, resolve: async () => ['93.184.216.34'] };
 }
 const script = { [`${C}/tw.js?id=${KEY}`]: { body: 'tw', type: 'application/javascript' } };
-const statuses = (r: { checks: { id: string; status: string }[] }) => Object.fromEntries(r.checks.map((c) => [c.id, c.status]));
 
 describe('active verifier (BUILD-ORDER ⑤)', () => {
   it('a correct install passes every check, and the verifier is an edge bot (never counted)', async () => {
     const w = web({ 'https://example.com/': { body: `<html><head>${tag()}</head></html>` }, ...script });
     const r = await runActiveCheck(site, undefined, w);
     expect(r.ok).toBe(true);
-    expect(statuses(r)).toEqual({ reach: 'pass', present: 'pass', noscript: 'pass', once: 'pass', id: 'pass', script: 'pass', csp: 'pass' });
+    expect(r.checks.map((c) => `${c.id}:${c.status}`)).toEqual(['reach', 'present', 'noscript', 'once', 'script', 'csp', 'id'].map((id) => `${id}:pass`));
     expect(new Set(w.agents)).toEqual(new Set([VERIFIER_USER_AGENT]));
     expect(edgeBotReason(VERIFIER_USER_AGENT)).toEqual({ reason: 'verification_agent', detail: 'install_check' });
   });
@@ -49,8 +49,8 @@ describe('active verifier (BUILD-ORDER ⑤)', () => {
     ['commented out', { 'https://example.com/': { body: `<!-- ${tag()} -->` } }, 'noscript', 'HTML comment'],
     ['in noscript', { 'https://example.com/': { body: `<noscript>${tag()}</noscript>` } }, 'noscript', '<noscript>'],
     ['twice', { 'https://example.com/': { body: tag() + tag() }, ...script }, 'once', '2 times'],
-    ['other key', { 'https://example.com/': { body: tag('tw_pub_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ') } }, 'id', 'different site key'],
-    ['revoked key', { 'https://example.com/': { body: tag(OLD) } }, 'id', 'revoked'],
+    ['other key', { 'https://example.com/': { body: tag(OTHER) }, [`${C}/tw.js?id=${OTHER}`]: { body: 'tw', type: 'application/javascript' } }, 'id', 'different site key'],
+    ['revoked key', { 'https://example.com/': { body: tag(OLD) }, [`${C}/tw.js?id=${OLD}`]: { body: 'tw', type: 'application/javascript' } }, 'id', 'revoked'],
     ['script 404', { 'https://example.com/': { body: tag() }, [`${C}/tw.js?id=${KEY}`]: { status: 404, type: 'text/plain' } }, 'script', 'HTTP 404'],
     ['CSP script-src', { 'https://example.com/': { body: tag(), headers: { 'content-security-policy': "script-src 'self'" } }, ...script }, 'csp', 'script-src'],
     ['CSP connect-src', { 'https://example.com/': { body: tag(), headers: { 'content-security-policy': `script-src ${C}; connect-src 'self'` } }, ...script }, 'csp', 'connect-src'],
@@ -60,6 +60,11 @@ describe('active verifier (BUILD-ORDER ⑤)', () => {
     const check = r.checks.find((c) => c.id === failing)!;
     expect(check.status).toBe('fail');
     expect(check.message).toContain(message);
+    // Browser order, and nothing after the first failure is checked.
+    expect(r.checks.map((c) => c.id)).toEqual(CHECK_ORDER);
+    const at = CHECK_ORDER.indexOf(failing);
+    expect(r.checks.slice(0, at).every((c) => c.status === 'pass')).toBe(true);
+    expect(r.checks.slice(at + 1).every((c) => c.status === 'skip')).toBe(true);
   });
 
   it('follows a redirect (example.com -> www.example.com)', async () => {

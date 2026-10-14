@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Code, Search, Sparkles, Target, X, Zap } from 'lucide-react';
 import KpiCard from '../components/dashboard/KpiCard';
+import FinishSetup from '../components/dashboard/FinishSetup';
 import NoSiteYet from '../components/dashboard/NoSiteYet';
 import RangeSelect, { rangeLong } from '../components/dashboard/RangeSelect';
 import EventsTable from '../components/events/EventsTable';
@@ -28,7 +29,9 @@ const FILTERS: { value: EventFilter; label: string }[] = [
 export default function EventsPage() {
   useDocumentTitle('Events');
   const { current } = useSession();
-  return current ? <Events site={current} /> : <NoSiteYet />;
+  if (!current) return <NoSiteYet />;
+  if (!current.verifiedAt) return <FinishSetup site={current} />;
+  return <Events site={current} />;
 }
 
 function Events({ site }: { site: Site }) {

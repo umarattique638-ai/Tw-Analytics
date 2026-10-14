@@ -197,35 +197,48 @@ export function siteRoutes(app: Api, s: Services) {
     return c.json({ sync: await kvSync.sync(site) });
   });
 
-  /** Passive check + the "waiting for your first pageview" poll (BUILD-ORDER ④/⑤). */
-  app.get('/sites/:id/status', async (c) => {
-    let site = await sites.load(c);
-    let activity;
+  /** Recent activity of the site, or 503 when ClickHouse cannot be read. */
+  const recentActivity = async (siteId: number) => {
     try {
-      activity = await deps.analytics.recent(site._id, PASSIVE_WINDOW_MINUTES);
+      return await deps.analytics.recent(siteId, PASSIVE_WINDOW_MINUTES);
     } catch (error) {
       logError('analytics_failed', { message: errorText(error) });
       throw analyticsUnavailable();
     }
-    if (activity.pageviews > 0 && !site.verifiedAt) {
-      site = (await store.updateSite(c.get('tenant')._id, site._id, site.updatedAt, { verifiedAt: now() }, now())) ?? site;
-    }
+  };
+
+  /**
+   * The "waiting for your first pageview" poll (BUILD-ORDER ④/⑤). It only reports: a pageview alone never
+   * verifies a site (decision 24), the install check below does.
+   */
+  app.get('/sites/:id/status', async (c) => {
+    const site = await sites.load(c);
+    const activity = await recentActivity(site._id);
     return c.json({ windowMinutes: PASSIVE_WINDOW_MINUTES, verifiedAt: site.verifiedAt?.toISOString() ?? null, ...activity });
   });
 
-  /** Active check: fetch the customer's page and say exactly what is wrong. */
+  /**
+   * Active check: fetch the customer's page and say exactly what is wrong (it stops at the first failing
+   * step). The site becomes VERIFIED only when every step passes AND a pageview has arrived; until then the
+   * dashboard keeps the site in setup (decision 24).
+   */
   app.post('/sites/:id/verify', async (c) => {
-    const site = await sites.load(c);
+    let site = await sites.load(c);
     if (!limits.verify.take(`t:${c.get('tenant')._id.toHexString()}`, Date.now()) || !limits.verifyIp.take(`ip:${clientIp(c)}`, Date.now())) {
       throw new HttpError(429, 'rate_limited', 'Too many checks. Wait a few minutes and try again.');
     }
     const b = await body(c);
+    let result;
     try {
-      return c.json(await runActiveCheck(site, str(b.url) || undefined, { allowPrivate: config.verifierAllowPrivate, ...deps.verifier }));
+      result = await runActiveCheck(site, str(b.url) || undefined, { allowPrivate: config.verifierAllowPrivate, ...deps.verifier });
     } catch (error) {
       if (error instanceof VerifyInputError) throw new HttpError(400, 'invalid_url', error.message);
       throw error;
     }
+    if (result.ok && !site.verifiedAt && (await recentActivity(site._id)).pageviews > 0) {
+      site = (await store.updateSite(c.get('tenant')._id, site._id, site.updatedAt, { verifiedAt: now() }, now())) ?? site;
+    }
+    return c.json({ ...result, verifiedAt: site.verifiedAt?.toISOString() ?? null });
   });
 
   /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */

@@ -46,7 +46,8 @@ export interface Status {
   drops: { reason: string; hits: number; detail: string }[];
 }
 export interface Check { id: string; label: string; status: 'pass' | 'fail' | 'skip'; message: string }
-export interface VerifyResult { url: string; ok: boolean; checks: Check[] }
+/** The install check. `verifiedAt` is set once every step passed AND a pageview arrived. */
+export interface VerifyResult { url: string; ok: boolean; checks: Check[]; verifiedAt: string | null }
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {

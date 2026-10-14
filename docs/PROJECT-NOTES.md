@@ -478,6 +478,15 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    stay: 20 sign-ups per address an hour, login limits per e-mail and per address, CSRF rules. Before a
    public launch, still to add: e-mail verification and per-account quotas (sites, events).
 
+24. DECIDED 2026-10-14 (owner): the install check is strict and runs in the order a browser goes through:
+   site reachable, snippet in page source, not in noscript or a comment, only one snippet, script loads,
+   Content-Security-Policy allows it, site key matches, first pageview. The FIRST failing step stops the
+   check; every step after it is "not checked" (shown as skipped). A site is VERIFIED only when all seven
+   steps pass AND a pageview has arrived; the server decides this inside POST /sites/:id/verify (the
+   status poll only reports). Until then the dashboard, Events, Suspicious activity and Reports show
+   "Finish setting up" and there is no "skip" / "open the dashboard anyway". This replaces decision 20's
+   "a tag added by Google Tag Manager passes on the first pageview": the snippet must be in the page source.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

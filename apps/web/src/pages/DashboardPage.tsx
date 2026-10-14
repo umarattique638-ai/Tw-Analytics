@@ -1,4 +1,3 @@
-import { useLocation } from 'react-router-dom';
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Users, Zap } from 'lucide-react';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
@@ -29,10 +28,9 @@ const todayLabel = () => new Date().toLocaleDateString('en-US', { weekday: 'long
 export default function DashboardPage() {
   useDocumentTitle('Overview');
   const { user, current } = useSession();
-  const { state } = useLocation();
 
   if (!current) return <GettingStarted />;
-  if (!current.verifiedAt && !(state as { skipSetup?: boolean } | null)?.skipSetup) return <FinishSetup site={current} />;
+  if (!current.verifiedAt) return <FinishSetup site={current} />;
   return <Overview site={current} name={firstName(user)} />;
 }
 

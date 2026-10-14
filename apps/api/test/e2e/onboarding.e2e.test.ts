@@ -147,14 +147,16 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     await page.waitForURL('**/verify');
     // The check starts by itself, against https://<domain>/ (this test shop listens on another port: it fails there)
     await page.locator('[data-check="reach"][data-status="fail"]').waitFor();
-    await expect.poll(() => page.getByText('Waiting for your first pageview').count()).toBe(1);
+    // The first failure stops the check (decision 24): nothing after it, the pageview included, is checked.
+    await page.locator('[data-check="pageview"][data-status="skip"]').waitFor();
+    expect(await page.locator('[data-check="present"]').getAttribute('data-status')).toBe('skip');
 
     // ⑤ Active check against the real page: the steps turn green one after the other
     await page.getByLabel('Page to check').fill(`${shop}/`);
     await page.getByRole('button', { name: 'Check again' }).click();
-    await page.locator('[data-check="csp"][data-status="pass"]').waitFor();
+    await page.locator('[data-check="id"][data-status="pass"]').waitFor(); // the last step
     const results = await page.locator('[data-check]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-check')}:${e.getAttribute('data-status')}`));
-    expect(results.slice(0, 7)).toEqual(['reach:pass', 'present:pass', 'noscript:pass', 'once:pass', 'id:pass', 'script:pass', 'csp:pass']);
+    expect(results.slice(0, 7)).toEqual(['reach:pass', 'present:pass', 'noscript:pass', 'once:pass', 'script:pass', 'csp:pass', 'id:pass']);
     expect(results[7]).toBe('pageview:running');
     await snap(page, '4a-verify-waiting');
 
