@@ -299,6 +299,9 @@ export class MongoStore implements ControlStore {
     if (found.length) await this.sites.deleteMany({ tenantId, _id: { $in: found.map((s) => s._id) } });
     return found;
   }
+  async deleteErasuresCompletedBefore(before: Date) {
+    return (await this.erasures.deleteMany({ status: 'completed', completedAt: { $lt: before } })).deletedCount;
+  }
   erasureById(id: ObjectId) {
     return this.erasures.findOne({ _id: id });
   }

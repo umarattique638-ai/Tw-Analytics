@@ -9,11 +9,18 @@ import type { Services } from './types';
 const MAINTENANCE_BUDGET_MS = 25_000;
 const RECONCILE_BUDGET_MS = 20_000;
 
-/** Account erasures: one step forward each (KV, ClickHouse deletes, verify, finish). */
+/** Erasures (accounts, sites): one step forward each (KV, ClickHouse deletes, verify, finish); old records removed. */
 async function advanceErasures(s: Services, deadline: number) {
-  const result = { advanced: 0, completed: 0, failed: 0 };
+  const result = { advanced: 0, completed: 0, failed: 0, removed: 0 };
   const jobDeps = { store: s.store, kv: s.kv, eraser: s.eraser, mailer: s.mailer };
-  for (const e of await s.store.activeErasures(new Date(s.now().getTime() - ERASURE_WATCH_DAYS * 86_400_000), 50)) {
+  const watchSince = new Date(s.now().getTime() - ERASURE_WATCH_DAYS * 86_400_000);
+  // Watched long enough: the record itself goes (it holds no personal data, but nothing needs it any more).
+  try {
+    result.removed = await s.store.deleteErasuresCompletedBefore(watchSince);
+  } catch (error) {
+    logError('erasure_cleanup_failed', { message: errorText(error) });
+  }
+  for (const e of await s.store.activeErasures(watchSince, 50)) {
     if (Date.now() > deadline) break;
     try {
       const next = await advanceErasure(jobDeps, e, s.now());

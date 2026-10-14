@@ -482,7 +482,9 @@ describe('delete the account (export-then-erase)', () => {
     expect(s.store.erasures[0]!.rowsAfterCompletion).toBe(1);
     expect(s.mailer.sent).toHaveLength(2);
     s.clock.t += 31 * DAY;
-    expect((await s.cron('/internal/maintenance')).body.erasures.advanced).toBe(0);
+    // The watch is over: nothing to do, and the record itself is removed.
+    expect((await s.cron('/internal/maintenance')).body.erasures).toMatchObject({ advanced: 0, removed: 1 });
+    expect(s.store.erasures).toHaveLength(0);
 
     expect((await s.client().post('/auth/signup', { name: 'Umar', email: 'umar@example.com', password: PASSWORD })).status).toBe(201);
   });

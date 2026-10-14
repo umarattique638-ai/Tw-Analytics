@@ -262,6 +262,11 @@ export class MemoryStore implements ControlStore {
     this.sites = this.sites.filter((s) => !same(s.tenantId, tenantId));
     return clone(gone);
   }
+  async deleteErasuresCompletedBefore(before: Date) {
+    const n = this.erasures.length;
+    this.erasures = this.erasures.filter((e) => !(e.status === 'completed' && e.completedAt && e.completedAt.getTime() < before.getTime()));
+    return n - this.erasures.length;
+  }
   async erasureById(id: ObjectId) {
     return clone(this.erasures.find((e) => same(e._id, id)) ?? null);
   }

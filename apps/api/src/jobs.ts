@@ -26,6 +26,8 @@ export const ERASURE_SETTLE_DAYS = 2;
 export const ERASURE_WATCH_DAYS = 30;
 /** A delete that has not finished yet is sent again after this long (it runs in the background). */
 export const ERASURE_RESEND_HOURS = 6;
+/** Right after a deletion request, counting rows (for the receipt) may take this long before the deletes go out anyway. */
+const COUNT_FIRST_MS = 6_000;
 /**
  * Retention runs in weekly batches: a site's old rows are deleted once some are at least this many days
  * past its retention. A ClickHouse delete rewrites the data parts it touches, so one delete a week (taking
@@ -72,9 +74,17 @@ const union = <T>(a: T[], b: T[]) => [...new Set([...a, ...b])];
  *      "erasure finished" e-mail goes out and the address is removed. A completed one is watched for
  *      ERASURE_WATCH_DAYS (steps 0-2 again, no e-mail).
  * Options: `finish: false` never completes (right after the request); `dataBudgetMs` stops waiting for
- * ClickHouse after that long (the request must answer within Vercel's 30 s).
+ * ClickHouse after that long (the request must answer within Vercel's 30 s); `deleteFirst` (right after the
+ * user asked) sends the deletes for every table at once WITHOUT counting first: counting four tables on a
+ * ClickHouse Cloud service that is waking up from idle could use up the whole budget, and then nothing was
+ * deleted until the nightly run. The nightly run counts, re-sends where rows remain, and verifies.
  */
-export async function advanceErasure(deps: JobDeps, e: ErasureDoc, now: Date, options: { finish?: boolean; dataBudgetMs?: number } = {}): Promise<ErasureDoc> {
+export async function advanceErasure(
+  deps: JobDeps,
+  e: ErasureDoc,
+  now: Date,
+  options: { finish?: boolean; dataBudgetMs?: number; deleteFirst?: boolean } = {},
+): Promise<ErasureDoc> {
   const finish = options.finish ?? true;
   const patch: ErasurePatch = { attempts: e.attempts + 1, updatedAt: now, lastError: null };
   const errors: string[] = [];
@@ -108,6 +118,15 @@ export async function advanceErasure(deps: JobDeps, e: ErasureDoc, now: Date, op
     const eraser = deps.eraser;
     try {
       await within(options.dataBudgetMs, async () => {
+        if (options.deleteFirst) {
+          // The receipt's row count if ClickHouse answers quickly; the deletes go out either way.
+          const counts = await within(COUNT_FIRST_MS, () => eraser.count(siteIds, null)).catch(() => null);
+          if (counts && !e.rowsFound) patch.rowsFound = Object.fromEntries(DATA_TABLES.map((t) => [t, totalOf(counts, t)])) as Record<DataTable, number>;
+          // One retry: the first call can time out while an idle ClickHouse Cloud service wakes up.
+          await eraser.remove(siteIds, null, [...DATA_TABLES]).catch(() => eraser.remove(siteIds, null, [...DATA_TABLES]));
+          patch.dataDeleteSentAt = now;
+          return;
+        }
         const counts = await eraser.count(siteIds, null);
         const left = totalOf(counts);
         if (!e.rowsFound) patch.rowsFound = Object.fromEntries(DATA_TABLES.map((t) => [t, totalOf(counts, t)])) as Record<DataTable, number>;
@@ -115,7 +134,9 @@ export async function advanceErasure(deps: JobDeps, e: ErasureDoc, now: Date, op
           dataClean = true;
           return;
         }
-        const sentLongAgo = !e.dataDeleteSentAt || now.getTime() - e.dataDeleteSentAt.getTime() >= ERASURE_RESEND_HOURS * 3_600_000;
+        // Sites found since the last delete (step 0) have never had one: send now, whatever the time.
+        const newSites = siteIds.length !== e.siteIds.length;
+        const sentLongAgo = newSites || !e.dataDeleteSentAt || now.getTime() - e.dataDeleteSentAt.getTime() >= ERASURE_RESEND_HOURS * 3_600_000;
         if (sentLongAgo) {
           await eraser.remove(siteIds, null, tablesWithRows(counts));
           patch.dataDeleteSentAt = now;

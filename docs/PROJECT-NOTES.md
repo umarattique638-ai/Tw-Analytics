@@ -525,6 +525,14 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      run repeats both until nothing is left, then watches for late rows for a while. It cannot be undone:
      adding the domain again starts a new, empty site. Without TW_CH_PRUNE_PASSWORD the API refuses and
      nothing changes. The activity log keeps a "site.deleted" line saying the data was erased.
+   - Right after the request (site or account) the ClickHouse deletes are sent for all four tables at once,
+     with one retry: counting first (for the receipt) gets at most 6 s. Before, a ClickHouse Cloud service
+     waking from idle used up the request's budget and nothing was deleted until the nightly run.
+   - ClickHouse deletes are background mutations: rows disappear within seconds to minutes
+     (system.mutations shows progress). Sites found later (a racing request) get their delete at once.
+   - Erasure records are removed when their 30-day watch ends (they hold no personal data).
+   - MongoDB `memberships` and `audit_log` of a deleted account are deleted in the same transaction; any
+     left are another workspace's (for example the account signed up again).
 
 ## 16. Lessons from the first attempt (do not repeat)
 

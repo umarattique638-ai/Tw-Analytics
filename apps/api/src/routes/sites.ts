@@ -161,7 +161,7 @@ export function siteRoutes(app: Api, s: Services) {
     );
     if (!erasure) throw new HttpError(404, 'not_found', 'No such site.');
     // First step now (keys removed, ClickHouse deletes sent); the nightly job finishes and checks it.
-    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer: s.mailer }, erasure, at, { finish: false, dataBudgetMs: 8_000 }).catch((error) => {
+    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer: s.mailer }, erasure, at, { finish: false, dataBudgetMs: 20_000, deleteFirst: true }).catch((error) => {
       logError('site_erase_start_failed', { site: site._id, message: errorText(error) });
       return erasure;
     });

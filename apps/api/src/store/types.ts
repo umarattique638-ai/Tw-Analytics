@@ -278,6 +278,8 @@ export interface ControlStore {
   /** Sites still stored for a workspace (a request that raced the deletion); deleted and returned. */
   deleteSitesOf(tenantId: ObjectId): Promise<SiteDoc[]>;
   erasureById(id: ObjectId): Promise<ErasureDoc | null>;
+  /** Removes erasure records completed before `before` (their watch is over); returns how many. */
+  deleteErasuresCompletedBefore(before: Date): Promise<number>;
   updateErasure(id: ObjectId, patch: ErasurePatch): Promise<void>;
 
   close(): Promise<void>;

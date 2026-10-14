@@ -105,7 +105,7 @@ export function accountRoutes(app: Api, s: Services) {
       }
     }
     // Then the first step of the erasure (best effort; the nightly job retries everything).
-    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer }, erasure, at, { finish: false, dataBudgetMs: 5_000 }).catch((error) => {
+    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer }, erasure, at, { finish: false, dataBudgetMs: 20_000, deleteFirst: true }).catch((error) => {
       logError('erasure_start_failed', { message: errorText(error) });
       return erasure;
     });
