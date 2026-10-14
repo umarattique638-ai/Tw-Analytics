@@ -31,7 +31,7 @@ export function useAddSite(onAdded: (site: Site, sync: Sync) => void) {
 
   const { run, busy, error } = useAction(async () => {
     const { site, sync } = await api.addSite(domain, timezone);
-    notify.success(`${site.domain} added`, { description: 'Next: paste the script on your site.' });
+    notify.info(`Setting up ${site.domain}`, { description: 'Paste the script on your site, then verify. It joins your dashboard once every check passes.' });
     onAdded(site, sync);
   }, 'Could not add the site.');
 

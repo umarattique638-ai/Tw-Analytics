@@ -16,7 +16,10 @@ interface Session {
   role: Role;
   /** Retention choices of this deployment (days). */
   retention: Me['retention'];
+  /** Verified sites: the ones the dashboard lists (decision 24). */
   sites: Site[];
+  /** Every site, including those still in setup (not verified yet). */
+  allSites: Site[];
   /** Sites whose changes have not reached Cloudflare yet (shown as a banner, retried by the server). */
   kvIssues: KvIssue[];
   retrySync: () => Promise<void>;
@@ -112,7 +115,8 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
       user,
       role: me.role,
       retention: me.retention,
-      sites,
+      sites: sites.filter((s) => !!s.verifiedAt),
+      allSites: sites,
       kvIssues,
       retrySync: async () => {
         setKvIssues((await api.syncAll()).kvIssues);

@@ -14,7 +14,7 @@ import { useSession } from '../hooks/useSession';
 /** Who changed what, and when (the audit log). */
 export default function ActivityPage() {
   useDocumentTitle('Activity');
-  const { sites } = useSession();
+  const { allSites: sites } = useSession();
   const log = useActivity();
 
   return (

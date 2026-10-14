@@ -277,6 +277,13 @@ describe('② add a site', () => {
     const a = await signedUp(s, 'a@example.com');
     const b = await signedUp(s, 'b@example.com');
     const { site } = (await a.post('/sites', { domain: 'example.com', timezone: 'UTC' })).body;
+    // Not verified yet: adding it again continues its setup (same site, same key, no second site).
+    const resumed = await a.post('/sites', { domain: 'www.example.com', timezone: 'UTC' });
+    expect(resumed.status).toBe(200);
+    expect(resumed.body).toMatchObject({ resumed: true, site: { id: site.id, publicKey: site.publicKey } });
+    expect(s.store.sites).toHaveLength(1);
+    // Verified: the domain is taken.
+    s.store.sites[0]!.verifiedAt = new Date();
     expect((await a.post('/sites', { domain: 'www.example.com', timezone: 'UTC' })).body.error).toBe('domain_taken');
     expect((await b.get(`/sites/${site.id}`)).status).toBe(404);
     expect((await b.del(`/sites/${site.id}`)).status).toBe(404);
@@ -444,6 +451,7 @@ describe('keys: rotation without losing a hit', () => {
     expect(again.id).toBe(site.id);
     expect(again.publicKey).not.toBe(site.publicKey);
     expect(again.timezone).toBe('Europe/London');
+    expect(again.verifiedAt).toBeNull(); // a new key is a new install: verified again from the start
     expect([...s.kv.inner.entries.keys()]).toEqual([`site:${again.publicKey}`]);
   });
 });

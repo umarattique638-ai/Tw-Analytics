@@ -6,7 +6,6 @@ import type { Step } from '../components/onboarding/CheckList';
 const POLL_MS = 3000;
 /** Pause between two steps turning green: quick, but slow enough to follow. */
 const STEP_MS = 380;
-const NOT_CHECKED = 'Not checked: fix the step above first.';
 
 /** The verifier's steps, in the order the server runs them (apps/api/src/verifier/types.ts CHECK_ORDER). */
 export const CHECKS: { id: string; label: string }[] = [
@@ -112,14 +111,18 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
     run(`https://${site.domain}/`);
   }, [site, run]);
 
-  // Reveal the results one by one.
+  /** Index of the step the check stopped at (the first failure), or -1. Nothing after it is shown. */
+  const stoppedAt = result ? result.checks.findIndex((c) => c.status === 'fail') : -1;
+  const lastShown = result ? (stoppedAt >= 0 ? stoppedAt + 1 : result.checks.length) : 0;
+
+  // Reveal the results one by one, up to the step that failed.
   useEffect(() => {
-    if (!result || shown >= result.checks.length) return;
+    if (!result || shown >= lastShown) return;
     const t = setTimeout(() => setShown((n) => n + 1), shown === 0 ? 150 : STEP_MS);
     return () => clearTimeout(t);
-  }, [result, shown]);
+  }, [result, shown, lastShown]);
 
-  const revealed = !!result && shown >= result.checks.length;
+  const revealed = !!result && shown >= lastShown;
   const received = !!status && status.pageviews > 0 && !!status.last;
   const passed = revealed && result!.ok;
   const failed = revealed && !result!.ok;
@@ -133,16 +136,16 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
 
   const allGood = passed && verified;
 
-  const steps: Step[] = CHECKS.map((c, i) => {
+  // A failed check ends the list at the failing step: the steps after it are not shown at all.
+  const steps: Step[] = (failed ? CHECKS.slice(0, stoppedAt + 1) : CHECKS).map((c, i) => {
     const r = result?.checks.find((x) => x.id === c.id);
     if (r && i < shown) return { id: c.id, label: r.label, state: r.status, message: r.message };
     const isNext = (running && !result && i === 0) || (!!result && i === shown);
     return { id: c.id, label: c.label, state: isNext ? 'running' : 'waiting' };
   });
-  steps.push(
-    failed
-      ? { id: 'pageview', label: 'First pageview received', state: 'skip', message: NOT_CHECKED }
-      : passed && received
+  if (!failed)
+    steps.push(
+      passed && received
         ? {
             id: 'pageview',
             label: 'First pageview received',
@@ -155,12 +158,17 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
             state: passed ? 'running' : 'waiting',
             message: passed ? (pollError ?? 'Open your site in a new tab: the first visit shows up here within a minute.') : undefined,
           },
-  );
-  const done = steps.filter((s) => s.state === 'pass' || s.state === 'fail' || s.state === 'skip').length;
+    );
+  /** All steps, the first pageview included. */
+  const total = CHECKS.length + 1;
+  const done = failed ? stoppedAt : steps.filter((s) => s.state === 'pass').length;
 
   return {
     steps,
-    progress: done / steps.length,
+    total,
+    /** Step number (1-based) the check stopped at, or null. */
+    stoppedAt: failed ? stoppedAt + 1 : null,
+    progress: failed ? Math.max(stoppedAt, 0.5) / total : done / total,
     done,
     status,
     url,

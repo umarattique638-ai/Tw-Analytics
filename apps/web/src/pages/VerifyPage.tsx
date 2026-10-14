@@ -4,6 +4,7 @@ import { ExternalLink, PartyPopper, RotateCw } from 'lucide-react';
 import Button from '../components/ui/Button';
 import FormError from '../components/ui/FormError';
 import PageHeader from '../components/ui/PageHeader';
+import CancelSetup from '../components/onboarding/CancelSetup';
 import CheckList from '../components/onboarding/CheckList';
 import VerifyProgress from '../components/onboarding/VerifyProgress';
 import { inputCls, muted } from '../components/ui/styles';
@@ -39,7 +40,13 @@ export default function VerifyPage() {
   if (!current) return <Navigate to="/sites/new" replace />;
 
   const { steps, allGood, failed, passed, running, received, status } = check;
-  const label = allGood ? 'All checks passed' : running ? 'Checking your site…' : failed ? 'Something needs fixing' : `${check.done} of ${steps.length} checks done`;
+  const label = allGood
+    ? 'All checks passed'
+    : running
+      ? 'Checking your site…'
+      : failed
+        ? `Stopped at step ${check.stoppedAt} of ${check.total}: fix it, then check again`
+        : `${check.done} of ${check.total} checks done`;
   const openUrl = safePageUrl(check.url) ?? `https://${current.domain}/`;
 
   return (
@@ -151,6 +158,11 @@ export default function VerifyPage() {
         <Button variant={check.verified ? 'ghost' : 'secondary'} onClick={() => navigate('/install')}>
           Back to the script
         </Button>
+        {!check.verified && (
+          <span className="ml-auto">
+            <CancelSetup site={current} />
+          </span>
+        )}
       </div>
     </>
   );

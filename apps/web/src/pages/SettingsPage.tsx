@@ -7,14 +7,14 @@ import { useSession } from '../hooks/useSession';
 
 export default function SettingsPage() {
   useDocumentTitle('Settings');
-  const { sites, role, retention, upsert, user } = useSession();
+  const { sites, allSites, role, retention, upsert, user } = useSession();
 
   return (
     <div className="grid gap-6">
       <PageHeader title="Settings" description={`Signed in as ${user.email}`} />
       <RetentionPanel sites={sites} choices={retention.choices} canEdit={role !== 'viewer'} onSaved={upsert} />
       <ExportPanel />
-      {role === 'owner' && <DeleteAccountPanel siteCount={sites.length} />}
+      {role === 'owner' && <DeleteAccountPanel siteCount={allSites.length} />}
     </div>
   );
 }

@@ -40,7 +40,7 @@ export default function SiteSwitcher() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[11px] text-slate-400">Site</span>
-          <span className="block truncate text-sm font-medium text-white">{current?.domain ?? 'No site yet'}</span>
+          <span className="block truncate text-sm font-medium text-white">{current?.verifiedAt ? current.domain : sites.length ? 'Choose a site' : 'No site yet'}</span>
         </span>
         <ChevronsUpDown className="size-4 flex-none text-slate-500" aria-hidden="true" />
       </button>

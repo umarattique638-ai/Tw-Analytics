@@ -1,4 +1,5 @@
 import { Code, ShieldCheck } from 'lucide-react';
+import CancelSetup from '../onboarding/CancelSetup';
 import LinkButton from '../ui/LinkButton';
 import { muted } from '../ui/styles';
 import type { Site } from '../../api/client';
@@ -22,6 +23,7 @@ export default function FinishSetup({ site }: { site: Site }) {
           <LinkButton to="/verify" variant="secondary">
             <ShieldCheck className="size-4" aria-hidden="true" /> Verify the install
           </LinkButton>
+          <CancelSetup site={site} />
         </div>
       </div>
     </div>

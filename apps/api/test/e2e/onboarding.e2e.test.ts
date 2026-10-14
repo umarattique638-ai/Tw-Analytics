@@ -147,9 +147,9 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     await page.waitForURL('**/verify');
     // The check starts by itself, against https://<domain>/ (this test shop listens on another port: it fails there)
     await page.locator('[data-check="reach"][data-status="fail"]').waitFor();
-    // The first failure stops the check (decision 24): nothing after it, the pageview included, is checked.
-    await page.locator('[data-check="pageview"][data-status="skip"]').waitFor();
-    expect(await page.locator('[data-check="present"]').getAttribute('data-status')).toBe('skip');
+    // The first failure stops the check (decision 24): the list ends at the failing step.
+    await page.getByText(/Stopped at step 1 of 8/).waitFor();
+    expect(await page.locator('[data-check]').count()).toBe(1);
 
     // ⑤ Active check against the real page: the steps turn green one after the other
     await page.getByLabel('Page to check').fill(`${shop}/`);

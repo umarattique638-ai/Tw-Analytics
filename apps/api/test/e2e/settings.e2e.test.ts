@@ -177,6 +177,8 @@ describe('Phase 3 pages', { timeout: 90_000 }, () => {
     const api = (path: string, body: unknown) => page.request.post(`${base}/api/v1${path}`, { data: body, headers: { 'content-type': 'application/json' } });
     await api('/auth/signup', { name: 'Phone User', email: 'phone@realshop.test', password: PASSWORD });
     await api('/sites', { domain: 'a-very-long-domain-name-for-phones.example.com', timezone: 'Asia/Karachi' });
+    // Settings lists verified sites only (decision 24).
+    store.sites.find((s) => s.domain === 'a-very-long-domain-name-for-phones.example.com')!.verifiedAt = new Date();
     await page.goto(`${base}/settings`);
     await page.getByTestId('retention-list').waitFor();
     // The page scrolls inside <main>: neither the document nor main may be wider than the screen.

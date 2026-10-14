@@ -55,6 +55,8 @@ export function siteRoutes(app: Api, s: Services) {
     const at = now();
 
     const existing = await store.siteByDomain(tenant._id, domain);
+    // Not verified yet: the customer is still setting it up (decision 24). Adding it again continues there.
+    if (existing && existing.status !== 'deleted' && !existing.verifiedAt) return c.json({ site: siteView(existing), sync: { ok: true }, resumed: true });
     if (existing && existing.status !== 'deleted') throw domainTaken(domain);
     const site = existing ? await restoreSite(c, existing, timezone, at) : await insertSite(tenant._id, tenant.region, domain, timezone, at);
 
@@ -75,6 +77,8 @@ export function siteRoutes(app: Api, s: Services) {
       allowedHosts: allowedHostsFor(existing.domain),
       identitySecret: newIdentitySecret(),
       keys: [...revokeAll(existing.keys, at), fresh],
+      // A new key means a new install: the site is verified again from the start (decision 24).
+      verifiedAt: null,
     };
     await kvSync.activateFirst({ ...existing, ...patch } as SiteDoc, [fresh.publicKey]);
     try {

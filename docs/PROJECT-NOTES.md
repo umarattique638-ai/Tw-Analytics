@@ -486,6 +486,11 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    status poll only reports). Until then the dashboard, Events, Suspicious activity and Reports show
    "Finish setting up" and there is no "skip" / "open the dashboard anyway". This replaces decision 20's
    "a tag added by Google Tag Manager passes on the first pageview": the snippet must be in the page source.
+   The check stops at the failing step and the dashboard shows the list only up to it. A site that is not
+   verified is not on the dashboard: the site switcher and Settings list verified sites only (Activity
+   still shows everything that happened). Adding the same domain again while it is unverified continues
+   its setup (no "already one of your sites"); "Remove this site" drops it. Re-adding a deleted domain gets
+   a new key, so it is verified again from the start.
 
 ## 16. Lessons from the first attempt (do not repeat)
 
