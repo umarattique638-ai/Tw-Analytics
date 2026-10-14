@@ -13,16 +13,15 @@ import { useSession } from '../hooks/useSession';
 export default function AddSitePage() {
   useDocumentTitle('Add your site');
   const navigate = useNavigate();
-  const { upsert, select } = useSession();
-  const form = useAddSite((site, sync) => {
-    upsert(site);
-    select(site.id);
-    navigate('/install', { state: { sync } });
+  const { setSetup } = useSession();
+  const form = useAddSite((setup) => {
+    setSetup(setup);
+    navigate('/install');
   });
 
   return (
     <>
-      <PageHeader compact title="Add your site" description="Enter your domain. Nothing changes on your DNS or hosting." />
+      <PageHeader compact title="Add your site" description="Enter your domain. Nothing changes on your DNS or hosting, and nothing is saved until your install is verified." />
       <form
         className="grid w-full gap-6"
         onSubmit={(e) => {

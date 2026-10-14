@@ -66,7 +66,11 @@ export interface Stack {
   /** Everything queued so far, no waiting (events + drop messages with their site). */
   snapshot(): Promise<{ events: Hit[]; drops: { siteId: number; reason: string; detail?: string }[] }>;
   /** The collector's SITE_CONFIG namespace: the control-plane API writes here in the onboarding e2e. */
-  siteConfig: { put(name: string, value: string): Promise<void>; delete(name: string): Promise<void> };
+  siteConfig: {
+    put(name: string, value: string, options?: { ttlSeconds?: number }): Promise<void>;
+    delete(name: string): Promise<void>;
+    get(name: string): Promise<string | null>;
+  };
   clear(): Promise<void>;
   close(): Promise<void>;
 }
@@ -184,8 +188,9 @@ export async function startStack(): Promise<Stack> {
       };
     },
     siteConfig: {
-      put: async (name, value) => void (await kv.put(name, value)),
+      put: async (name, value, options) => void (await kv.put(name, value, options?.ttlSeconds ? { expirationTtl: options.ttlSeconds } : undefined)),
       delete: async (name) => void (await kv.delete(name)),
+      get: async (name) => kv.get(name),
     },
     async clear() {
       const sink = await mf.getKVNamespace('SINK', 'sink');

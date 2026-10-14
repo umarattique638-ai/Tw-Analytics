@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import FinishSetup from '../components/dashboard/FinishSetup';
 import NoSiteYet from '../components/dashboard/NoSiteYet';
 import NewReport from '../components/reports/NewReport';
 import SavedReports from '../components/reports/SavedReports';
@@ -14,7 +13,6 @@ export default function ReportsPage() {
   useDocumentTitle('Reports');
   const { current } = useSession();
   if (!current) return <NoSiteYet />;
-  if (!current.verifiedAt) return <FinishSetup site={current} />;
   return <Reports site={current} />;
 }
 

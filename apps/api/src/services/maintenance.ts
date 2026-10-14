@@ -1,6 +1,7 @@
 import { errorText, logError, logInfo } from '../http/errors';
 import { ERASURE_WATCH_DAYS, advanceErasure, pruneRetention } from '../jobs';
-import { expectedEntries, kvProblem } from '../kv';
+import { DATA_TABLES } from '../eraser';
+import { deleteKeys, expectedEntries, kvProblem } from '../kv';
 import { count, dayFmt } from '../views';
 import type { Services } from './types';
 
@@ -58,15 +59,37 @@ async function pruneOldData(s: Services, deadline: number) {
 }
 
 /**
+ * Sites saved before decision 25 that were never verified (a typo, an abandoned setup): removed for good,
+ * with their keys and any rows they collected. Since decision 25 an unverified site is never stored.
+ */
+async function removeUnverified(s: Services, deadline: number) {
+  const result = { removed: 0, failed: 0 };
+  for (const site of await s.store.allSites()) {
+    if (Date.now() > deadline) break;
+    if (site.verifiedAt) continue;
+    try {
+      await deleteKeys(s.kv, site.keys.map((k) => k.publicKey));
+      if (s.eraser) await s.eraser.remove([site._id], null, [...DATA_TABLES]);
+      if (await s.store.removeSite(site._id)) result.removed += 1;
+    } catch (error) {
+      result.failed += 1;
+      logError('unverified_remove_failed', { site: site._id, message: errorText(error) });
+    }
+  }
+  return result;
+}
+
+/**
  * The nightly maintenance run (Vercel Cron, CRON_SECRET): account erasures first, then retention.
  * Retention is off (and reported) when TW_CH_PRUNE_PASSWORD is not set.
  */
 export async function runMaintenance(s: Services) {
   const deadline = Date.now() + MAINTENANCE_BUDGET_MS;
   const erasures = await advanceErasures(s, deadline);
+  const unverified = await removeUnverified(s, deadline);
   const retention = await pruneOldData(s, deadline);
-  logInfo('maintenance', { erasures, retention });
-  return { erasures, retention };
+  logInfo('maintenance', { erasures, unverified, retention });
+  return { erasures, unverified, retention };
 }
 
 /**

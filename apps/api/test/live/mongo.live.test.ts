@@ -7,6 +7,7 @@ import { createApp, SESSION_COOKIE } from '../../src/app';
 import { defaultConfig } from '../../src/config';
 import { MemoryKv } from '../../src/kv';
 import { MongoStore } from '../../src/store/mongo';
+import { addSite as addSiteVia, fakeVerifier } from '../helpers/install';
 
 /**
  * Stage 5 on the REAL MongoDB (the owner's local replica set rs0): the same API flow as the unit
@@ -66,8 +67,10 @@ describe.skipIf(!URL_)('control plane on the real MongoDB', () => {
       kv,
       analytics: { recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }) },
       config: defaultConfig({ collectorUrl: 'https://collector.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 } }),
+      verifier: fakeVerifier(kv.entries, 'https://collector.test'),
     });
   });
+  const addSite = (domain: string, timezone: string) => addSiteVia((p, j) => call('POST', p, j), kv.entries, domain, timezone);
 
   it('the server is a replica set (transactions)', async () => {
     const hello = await client.db('admin').command({ hello: 1 });
@@ -91,8 +94,10 @@ describe.skipIf(!URL_)('control plane on the real MongoDB', () => {
     expect(await db.collection('tenants').countDocuments()).toBe(1); // no orphan tenant
   });
 
-  it('a site: id from the counter above the reserved range, validators pass, KV written', async () => {
-    const r = await call('POST', '/sites', { domain: 'live-shop.example', timezone: 'Asia/Karachi' });
+  it('a site: nothing stored while setting up; id from the counter once verified, validators pass, KV written', async () => {
+    await call('POST', '/setup', { domain: 'live-shop.example', timezone: 'Asia/Karachi' });
+    expect(await db.collection('sites').countDocuments()).toBe(0);
+    const r = await addSite('live-shop.example', 'Asia/Karachi');
     expect(r.status).toBe(201);
     expect(r.body.site.id).toBe(101);
     const doc = await db.collection('sites').findOne({ _id: 101 as never });
@@ -112,9 +117,9 @@ describe.skipIf(!URL_)('control plane on the real MongoDB', () => {
 
   it('delete + re-add restores the same id; duplicate domain is refused', async () => {
     const site = (await call('GET', '/sites')).body.sites[0];
-    expect((await call('POST', '/sites', { domain: 'www.live-shop.example', timezone: 'UTC' })).body.error).toBe('domain_taken');
+    expect((await call('POST', '/setup', { domain: 'www.live-shop.example', timezone: 'UTC' })).body.error).toBe('domain_taken');
     expect((await call('DELETE', `/sites/${site.id}`, {})).status).toBe(200);
-    const again = await call('POST', '/sites', { domain: 'live-shop.example', timezone: 'UTC' });
+    const again = await addSite('live-shop.example', 'UTC');
     expect(again.body.site.id).toBe(site.id);
   });
 

@@ -7,7 +7,7 @@
  * This file only wires the app together. Where things are:
  *   http/       errors, rate limiters, request helpers, middleware (CSRF, session, cron)
  *   services/   shared logic: sessions, KV sync, activity log, sites, reports, account export, nightly jobs
- *   routes/     one file per area of the API (auth, sites, keys, stats, reports, audit, account, internal)
+ *   routes/     one file per area of the API (auth, setup, sites, keys, stats, reports, audit, account, internal)
  *   views.ts    what clients see of stored documents
  */
 import { Hono } from 'hono';
@@ -20,6 +20,7 @@ import { internalRoutes } from './routes/internal';
 import { keyRoutes } from './routes/keys';
 import { publicRoutes } from './routes/public';
 import { reportRoutes } from './routes/reports';
+import { setupRoutes } from './routes/setup';
 import { siteRoutes } from './routes/sites';
 import { statsRoutes } from './routes/stats';
 import { createServices } from './services';
@@ -29,7 +30,7 @@ export type { Deps } from './services';
 export { AUDIT_KEEP_DAYS, DELETE_CONFIRMATION, EXPORT_KEEP_DAYS, EXPORT_MAX, PASSIVE_WINDOW_MINUTES, RESET_MINUTES, SESSION_COOKIE } from './constants';
 
 /** Paths that need a signed-in user (the session middleware runs before their routes). */
-const SIGNED_IN = ['/auth/logout', '/me', '/sites', '/sites/*', '/audit', '/account/*'];
+const SIGNED_IN = ['/auth/logout', '/me', '/setup', '/setup/*', '/sites', '/sites/*', '/audit', '/account/*'];
 
 export function createApp(deps: Deps) {
   const services = createServices(deps);
@@ -48,6 +49,7 @@ export function createApp(deps: Deps) {
   for (const path of SIGNED_IN) app.use(path, session);
   logoutRoute(app, services);
   accountRoutes(app, services);
+  setupRoutes(app, services);
   siteRoutes(app, services);
   keyRoutes(app, services);
   statsRoutes(app, services);

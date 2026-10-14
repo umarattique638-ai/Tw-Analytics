@@ -1,27 +1,24 @@
 import { RETENTION_CHOICES } from '../config';
-import { MAX_ALLOWED_HOSTS, PASSIVE_WINDOW_MINUTES } from '../constants';
+import { MAX_ALLOWED_HOSTS } from '../constants';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../domain';
-import { HttpError, analyticsUnavailable, errorText, logError } from '../http/errors';
-import { deleteKeys } from '../kv';
-import { body, clientIp, str } from '../http/request';
+import { HttpError } from '../http/errors';
+import { body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { newIdentitySecret, newKeyId, newPublicKey } from '../secrets';
 import type { Services } from '../services';
 import { snippetsFor } from '../snippets';
-import { DuplicateError } from '../store/types';
 import type { KeyDoc, SiteDoc, SitePatch } from '../store/types';
-import { VerifyInputError, runActiveCheck } from '../verifier';
-import { shortKey, siteView } from '../views';
+import { siteView } from '../views';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
 const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a timezone from the list.');
-const domainTaken = (domain: string) => new HttpError(409, 'domain_taken', `${domain} is already one of your sites.`);
 const revokeAll = (keys: KeyDoc[], at: Date) => keys.map((k) => ({ ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at }));
 
-/** The workspace's sites: list, add (or restore), change, delete, install status and the install check. */
+/**
+ * The workspace's sites: list, change, delete. Every stored site is verified: adding one is routes/setup.ts,
+ * which saves it only after every install check passed (decision 25).
+ */
 export function siteRoutes(app: Api, s: Services) {
-  const { store, config, sites, kvSync, audit, limits, now, deps } = s;
-  const newKey = (at: Date): KeyDoc => ({ id: newKeyId(), publicKey: newPublicKey(), createdAt: at, revokedAt: null, status: 'active' });
+  const { store, config, sites, kvSync, audit, now } = s;
 
   app.get('/sites', async (c) => {
     const tenantId = c.get('tenant')._id;
@@ -44,78 +41,6 @@ export function siteRoutes(app: Api, s: Services) {
     if (!domain) throw invalidDomain();
     return c.json({ domain, allowedHosts: allowedHostsFor(domain) });
   });
-
-  app.post('/sites', async (c) => {
-    const b = await body(c);
-    const domain = normalizeDomain(str(b.domain));
-    if (!domain) throw invalidDomain();
-    const timezone = canonicalTimezone(str(b.timezone));
-    if (!timezone) throw invalidTimezone();
-    const tenant = c.get('tenant');
-    const at = now();
-
-    const existing = await store.siteByDomain(tenant._id, domain);
-    // Not verified yet: the customer is still setting it up (decision 24). Adding it again continues there.
-    if (existing && existing.status !== 'deleted' && !existing.verifiedAt) return c.json({ site: siteView(existing), sync: { ok: true }, resumed: true });
-    if (existing && existing.status !== 'deleted') throw domainTaken(domain);
-    const site = existing ? await restoreSite(c, existing, timezone, at) : await insertSite(tenant._id, tenant.region, domain, timezone, at);
-
-    if (existing) await audit.record(c, 'site.restored', site, `Added ${domain} again (its earlier data is back; new key ${shortKey(site.keys[site.keys.length - 1]!.publicKey)})`);
-    else await audit.record(c, 'site.created', site, `Added ${domain} (timezone ${timezone})`);
-    return c.json({ site: siteView(site), sync: { ok: true } }, 201);
-  });
-
-  /**
-   * Re-adding a deleted domain restores it: same site id, so its history comes back. Fresh key and
-   * secret, because the old ones were revoked on delete.
-   */
-  const restoreSite = async (c: Ctx, existing: SiteDoc, timezone: string, at: Date) => {
-    const fresh = newKey(at);
-    const patch: SitePatch = {
-      status: 'active',
-      timezone,
-      allowedHosts: allowedHostsFor(existing.domain),
-      identitySecret: newIdentitySecret(),
-      keys: [...revokeAll(existing.keys, at), fresh],
-      // A new key means a new install: the site is verified again from the start (decision 24).
-      verifiedAt: null,
-    };
-    await kvSync.activateFirst({ ...existing, ...patch } as SiteDoc, [fresh.publicKey]);
-    try {
-      return await sites.patch(c, existing, patch);
-    } catch (error) {
-      await kvSync.rollbackGrant(existing, [fresh.publicKey]);
-      throw error;
-    }
-  };
-
-  /** A new site: KV first (grant), then MongoDB; if saving fails, KV forgets the key again. */
-  const insertSite = async (tenantId: SiteDoc['tenantId'], region: SiteDoc['region'], domain: string, timezone: string, at: Date) => {
-    const site: SiteDoc = {
-      _id: await store.nextSiteId(config.siteIdFloor),
-      tenantId,
-      domain,
-      timezone,
-      allowedHosts: allowedHostsFor(domain),
-      retentionDays: config.retentionDays,
-      status: 'active',
-      region,
-      verifiedAt: null,
-      identitySecret: newIdentitySecret(),
-      keys: [newKey(at)],
-      createdAt: at,
-      updatedAt: at,
-    };
-    await kvSync.activateFirst(site);
-    try {
-      await store.insertSite(site);
-    } catch (error) {
-      await deleteKeys(s.kv, site.keys.map((k) => k.publicKey));
-      if (error instanceof DuplicateError && error.field === 'domain') throw domainTaken(domain);
-      throw error;
-    }
-    return site;
-  };
 
   app.get('/sites/:id', async (c) => {
     const site = await sites.load(c);
@@ -199,50 +124,6 @@ export function siteRoutes(app: Api, s: Services) {
   app.post('/sites/:id/sync', async (c) => {
     const site = await sites.load(c);
     return c.json({ sync: await kvSync.sync(site) });
-  });
-
-  /** Recent activity of the site, or 503 when ClickHouse cannot be read. */
-  const recentActivity = async (siteId: number) => {
-    try {
-      return await deps.analytics.recent(siteId, PASSIVE_WINDOW_MINUTES);
-    } catch (error) {
-      logError('analytics_failed', { message: errorText(error) });
-      throw analyticsUnavailable();
-    }
-  };
-
-  /**
-   * The "waiting for your first pageview" poll (BUILD-ORDER ④/⑤). It only reports: a pageview alone never
-   * verifies a site (decision 24), the install check below does.
-   */
-  app.get('/sites/:id/status', async (c) => {
-    const site = await sites.load(c);
-    const activity = await recentActivity(site._id);
-    return c.json({ windowMinutes: PASSIVE_WINDOW_MINUTES, verifiedAt: site.verifiedAt?.toISOString() ?? null, ...activity });
-  });
-
-  /**
-   * Active check: fetch the customer's page and say exactly what is wrong (it stops at the first failing
-   * step). The site becomes VERIFIED only when every step passes AND a pageview has arrived; until then the
-   * dashboard keeps the site in setup (decision 24).
-   */
-  app.post('/sites/:id/verify', async (c) => {
-    let site = await sites.load(c);
-    if (!limits.verify.take(`t:${c.get('tenant')._id.toHexString()}`, Date.now()) || !limits.verifyIp.take(`ip:${clientIp(c)}`, Date.now())) {
-      throw new HttpError(429, 'rate_limited', 'Too many checks. Wait a few minutes and try again.');
-    }
-    const b = await body(c);
-    let result;
-    try {
-      result = await runActiveCheck(site, str(b.url) || undefined, { allowPrivate: config.verifierAllowPrivate, ...deps.verifier });
-    } catch (error) {
-      if (error instanceof VerifyInputError) throw new HttpError(400, 'invalid_url', error.message);
-      throw error;
-    }
-    if (result.ok && !site.verifiedAt && (await recentActivity(site._id)).pageviews > 0) {
-      site = (await store.updateSite(c.get('tenant')._id, site._id, site.updatedAt, { verifiedAt: now() }, now())) ?? site;
-    }
-    return c.json({ ...result, verifiedAt: site.verifiedAt?.toISOString() ?? null });
   });
 
   /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */

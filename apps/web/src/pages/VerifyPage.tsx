@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { ExternalLink, PartyPopper, RotateCw } from 'lucide-react';
 import Button from '../components/ui/Button';
@@ -16,30 +16,32 @@ import { useSession } from '../hooks/useSession';
 
 const REDIRECT_SECONDS = 3;
 
-/** Why the collector dropped hits from this site, in words (only the reasons that can happen while installing). */
-const DROP_TEXT: Record<string, string> = {
-  hostname: "Hits arrive from a host that is not one of this site's hosts",
-  bot: 'Hits look like a bot and are filtered',
-  verification_agent: 'Install checks (never counted)',
-  gpc: 'Visitors with Global Privacy Control on (respected, not counted)',
-  identity_unavailable: 'Hits could not be attributed',
-  referrer_spam: 'Hits from referrer-spam domains (filtered)',
-  consumer_invalid: 'Hits that could not be read',
-};
-
-/** Setup step 3: the server checks the page step by step; the site is verified when all pass and a first pageview arrived. */
+/**
+ * Setup step 3: the server checks the page step by step. Only when all pass and a first pageview arrived is
+ * the site saved (decision 25); then it joins the dashboard.
+ */
 export default function VerifyPage() {
   useDocumentTitle('Check the install');
   const navigate = useNavigate();
-  const { current, upsert } = useSession();
-  const check = useInstallCheck(current, upsert);
+  const { setup, setSetup, upsert, select } = useSession();
+  // Kept after the site is saved (the setup is gone then), so the success message can stay on screen.
+  const [held, setHeld] = useState(setup);
+  useEffect(() => {
+    if (setup) setHeld(setup);
+  }, [setup]);
+  const check = useInstallCheck(held, (site) => {
+    upsert(site);
+    select(site.id);
+    setSetup(null);
+  });
   const [stay, setStay] = useState(false);
   const [otherPage, setOtherPage] = useState(false);
   const left = useCountdown(REDIRECT_SECONDS, check.allGood && !stay, () => navigate('/dashboard', { replace: true }));
 
-  if (!current) return <Navigate to="/sites/new" replace />;
+  if (!held) return <Navigate to="/sites/new" replace />;
+  const current = held;
 
-  const { steps, allGood, failed, passed, running, received, status } = check;
+  const { steps, allGood, failed, passed, running, received } = check;
   const label = allGood
     ? 'All checks passed'
     : running
@@ -110,20 +112,6 @@ export default function VerifyPage() {
         </div>
       )}
 
-      {status && status.drops.length > 0 && (
-        <ul className="mt-4 grid gap-2">
-          {status.drops.map((d) => (
-            <li key={d.reason} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200">
-              <b>
-                {d.hits} hit{d.hits === 1 ? '' : 's'} dropped:
-              </b>{' '}
-              {DROP_TEXT[d.reason] ?? d.reason}
-              {d.detail ? <span className="font-mono"> ({d.detail})</span> : null}. Accepted hosts: {current.allowedHosts.join(', ')}.
-            </li>
-          ))}
-        </ul>
-      )}
-
       {(failed || otherPage || check.checkError) && (
         <form
           onSubmit={(e) => {
@@ -144,7 +132,7 @@ export default function VerifyPage() {
 
       {!allGood && (
         <p className={`mt-4 text-[13px] leading-relaxed ${muted}`}>
-          Your dashboard opens when every step is green and the first visit has arrived. Fix the first red step, publish the change, then check again.{' '}
+          Nothing is saved until every step is green and the first visit has arrived; then your site joins the dashboard. Fix the first red step, publish the change, then check again.{' '}
           {!otherPage && !failed && (
             <button type="button" onClick={() => setOtherPage(true)} className={`${textLinkCls} !font-medium`}>
               Check a different page
@@ -155,12 +143,14 @@ export default function VerifyPage() {
 
       <div className="mt-6 flex flex-wrap gap-2.5 border-t border-slate-100 pt-5 dark:border-slate-800">
         {check.verified && <Button onClick={() => navigate('/dashboard')}>Go to dashboard</Button>}
-        <Button variant={check.verified ? 'ghost' : 'secondary'} onClick={() => navigate('/install')}>
-          Back to the script
-        </Button>
+        {!check.verified && (
+          <Button variant="secondary" onClick={() => navigate('/install')}>
+            Back to the script
+          </Button>
+        )}
         {!check.verified && (
           <span className="ml-auto">
-            <CancelSetup site={current} />
+            <CancelSetup domain={current.domain} />
           </span>
         )}
       </div>

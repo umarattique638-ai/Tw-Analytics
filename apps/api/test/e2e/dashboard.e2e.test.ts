@@ -14,6 +14,7 @@ import { defaultConfig } from '../../src/config';
 import { MemoryKv } from '../../src/kv';
 import type { DropsReport, EventsReport, Live, Overview, Range, StatsReader } from '../../src/stats';
 import { MemoryStore } from '../../src/store/memory';
+import { fakeVerifier, markSeen } from '../helpers/install';
 
 /**
  * Stage 6 UI: every number on the dashboard pages is what the Query API returned (the SQL itself is
@@ -74,6 +75,7 @@ beforeAll(async () => {
     analytics: { recent: async () => ({ events: 1, pageviews: 1, last: null, drops: [] }) },
     stats,
     config: defaultConfig({ collectorUrl: 'https://collector.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 } }),
+    verifier: fakeVerifier(kv.entries, 'https://collector.test'),
   });
   const server = new Hono();
   server.route('/', app);
@@ -88,8 +90,13 @@ beforeAll(async () => {
     app.request(`${base}/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json', host: new URL(base).host, cookie }, body: JSON.stringify(body) });
   const signup = await req('/auth/signup', { name: 'Umar Attique', email: 'umar@realshop.test', password: 'correct horse battery' });
   const cookie = signup.headers.get('set-cookie')!.split(';')[0]!;
-  await req('/sites', { domain: 'realshop.test', timezone: 'Asia/Karachi' }, cookie);
-  store.sites[0]!.verifiedAt = new Date();
+  // A verified site, the way the dashboard makes one (decision 25): setup, first pageview, check.
+  const addSite = async (domain: string, timezone: string) => {
+    const { setup } = (await (await req('/setup', { domain, timezone }, cookie)).json()) as { setup: { publicKey: string } };
+    markSeen(kv.entries, setup.publicKey);
+    await req('/setup/verify', {}, cookie);
+  };
+  await addSite('realshop.test', 'Asia/Karachi');
 
   browser = await chromium.launch({ executablePath: process.env.TW_CHROME_PATH || undefined });
 }, 120_000);

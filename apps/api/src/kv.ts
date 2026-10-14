@@ -6,8 +6,13 @@ import type { SiteDoc } from './store/types';
  * reads one KV entry per site key. MongoDB is the source of truth, KV is a projection of it written by
  * this API after every change, and `pnpm --filter @tailwatch/api resync` rebuilds it from MongoDB.
  */
+export interface PutOptions {
+  /** The entry deletes itself after this many seconds (Cloudflare minimum: 60). */
+  ttlSeconds?: number;
+}
+
 export interface SiteConfigSink {
-  put(name: string, value: string): Promise<void>;
+  put(name: string, value: string, options?: PutOptions): Promise<void>;
   delete(name: string): Promise<void>;
   /** Current value, or null when absent. Optional: used by the reconciler to write only what differs. */
   get?(name: string): Promise<string | null>;
@@ -103,8 +108,9 @@ export class CloudflareKv implements SiteConfigSink {
     if (!res.ok) throw new Error(`Cloudflare KV GET ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.text();
   }
-  private async call(method: 'PUT' | 'DELETE', name: string, body?: string) {
-    const res = await this.fetchImpl(this.url(name), {
+  private async call(method: 'PUT' | 'DELETE', name: string, body?: string, ttlSeconds?: number) {
+    const ttl = ttlSeconds ? `?expiration_ttl=${Math.max(60, Math.round(ttlSeconds))}` : '';
+    const res = await this.fetchImpl(this.url(name) + ttl, {
       method,
       headers: { authorization: `Bearer ${this.token}`, ...(body === undefined ? {} : { 'content-type': 'text/plain' }) },
       body,
@@ -116,8 +122,8 @@ export class CloudflareKv implements SiteConfigSink {
       throw new Error(`Cloudflare KV ${method} ${res.status}: ${text}`);
     }
   }
-  put(name: string, value: string) {
-    return this.call('PUT', name, value);
+  put(name: string, value: string, options?: PutOptions) {
+    return this.call('PUT', name, value, options?.ttlSeconds);
   }
   delete(name: string) {
     return this.call('DELETE', name);
@@ -136,11 +142,16 @@ export class UnconfiguredKv implements SiteConfigSink {
 
 export class MemoryKv implements SiteConfigSink {
   readonly entries = new Map<string, string>();
-  async put(name: string, value: string) {
+  /** Seconds each entry was given to live (tests check it); entries never actually expire here. */
+  readonly ttls = new Map<string, number>();
+  async put(name: string, value: string, options?: PutOptions) {
     this.entries.set(name, value);
+    if (options?.ttlSeconds) this.ttls.set(name, options.ttlSeconds);
+    else this.ttls.delete(name);
   }
   async delete(name: string) {
     this.entries.delete(name);
+    this.ttls.delete(name);
   }
   async get(name: string) {
     return this.entries.get(name) ?? null;

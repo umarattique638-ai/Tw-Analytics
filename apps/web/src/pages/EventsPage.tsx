@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, Code, Search, Sparkles, Target, X, Zap } from 'lucide-react';
 import KpiCard from '../components/dashboard/KpiCard';
-import FinishSetup from '../components/dashboard/FinishSetup';
 import NoSiteYet from '../components/dashboard/NoSiteYet';
 import RangeSelect, { rangeLong } from '../components/dashboard/RangeSelect';
 import EventsTable from '../components/events/EventsTable';
@@ -30,7 +29,6 @@ export default function EventsPage() {
   useDocumentTitle('Events');
   const { current } = useSession();
   if (!current) return <NoSiteYet />;
-  if (!current.verifiedAt) return <FinishSetup site={current} />;
   return <Events site={current} />;
 }
 

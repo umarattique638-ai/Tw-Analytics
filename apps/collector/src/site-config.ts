@@ -16,7 +16,8 @@ function isSiteConfig(value: unknown): value is SiteConfig {
     v.allowedHosts.every((h) => typeof h === 'string') &&
     typeof v.live === 'boolean' &&
     (v.region === 'in' || v.region === 'in-eu') &&
-    (v.identitySecret === undefined || typeof v.identitySecret === 'string')
+    (v.identitySecret === undefined || typeof v.identitySecret === 'string') &&
+    (v.setup === undefined || typeof v.setup === 'boolean')
   );
 }
 

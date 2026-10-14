@@ -16,6 +16,7 @@ import { MemoryKv } from '../../src/kv';
 import { MemoryMailer } from '../../src/mail';
 import type { StatsReader } from '../../src/stats';
 import { MemoryStore } from '../../src/store/memory';
+import { fakeVerifier, markSeen } from '../helpers/install';
 
 /**
  * Phase 3 in the browser: the Activity page, retention in Settings, "Download all data" and deleting the
@@ -55,6 +56,7 @@ beforeAll(async () => {
     stats,
     analytics: { recent: async () => ({ events: 1, pageviews: 1, last: null, drops: [] }) },
     config: defaultConfig({ collectorUrl: 'https://collector.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 } }),
+    verifier: fakeVerifier(kv.entries, 'https://collector.test'),
   });
   const server = new Hono();
   server.route('/', app);
@@ -68,9 +70,14 @@ beforeAll(async () => {
     app.request(`${base}/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json', host: new URL(base).host, cookie }, body: JSON.stringify(body) });
   const signup = await req('/auth/signup', { name: 'Umar Attique', email: 'umar@realshop.test', password: PASSWORD });
   const cookie = signup.headers.get('set-cookie')!.split(';')[0]!;
-  await req('/sites', { domain: 'realshop.test', timezone: 'Asia/Karachi' }, cookie);
-  await req('/sites', { domain: 'blog.example.org', timezone: 'Europe/London' }, cookie);
-  store.sites[0]!.verifiedAt = new Date();
+  // A verified site, the way the dashboard makes one (decision 25): setup, first pageview, check.
+  const addSite = async (domain: string, timezone: string) => {
+    const { setup } = (await (await req('/setup', { domain, timezone }, cookie)).json()) as { setup: { publicKey: string } };
+    markSeen(kv.entries, setup.publicKey);
+    await req('/setup/verify', {}, cookie);
+  };
+  await addSite('realshop.test', 'Asia/Karachi');
+  await addSite('blog.example.org', 'Europe/London');
   eraser.rows.push({ table: 'events', site: store.sites[0]!._id, at: new Date() });
 
   browser = await chromium.launch({ executablePath: process.env.TW_CHROME_PATH || undefined });
@@ -176,9 +183,9 @@ describe('Phase 3 pages', { timeout: 90_000 }, () => {
     await page.getByLabel('Full name').fill('Phone User').catch(() => undefined);
     const api = (path: string, body: unknown) => page.request.post(`${base}/api/v1${path}`, { data: body, headers: { 'content-type': 'application/json' } });
     await api('/auth/signup', { name: 'Phone User', email: 'phone@realshop.test', password: PASSWORD });
-    await api('/sites', { domain: 'a-very-long-domain-name-for-phones.example.com', timezone: 'Asia/Karachi' });
-    // Settings lists verified sites only (decision 24).
-    store.sites.find((s) => s.domain === 'a-very-long-domain-name-for-phones.example.com')!.verifiedAt = new Date();
+    const started = (await (await api('/setup', { domain: 'a-very-long-domain-name-for-phones.example.com', timezone: 'Asia/Karachi' })).json()) as { setup: { publicKey: string } };
+    markSeen(kv.entries, started.setup.publicKey);
+    await api('/setup/verify', {});
     await page.goto(`${base}/settings`);
     await page.getByTestId('retention-list').waitFor();
     // The page scrolls inside <main>: neither the document nor main may be wider than the screen.

@@ -12,6 +12,7 @@ import type { ReportsService } from './reports';
 import type { SessionService } from './session';
 import type { SiteService } from './sites';
 import type { KvSyncService } from './kv-sync';
+import type { SetupService } from './setup';
 
 /** What createApp needs from the outside world (real services in production, fakes in tests). */
 export interface Deps {
@@ -42,6 +43,7 @@ export interface Services {
   session: SessionService;
   sites: SiteService;
   kvSync: KvSyncService;
+  setup: SetupService;
   audit: AuditLog;
   reports: ReportsService;
 }

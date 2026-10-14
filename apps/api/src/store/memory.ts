@@ -240,6 +240,11 @@ export class MemoryStore implements ControlStore {
         .slice(0, limit),
     );
   }
+  async removeSite(id: number) {
+    const before = this.sites.length;
+    this.sites = this.sites.filter((s) => s._id !== id);
+    return this.sites.length < before;
+  }
   async deleteSitesOf(tenantId: ObjectId) {
     const gone = this.sites.filter((s) => same(s.tenantId, tenantId));
     this.sites = this.sites.filter((s) => !same(s.tenantId, tenantId));

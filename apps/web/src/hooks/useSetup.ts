@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { Site, Snippet, Sync } from '../api/client';
+import type { Setup, Site, Snippet } from '../api/client';
 import { timezoneOptions } from '../lib/timezones';
 import { useAction } from './useAction';
 import { useDebouncedValue } from './useDebouncedValue';
@@ -8,9 +8,11 @@ import { notify } from '../lib/notify';
 
 /**
  * Step 1, "Add your site": the domain, the timezone, and the hosts the API will accept for that domain
- * (asked from the API while typing: the rule lives there).
+ * (asked from the API while typing: the rule lives there). Submitting starts a SETUP, not a site: nothing is
+ * stored until every check passed and the first pageview arrived (decision 25). A domain where nothing
+ * answers is refused right here.
  */
-export function useAddSite(onAdded: (site: Site, sync: Sync) => void) {
+export function useAddSite(onStarted: (setup: Setup) => void) {
   const zones = useMemo(timezoneOptions, []);
   const [domain, setDomain] = useState('');
   const [timezone, setTimezone] = useState(zones.local);
@@ -30,19 +32,20 @@ export function useAddSite(onAdded: (site: Site, sync: Sync) => void) {
   }, [typed]);
 
   const { run, busy, error } = useAction(async () => {
-    const { site, sync } = await api.addSite(domain, timezone);
-    notify.info(`Setting up ${site.domain}`, { description: 'Paste the script on your site, then verify. It joins your dashboard once every check passes.' });
-    onAdded(site, sync);
+    const { setup, resumed } = await api.startSetup(domain, timezone);
+    notify.info(resumed ? `Continuing with ${setup.domain}` : `Setting up ${setup.domain}`, {
+      description: 'Nothing is saved yet. Paste the script on your site and verify: it is saved once every check passes.',
+    });
+    onStarted(setup);
   }, 'Could not add the site.');
 
   return { zones, domain, setDomain, timezone, setTimezone, hosts, submit: run, busy, error };
 }
 
-/** Step 2, "Install": the snippets the API generated for this site's key, and "retry activation". */
-export function useSnippets(site: Site | null, initialSync?: Sync) {
+/** The snippets of a saved site (the custom-event code on the Events page). */
+export function useSnippets(site: Site | null) {
   const [snippets, setSnippets] = useState<Snippet[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sync, setSync] = useState<Sync | undefined>(initialSync);
   const siteId = site?.id;
 
   useEffect(() => {
@@ -58,21 +61,10 @@ export function useSnippets(site: Site | null, initialSync?: Sync) {
     };
   }, [siteId]);
 
-  const retryActivation = useCallback(async () => {
-    if (!siteId) return;
-    try {
-      setSync((await api.sync(siteId)).sync);
-    } catch (e) {
-      setSync({ ok: false, message: e instanceof Error ? e.message : 'Retry failed.' });
-    }
-  }, [siteId]);
-
   return {
     tag: snippets?.find((s) => s.group === 'script-tag') ?? null,
     events: snippets?.find((s) => s.group === 'custom-event') ?? null,
     loading: !snippets && !error,
     error,
-    sync,
-    retryActivation,
   };
 }

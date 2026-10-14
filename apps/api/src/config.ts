@@ -20,6 +20,11 @@ export interface ApiConfig {
   /** Tests / local development only: the active verifier may fetch private addresses. */
   verifierAllowPrivate: boolean;
   /**
+   * Refuse a setup when nothing answers at the domain (decision 25). On in production (configFromEnv);
+   * off by default so tests do not reach the internet. TW_SKIP_DOMAIN_CHECK=1 turns it off.
+   */
+  checkDomainReachable: boolean;
+  /**
    * Who may sign up. null = anyone (the default, decision 23). Optional TW_SIGNUP_ALLOWLIST limits it to
    * these e-mails, or e-mails of a listed domain written as "@example.com" (a private test server).
    */
@@ -54,6 +59,7 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   sessionDays: 30,
   scrypt: PRODUCTION_COST,
   verifierAllowPrivate: false,
+  checkDomainReachable: false,
   signupAllowlist: null,
   publicUrl: 'http://localhost:8788',
   cronSecret: null,

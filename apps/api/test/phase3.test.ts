@@ -12,6 +12,7 @@ import type { SiteConfigSink } from '../src/kv';
 import { MemoryMailer } from '../src/mail';
 import type { StatsReader } from '../src/stats';
 import { MemoryStore } from '../src/store/memory';
+import { addSite, fakeVerifier } from './helpers/install';
 
 /**
  * Phase 3 (PLAN 9.2): activity log, retention pruning, export-then-erase.
@@ -25,9 +26,9 @@ const DAY = 86_400_000;
 class FlakyKv implements SiteConfigSink {
   inner = new MemoryKv();
   down = false;
-  async put(n: string, v: string) {
+  async put(n: string, v: string, o?: { ttlSeconds?: number }) {
     if (this.down) throw new Error('Cloudflare KV PUT 503: unavailable');
-    return this.inner.put(n, v);
+    return this.inner.put(n, v, o);
   }
   async delete(n: string) {
     if (this.down) throw new Error('Cloudflare KV DELETE 503: unavailable');
@@ -62,6 +63,7 @@ function setup(options: { eraser?: boolean; stats?: boolean } = {}) {
     mailer,
     eraser: options.eraser === false ? null : eraser,
     config: defaultConfig({ collectorUrl: 'https://collector.test', secureCookies: false, scrypt: FAST, cronSecret: SECRET }),
+    verifier: fakeVerifier(kv.inner.entries, 'https://collector.test'),
     now: () => new Date((clock.t += 1)),
   });
 
@@ -103,7 +105,7 @@ async function account(s: ReturnType<typeof setup>, email = 'umar@example.com', 
   expect((await c.post('/auth/signup', { name: 'Umar', email, password: 'correct horse' })).status).toBe(201);
   const sites = [];
   for (const domain of domains) {
-    const r = await c.post('/sites', { domain, timezone: 'Asia/Karachi' });
+    const r = await addSite(c.post, s.kv.inner.entries, domain, 'Asia/Karachi');
     expect(r.status).toBe(201);
     sites.push(r.body.site);
   }

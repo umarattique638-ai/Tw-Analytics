@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { SESSION_ENDED, api } from '../api/client';
-import type { KvIssue, Me, Role, Site, User } from '../api/client';
+import type { KvIssue, Me, Role, Setup, Site, User } from '../api/client';
 import { notify } from '../lib/notify';
 
 /**
@@ -16,10 +16,13 @@ interface Session {
   role: Role;
   /** Retention choices of this deployment (days). */
   retention: Me['retention'];
-  /** Verified sites: the ones the dashboard lists (decision 24). */
+  /** The workspace's sites. Every one is verified: a site is saved only after its install check (decision 25). */
   sites: Site[];
-  /** Every site, including those still in setup (not verified yet). */
+  /** Every stored site (the same list, plus any saved unverified before decision 25 until the nightly cleanup). */
   allSites: Site[];
+  /** The site being set up: not a site yet, nothing stored for it (one at a time, expires by itself). */
+  setup: Setup | null;
+  setSetup: (setup: Setup | null) => void;
   /** Sites whose changes have not reached Cloudflare yet (shown as a banner, retried by the server). */
   kvIssues: KvIssue[];
   retrySync: () => Promise<void>;
@@ -56,6 +59,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   const [me, setMe] = useState<Pick<Me, 'role' | 'retention'>>({ role: 'viewer', retention: { choices: [], max: 0, default: 0 } });
   const [sites, setSites] = useState<Site[]>([]);
   const [kvIssues, setKvIssues] = useState<KvIssue[]>([]);
+  const [setup, setSetup] = useState<Setup | null>(null);
   const [currentId, setCurrentId] = useState<number | null>(remembered);
   const signedIn = useRef(false);
   signedIn.current = state === 'in';
@@ -83,11 +87,13 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     api
       .me()
       .then(async ({ user, role, retention }) => {
-        const list = await reload();
+        const [list, pending] = await Promise.all([reload(), api.setup().then((r) => r.setup).catch(() => null)]);
+        setSetup(pending);
         if (!live) return;
         setUser(user);
         setMe({ role: role ?? 'viewer', retention: retention ?? { choices: [], max: 0, default: 0 } });
-        setCurrentId((id) => (id && list.some((s) => s.id === id) ? id : (list[0]?.id ?? null)));
+        const verified = list.filter((s) => !!s.verifiedAt);
+        setCurrentId((id) => (id && verified.some((s) => s.id === id) ? id : (verified[0]?.id ?? null)));
         setState('in');
       })
       .catch(() => live && setState('out'));
@@ -111,17 +117,20 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
 
   const value = useMemo<Session | null>(() => {
     if (!user) return null;
+    const verified = sites.filter((s) => !!s.verifiedAt);
     return {
       user,
       role: me.role,
       retention: me.retention,
-      sites: sites.filter((s) => !!s.verifiedAt),
+      sites: verified,
       allSites: sites,
+      setup,
+      setSetup,
       kvIssues,
       retrySync: async () => {
         setKvIssues((await api.syncAll()).kvIssues);
       },
-      current: sites.find((s) => s.id === currentId) ?? null,
+      current: verified.find((s) => s.id === currentId) ?? null,
       select,
       reload,
       upsert,
@@ -131,7 +140,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
         setState('out');
       },
     };
-  }, [user, me, sites, kvIssues, currentId, select, reload, upsert]);
+  }, [user, me, sites, kvIssues, setup, currentId, select, reload, upsert]);
 
   if (state === 'loading') {
     return (

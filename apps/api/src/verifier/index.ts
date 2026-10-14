@@ -5,8 +5,10 @@
  *   html.ts   finding the snippet in a page
  *   csp.ts    does the page's Content-Security-Policy allow the script and its hits
  *   check.ts  runActiveCheck: the steps, in order
+ *   probe.ts  probeDomain: does anything answer at a domain (before a setup starts)
  */
 export * from './check';
 export * from './csp';
 export * from './html';
+export * from './probe';
 export * from './types';

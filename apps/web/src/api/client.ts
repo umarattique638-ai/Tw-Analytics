@@ -37,17 +37,25 @@ export interface Snippet {
   note?: string;
   availability: 'now';
 }
-export interface Status {
-  windowMinutes: number;
-  verifiedAt: string | null;
-  events: number;
-  pageviews: number;
-  last: { at: string; name: string; path: string } | null;
-  drops: { reason: string; hits: number; detail: string }[];
+/** The first real pageview the collector noted for a site being set up. */
+export interface Seen { at: string; path: string }
+/**
+ * A site being set up (decision 25). It is NOT a site yet: nothing is stored for it until every check passed
+ * and a pageview arrived. One at a time per workspace; it expires by itself at `expiresAt`.
+ */
+export interface Setup {
+  domain: string;
+  timezone: string;
+  allowedHosts: string[];
+  publicKey: string;
+  startedAt: string;
+  expiresAt: string;
+  seen: Seen | null;
+  snippets: Snippet[];
 }
 export interface Check { id: string; label: string; status: 'pass' | 'fail' | 'skip'; message: string }
-/** The install check. `verifiedAt` is set once every step passed AND a pageview arrived. */
-export interface VerifyResult { url: string; ok: boolean; checks: Check[]; verifiedAt: string | null }
+/** The install check. `site` is the saved site, present once every step passed AND a pageview arrived. */
+export interface VerifyResult { url: string; ok: boolean; checks: Check[]; seen: Seen | null; verifiedAt: string | null; site: Site | null }
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -89,13 +97,14 @@ export const api = {
   sites: () => call<{ sites: Site[]; kvIssues?: KvIssue[] }>('GET', '/sites'),
   syncAll: () => call<{ kvIssues: KvIssue[] }>('POST', '/sites/sync-all'),
   preview: (domain: string) => call<{ domain: string; allowedHosts: string[] }>('GET', `/sites/preview?domain=${encodeURIComponent(domain)}`),
-  addSite: (domain: string, timezone: string) => call<{ site: Site; sync: Sync }>('POST', '/sites', { domain, timezone }),
+  setup: () => call<{ setup: Setup | null }>('GET', '/setup'),
+  startSetup: (domain: string, timezone: string) => call<{ setup: Setup; resumed?: boolean }>('POST', '/setup', { domain, timezone }),
+  verifySetup: (url?: string) => call<VerifyResult>('POST', '/setup/verify', { url }),
+  cancelSetup: () => call<{ ok: true }>('DELETE', '/setup'),
   site: (id: number) => call<{ site: Site; snippets: Snippet[] }>('GET', `/sites/${id}`),
   updateSite: (id: number, patch: { timezone?: string; status?: 'active' | 'paused'; retentionDays?: number }) => call<{ site: Site; sync: Sync }>('PATCH', `/sites/${id}`, patch),
   deleteSite: (id: number) => call<{ ok: true; sync: Sync }>('DELETE', `/sites/${id}`),
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
-  status: (id: number) => call<Status>('GET', `/sites/${id}/status`),
-  verify: (id: number, url?: string) => call<VerifyResult>('POST', `/sites/${id}/verify`, { url }),
   /** Forgot password: always the same answer, whether the e-mail has an account or not. */
   forgot: (email: string) => call<{ ok: true; minutes: number }>('POST', '/auth/forgot', { email }),
   resetValid: (token: string) => call<{ valid: boolean }>('GET', `/auth/reset?token=${encodeURIComponent(token)}`),

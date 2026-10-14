@@ -270,6 +270,9 @@ export class MongoStore implements ControlStore {
       .limit(limit)
       .toArray();
   }
+  async removeSite(id: number) {
+    return (await this.sites.deleteOne({ _id: id })).deletedCount === 1;
+  }
   async deleteSitesOf(tenantId: ObjectId) {
     const found = await this.sites.find({ tenantId }).toArray();
     if (found.length) await this.sites.deleteMany({ tenantId, _id: { $in: found.map((s) => s._id) } });

@@ -219,6 +219,8 @@ export interface ControlStore {
   allSites(): Promise<SiteDoc[]>;
   /** One site by id, any tenant, deleted ones included (the KV reconciler). */
   siteById(id: number): Promise<SiteDoc | null>;
+  /** Removes a site document for good (sites saved before decision 25 that never got verified). */
+  removeSite(id: number): Promise<boolean>;
 
   /** Remembers that a site's KV entries may be wrong (upsert, keeps the first createdAt). */
   recordKvIssue(siteId: number, tenantId: ObjectId, error: string, now: Date): Promise<void>;

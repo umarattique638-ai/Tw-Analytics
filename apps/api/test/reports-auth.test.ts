@@ -7,6 +7,7 @@ import type { Mailer } from '../src/mail';
 import type { Overview, StatsReader } from '../src/stats';
 import { resolveRange } from '../src/stats';
 import { MemoryStore } from '../src/store/memory';
+import { addSite, fakeVerifier } from './helpers/install';
 
 /** Reports (saved exports, 90-day expiry) and forgot / reset password, over HTTP. */
 let clock = new Date('2026-10-08T10:00:00Z');
@@ -29,9 +30,11 @@ const stats = {
 async function setup(mailer: Mailer = new MemoryMailer()) {
   clock = new Date('2026-10-08T10:00:00Z');
   const store = new MemoryStore();
+  const kv = new MemoryKv();
   const app = createApp({
     store,
-    kv: new MemoryKv(),
+    kv,
+    verifier: fakeVerifier(kv.entries, 'https://c.test'),
     analytics: { recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }) },
     stats,
     mailer,
@@ -60,7 +63,7 @@ async function setup(mailer: Mailer = new MemoryMailer()) {
   };
   const a = client();
   await a('POST', '/auth/signup', { name: 'Umar', email: 'umar@x.co', password: 'correct horse' });
-  const site = (await a('POST', '/sites', { domain: 'shop.example.com', timezone: 'Asia/Karachi' })).body.site;
+  const site = (await addSite((p, j) => a('POST', p, j), kv.entries, 'shop.example.com', 'Asia/Karachi')).body.site;
   return { a, client, site, store, mailer };
 }
 

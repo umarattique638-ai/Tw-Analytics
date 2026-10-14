@@ -6,6 +6,7 @@ import { dropHeaders, noContent, outcomeResponse, pixelResponse, rateLimitedOutc
 import { visitorHashes } from './identity';
 import { log } from './log';
 import { dropMessage, enqueue, queueDrop } from './queue';
+import { noteSetupPageview } from './setup';
 import { readSiteConfig } from './site-config';
 
 /**
@@ -41,11 +42,18 @@ export async function collect(request: Request, env: Env, ctx: ExecutionContextL
   const outcome = checkWire(request.headers, parsed, edgeMeta(request, site, receivedAt));
 
   if (outcome.kind === 'drop') {
-    const message = dropMessage(outcome, receivedAt);
+    // A site being set up stores nothing, not even its drops (decision 25).
+    const message = site?.setup ? null : dropMessage(outcome, receivedAt);
     if (message) queueDrop(env, ctx, message);
     return outcomeResponse(outcome, pixel, env);
   }
   if (outcome.kind !== 'accept') return outcomeResponse(outcome, pixel, env);
+
+  // 5b. Being set up: only "a pageview arrived" is noted, nothing is queued.
+  if (site?.setup) {
+    ctx.waitUntil(noteSetupPageview(env, site, outcome.event));
+    return outcomeResponse(outcome, pixel, env);
+  }
 
   // 6. Privacy: no event is queued without a per-site secret and a client address.
   //    The raw IP lives only inside this hash computation.

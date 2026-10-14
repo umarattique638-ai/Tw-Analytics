@@ -492,6 +492,27 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    its setup (no "already one of your sites"); "Remove this site" drops it. Re-adding a deleted domain gets
    a new key, so it is verified again from the start.
 
+25. DECIDED 2026-10-14 (owner): NOTHING about a site is stored until every check passed AND a real pageview
+   arrived ("jab tak sara case pass naa ho, site ka data DB ma store naa ho"). Replaces the parts of 24 that
+   stored an unverified site.
+   - "Add site" starts a SETUP, not a site (POST /api/v1/setup). A domain where nothing answers (no DNS,
+     no connection) is refused right there (TW_SKIP_DOMAIN_CHECK=1 turns this off; tests leave it off).
+   - The setup lives only in Cloudflare KV, in entries that expire by themselves after 7 days:
+     setup:<workspace> (domain, timezone, key), site:<key> with `setup: true` (the collector accepts the
+     key from the site's hosts but queues NOTHING for it: no event, no drop), and seen:<key> (written by the
+     collector when the first real pageview arrives). No MongoDB document, no activity-log line, no ClickHouse row.
+   - One setup at a time per workspace. The same domain again keeps the same key (the pasted snippet stays
+     valid); another domain replaces it; "Cancel setup" (DELETE /setup) removes the entries.
+   - POST /setup/verify runs the 7 checks (stop at the first failure, decision 24). Only when all pass AND
+     seen:<key> exists is the site written: KV site:<key> becomes the real site (id, identity secret, no
+     expiry), then MongoDB (verifiedAt = now), then the setup notes are removed. A deleted domain comes back
+     with its history on the new key. GET /sites/:id/status and POST /sites/:id/verify are gone.
+   - Every stored site is therefore verified. Sites stored unverified before this decision are removed by
+     the nightly maintenance run (MongoDB document, KV keys, and ClickHouse rows when the delete user is set).
+   - The first pageview itself is not counted (nothing is stored before verification); counting starts with
+     the next hit. The collector caches a key's entry for up to a minute, so hits in the first minute after
+     verification may also go uncounted.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

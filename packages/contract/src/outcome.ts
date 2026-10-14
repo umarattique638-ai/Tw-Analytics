@@ -8,6 +8,11 @@ export interface SiteConfig {
   region: 'in' | 'in-eu';
   /** Server-only secret used to derive daily visitor salts. Never expose to the browser. */
   identitySecret?: string;
+  /**
+   * A site still being set up (decision 25): nothing is stored for it. The collector only notes that a
+   * real pageview arrived (KV `seen:<key>`, which expires by itself) and queues nothing, events or drops.
+   */
+  setup?: boolean;
 }
 
 export interface EdgeMeta {

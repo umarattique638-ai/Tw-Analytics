@@ -4,6 +4,7 @@ import { createAuditLog } from './audit';
 import { createKvSync } from './kv-sync';
 import { createReportsService } from './reports';
 import { createSessionService } from './session';
+import { createSetupService } from './setup';
 import { createSiteService } from './sites';
 import type { Deps, Services } from './types';
 
@@ -25,6 +26,7 @@ export function createServices(deps: Deps): Services {
     session: createSessionService(store, config, now),
     sites: createSiteService(store, now),
     kvSync: createKvSync(store, kv, now),
+    setup: createSetupService(kv, config),
     audit: createAuditLog(store, now),
     reports: createReportsService(deps.stats, now),
   };

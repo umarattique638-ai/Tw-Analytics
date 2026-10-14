@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { Site, Status, VerifyResult } from '../api/client';
+import type { Seen, Setup, Site, VerifyResult } from '../api/client';
 import type { Step } from '../components/onboarding/CheckList';
 
 const POLL_MS = 3000;
@@ -22,54 +22,52 @@ export const CHECKS: { id: string; label: string }[] = [
 export const safePageUrl = (u: string) => (/^https?:\/\//i.test(u.trim()) ? u.trim() : null);
 
 /**
- * Step 3, "Verify" (decision 24). The server opens the page like a visitor and runs 7 checks in the order a
- * browser goes through; the first failing step stops the check. The site is VERIFIED only when every step
- * passed AND a first pageview arrived; the server decides, on the check itself.
+ * Step 3, "Verify" (decisions 24, 25). The server opens the page like a visitor and runs 7 checks in the order a
+ * browser goes through; the first failing step stops the check. The site is SAVED (verified) only when every
+ * step passed AND the collector noted a first pageview; before that nothing is stored anywhere.
  *  - the check starts by itself once, and again on "Check again";
- *  - meanwhile this page asks every 3 s whether a pageview has arrived; when it does after a passing check,
- *    the check runs once more so the server can mark the site verified.
+ *  - meanwhile this page asks every 3 s whether the first pageview has arrived; when it does after a passing
+ *    check, the check runs once more so the server can save the site.
  */
-export function useInstallCheck(site: Site | null, onVerified: (site: Site) => void) {
-  const [status, setStatus] = useState<Status | null>(null);
+export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => void) {
+  const [seen, setSeen] = useState<Seen | null>(setup?.seen ?? null);
   const [pollError, setPollError] = useState<string | null>(null);
-  const [url, setUrl] = useState(site ? `https://${site.domain}/` : '');
+  const [url, setUrl] = useState(setup ? `https://${setup.domain}/` : '');
   const [result, setResult] = useState<VerifyResult | null>(null);
+  const [saved, setSaved] = useState<Site | null>(null);
   const [shown, setShown] = useState(0);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const started = useRef<number | null>(null);
+  const started = useRef<string | null>(null);
   const rechecked = useRef(false);
-  const siteId = site?.id;
-  const verified = !!site?.verifiedAt;
-  const onSite = useRef(onVerified);
-  onSite.current = onVerified;
-  const current = useRef(site);
-  current.current = site;
+  const key = setup?.publicKey;
+  const verified = !!saved;
+  const onSite = useRef(onSaved);
+  onSite.current = onSaved;
 
-  // Another site selected while on this page: start over for that site.
+  // Another setup started while on this page: start over for it.
   useEffect(() => {
-    if (!site) return;
-    setStatus(null);
+    if (!setup) return;
+    setSeen(setup.seen);
     setResult(null);
     setShown(0);
     rechecked.current = false;
-    setUrl(`https://${site.domain}/`);
-  }, [siteId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setUrl(`https://${setup.domain}/`);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // "Waiting for your first pageview": asks until one arrives.
+  // "Waiting for your first pageview": asks until one arrives (or the site is saved).
   useEffect(() => {
-    if (!siteId) return;
+    if (!key || verified) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       try {
-        const s = await api.status(siteId);
+        const r = await api.setup();
         if (!live) return;
-        setStatus(s);
         setPollError(null);
-        if (s.pageviews > 0) return; // got it: stop asking
+        if (r.setup?.publicKey === key && r.setup.seen) return setSeen(r.setup.seen); // got it: stop asking
       } catch (e) {
-        if (live) setPollError(e instanceof Error ? e.message : 'Status unavailable.');
+        if (live) setPollError(e instanceof Error ? e.message : 'Could not ask for the first pageview.');
       }
       if (live) timer = setTimeout(tick, POLL_MS);
     };
@@ -78,11 +76,11 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
       live = false;
       clearTimeout(timer);
     };
-  }, [siteId]);
+  }, [key, verified]);
 
   const run = useCallback(
     async (target: string, reveal = true) => {
-      if (!siteId) return;
+      if (!key) return;
       setRunning(true);
       setCheckError(null);
       if (reveal) {
@@ -90,26 +88,29 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
         setShown(0);
       }
       try {
-        const r = await api.verify(siteId, target);
+        const r = await api.verifySetup(target);
         setResult(r);
+        if (r.seen) setSeen(r.seen);
         if (!reveal) setShown(r.checks.length);
-        const s = current.current;
-        if (r.verifiedAt && s && !s.verifiedAt) onSite.current({ ...s, verifiedAt: r.verifiedAt });
+        if (r.site) {
+          setSaved(r.site);
+          onSite.current(r.site);
+        }
       } catch (err) {
         setCheckError(err instanceof Error ? err.message : 'The check could not run.');
       } finally {
         setRunning(false);
       }
     },
-    [siteId],
+    [key],
   );
 
-  // The check starts by itself once per site.
+  // The check starts by itself once per setup.
   useEffect(() => {
-    if (!site || started.current === site.id) return;
-    started.current = site.id;
-    run(`https://${site.domain}/`);
-  }, [site, run]);
+    if (!setup || started.current === setup.publicKey) return;
+    started.current = setup.publicKey;
+    run(`https://${setup.domain}/`);
+  }, [setup, run]);
 
   /** Index of the step the check stopped at (the first failure), or -1. Nothing after it is shown. */
   const stoppedAt = result ? result.checks.findIndex((c) => c.status === 'fail') : -1;
@@ -123,11 +124,11 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
   }, [result, shown, lastShown]);
 
   const revealed = !!result && shown >= lastShown;
-  const received = !!status && status.pageviews > 0 && !!status.last;
+  const received = !!seen;
   const passed = revealed && result!.ok;
   const failed = revealed && !result!.ok;
 
-  // Every step passed and the first pageview has now arrived: check once more, so the server can verify.
+  // Every step passed and the first pageview has now arrived: check once more, so the server saves the site.
   useEffect(() => {
     if (!passed || !received || verified || running || rechecked.current) return;
     rechecked.current = true;
@@ -150,7 +151,7 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
             id: 'pageview',
             label: 'First pageview received',
             state: 'pass',
-            message: `On ${status!.last!.path} at ${new Date(status!.last!.at).toLocaleTimeString()}. Your site is live.`,
+            message: `On ${seen!.path} at ${new Date(seen!.at).toLocaleTimeString()}. ${verified ? 'Your site is saved and live.' : 'Saving your site…'}`,
           }
         : {
             id: 'pageview',
@@ -170,7 +171,6 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
     stoppedAt: failed ? stoppedAt + 1 : null,
     progress: failed ? Math.max(stoppedAt, 0.5) / total : done / total,
     done,
-    status,
     url,
     setUrl,
     run,
@@ -182,5 +182,6 @@ export function useInstallCheck(site: Site | null, onVerified: (site: Site) => v
     failed,
     passed,
     verified,
+    saved,
   };
 }

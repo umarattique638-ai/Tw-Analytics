@@ -5,6 +5,7 @@ import { MemoryKv } from '../src/kv';
 import { resolveRange } from '../src/stats';
 import type { Overview, StatsReader } from '../src/stats';
 import { MemoryStore } from '../src/store/memory';
+import { addSite, fakeVerifier } from './helpers/install';
 
 /** The Query API's HTTP layer: auth, tenant isolation, ranges in the SITE's timezone, CSV, allow-host. */
 const NOW = new Date('2026-10-08T10:00:00Z');
@@ -40,6 +41,7 @@ async function setup(withStats = true) {
     analytics: { recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }) },
     stats: withStats ? fakeStats(calls) : null,
     config: defaultConfig({ collectorUrl: 'https://c.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 } }),
+    verifier: fakeVerifier(kv.entries, 'https://c.test'),
     now: () => NOW,
   });
   const client = () => {
@@ -57,7 +59,11 @@ async function setup(withStats = true) {
   };
   const a = client();
   await a('POST', '/auth/signup', { name: 'A', email: 'a@x.co', password: 'correct horse' });
-  const site = JSON.parse((await a('POST', '/sites', { domain: 'shop.example.com', timezone: 'Asia/Karachi' })).text).site;
+  const post = async (p: string, j: unknown) => {
+    const r = await a('POST', p, j);
+    return { status: r.status, body: JSON.parse(r.text) };
+  };
+  const site = (await addSite(post, kv.entries, 'shop.example.com', 'Asia/Karachi')).body.site;
   return { a, b: client(), site, calls, kv };
 }
 

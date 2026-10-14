@@ -27,10 +27,9 @@ const todayLabel = () => new Date().toLocaleDateString('en-US', { weekday: 'long
 /** Every number here comes from the Query API (docs/QUERIES.md). Nothing is sample data. */
 export default function DashboardPage() {
   useDocumentTitle('Overview');
-  const { user, current } = useSession();
+  const { user, current, setup } = useSession();
 
-  if (!current) return <GettingStarted />;
-  if (!current.verifiedAt) return <FinishSetup site={current} />;
+  if (!current) return setup ? <FinishSetup setup={setup} /> : <GettingStarted />;
   return <Overview site={current} name={firstName(user)} />;
 }
 

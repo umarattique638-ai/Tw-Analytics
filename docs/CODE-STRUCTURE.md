@@ -33,12 +33,13 @@ tw.js (packages/browser, packages/core)
 | `services/kv-sync.ts` | Cloudflare KV: grant first / revoke first, retries, reconciling issues. |
 | `services/audit.ts` | The activity log. |
 | `services/sites.ts` | Loading and saving one of the workspace's sites, roles. |
+| `services/setup.ts` | A site being set up: KV-only entries that expire by themselves (decision 25). |
 | `services/reports.ts` | Reading analytics, the report period, the CSV. |
 | `services/account-export.ts` | "Download all data". |
 | `services/maintenance.ts` | Nightly jobs: erasures, retention, KV reconcile. |
-| `routes/*.ts` | `public`, `auth`, `account`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal`. |
+| `routes/*.ts` | `public`, `auth`, `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal`. |
 | `stats/` | Query API: `range`, `queries` (the SQL of docs/QUERIES.md), `types`, `channels`, `reader`. |
-| `verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`. |
+| `verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`, `probe` (does the domain answer). |
 | `mail/` | `providers` (Brevo, Resend, console) and `templates`. |
 | `store/` | MongoDB store, the in-memory store for tests, document types, validators. |
 | `kv.ts`, `analytics.ts`, `eraser.ts`, `jobs.ts`, `netguard.ts`, `passwords.ts`, `secrets.ts`, `domain.ts`, `snippets.ts` | One concern each (see the header comment of each file). |
@@ -53,6 +54,7 @@ tw.js (packages/browser, packages/core)
 | `collect.ts` | One hit, step by step: limits, size, parse, site, checks, privacy, queue. |
 | `http/body.ts`, `http/responses.ts` | Reading the body with a byte cap; every response. |
 | `site-config.ts` | The site of a public key, from Cloudflare KV. |
+| `setup.ts` | A site being set up: notes its first pageview, queues nothing. |
 | `edge.ts` | Cloudflare request data, rate limiters. |
 | `identity.ts` | Daily visitor hashes (the IP exists only here). |
 | `queue.ts` | Sending events, batching identical drops. |

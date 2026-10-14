@@ -169,11 +169,11 @@ describe('Stage 5 done-when, through the dashboard in Chromium', { timeout: 120_
     await page.getByTestId('all-good').waitFor();
     await snap(page, '4-verify');
 
-    // The verifier's own visit was never counted: exactly one event, the visitor's pageview.
-    const { events } = await stack.snapshot();
-    expect(events.map((e) => [e.name, e.path])).toEqual([['pageview', '/pricing']]);
+    // Nothing was stored while the site was being set up (decision 25): not the verifier's visit, not even
+    // the first pageview (the collector only noted that it arrived).
+    expect((await stack.snapshot()).events).toEqual([]);
 
-    // The pasted custom-event button works as copied: a click becomes a signup_click event.
+    // Saved now: from here on the site is counted. The pasted custom-event button works as copied.
     await visitor.getByRole('button', { name: 'Sign up' }).click();
     await expect.poll(async () => (await stack.snapshot()).events.map((e) => e.name), { timeout: 20_000 }).toContain('signup_click');
 
