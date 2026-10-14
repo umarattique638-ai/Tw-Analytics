@@ -1,7 +1,9 @@
 import { RETENTION_CHOICES } from '../config';
 import { MAX_ALLOWED_HOSTS } from '../constants';
 import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../domain';
-import { HttpError } from '../http/errors';
+import { ObjectId } from 'mongodb';
+import { HttpError, errorText, logError } from '../http/errors';
+import { advanceErasure } from '../jobs';
 import { body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
@@ -111,15 +113,61 @@ export function siteRoutes(app: Api, s: Services) {
     return patch;
   };
 
+  /**
+   * Delete a site. Two choices (the dialog asks):
+   *   keep data (default): tracking stops, the site leaves the account, collected data follows the site's
+   *     retention, and adding the domain again brings it back.
+   *   eraseData: true: the site AND everything collected for it are deleted now, for good. Owners and
+   *     admins only. It becomes an erasure record (like a deleted account): KV keys go and the ClickHouse
+   *     deletes are sent right away; the nightly job repeats both until nothing is left, then watches for
+   *     late rows (queue retries) for a while.
+   */
   app.delete('/sites/:id', async (c) => {
     const site = await sites.load(c);
+    const b = await body(c);
+    if (b.eraseData === true) return eraseSite(c, site);
     const updated = await sites.patch(c, site, { status: 'deleted', keys: revokeAll(site.keys, now()) });
-    // Collected data is not deleted here (the dashboard says so): it follows the site's retention, and
-    // re-adding the domain brings it back. Deleting the ACCOUNT erases it (POST /account/delete).
     const synced = await kvSync.sync(updated);
     await audit.record(c, 'site.deleted', updated, `Deleted ${site.domain} (tracking stopped; collected data is kept for ${site.retentionDays} days)`);
-    return c.json({ ok: true, sync: synced });
+    return c.json({ ok: true, sync: synced, erased: false });
   });
+
+  const eraseSite = async (c: Ctx, site: SiteDoc) => {
+    const role = await sites.roleOf(c);
+    if (role !== 'owner' && role !== 'admin') throw new HttpError(403, 'not_allowed', 'Only the owner or an admin can delete collected data.');
+    if (!s.eraser) {
+      throw new HttpError(503, 'erase_unavailable', 'Deleting collected data is not set up on the server (TW_CH_PRUNE_PASSWORD). Nothing was changed; you can still delete the site and keep its data.');
+    }
+    const at = now();
+    const erasure = await store.eraseSite(
+      {
+        _id: new ObjectId(),
+        email: null,
+        name: null,
+        requestedAt: at,
+        status: 'pending',
+        kvDoneAt: null,
+        dataDeleteSentAt: null,
+        dataVerifiedAt: null,
+        rowsFound: null,
+        rowsAfterCompletion: 0,
+        attempts: 0,
+        lastError: null,
+        completedAt: null,
+        updatedAt: at,
+      },
+      c.get('tenant')._id,
+      site._id,
+    );
+    if (!erasure) throw new HttpError(404, 'not_found', 'No such site.');
+    // First step now (keys removed, ClickHouse deletes sent); the nightly job finishes and checks it.
+    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer: s.mailer }, erasure, at, { finish: false, dataBudgetMs: 8_000 }).catch((error) => {
+      logError('site_erase_start_failed', { site: site._id, message: errorText(error) });
+      return erasure;
+    });
+    await audit.record(c, 'site.deleted', site, `Deleted ${site.domain} and all its collected data (erased for good; it cannot be brought back)`);
+    return c.json({ ok: true, sync: { ok: !!progress.kvDoneAt }, erased: true });
+  };
 
   app.post('/sites/:id/sync', async (c) => {
     const site = await sites.load(c);

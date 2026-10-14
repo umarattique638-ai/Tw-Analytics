@@ -1,8 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, ChevronsUpDown, Globe, Plus, Trash2 } from 'lucide-react';
-import ConfirmDialog from '../ui/ConfirmDialog';
-import Notice from '../ui/Notice';
+import DeleteSiteDialog from './DeleteSiteDialog';
 import { useSession } from '../../hooks/useSession';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
@@ -15,7 +14,7 @@ const dotLabel = (s: Site) => (s.status === 'paused' ? 'Paused' : s.verifiedAt ?
 /** The site being looked at, in the sidebar: switch to another site, add one, or delete one. */
 export default function SiteSwitcher() {
   const navigate = useNavigate();
-  const { sites, current, select, reload } = useSession();
+  const { sites, current, select, reload, role } = useSession();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -96,29 +95,7 @@ export default function SiteSwitcher() {
         </div>
       )}
 
-      {del.target && (
-        <ConfirmDialog
-          title={`Delete ${del.target.domain}?`}
-          confirmLabel="Delete site"
-          busyLabel="Deleting…"
-          busy={del.busy}
-          onCancel={del.cancel}
-          onConfirm={del.confirm}
-          message={
-            <>
-              <p>
-                The site stops collecting and is removed from your account. Data already collected is kept for the site's retention ({del.target.retentionDays} days), so
-                adding the domain again brings it back.
-              </p>
-              {del.error && (
-                <Notice tone="error" className="mt-3">
-                  {del.error}
-                </Notice>
-              )}
-            </>
-          }
-        />
-      )}
+      {del.target && <DeleteSiteDialog site={del.target} role={role} busy={del.busy} error={del.error} onCancel={del.cancel} onConfirm={del.confirm} />}
     </div>
   );
 }

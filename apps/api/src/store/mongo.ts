@@ -263,6 +263,27 @@ export class MongoStore implements ControlStore {
     if (!erasure) throw new Error('account deletion did not commit');
     return erasure;
   }
+  async eraseSite(input: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, tenantId: ObjectId, siteId: number) {
+    const session = this.client.startSession();
+    let erasure = null as ErasureDoc | null;
+    try {
+      await session.withTransaction(async () => {
+        erasure = null;
+        const site = await this.sites.findOne({ _id: siteId, tenantId, ...notDeleted }, { session });
+        if (!site) return;
+        erasure = { ...input, siteIds: [site._id], publicKeys: site.keys.map((k) => k.publicKey) };
+        await this.erasures.insertOne(erasure, { session });
+        await this.sites.deleteOne({ _id: siteId, tenantId }, { session });
+        await this.exports.deleteMany({ tenantId, siteId }, { session });
+        await this.outbox.deleteOne({ _id: siteId }, { session });
+      });
+    } catch (error) {
+      duplicate(error);
+    } finally {
+      await session.endSession();
+    }
+    return erasure;
+  }
   activeErasures(watchSince: Date, limit: number) {
     return this.erasures
       .find({ $or: [{ status: 'pending' }, { status: 'completed', completedAt: { $gt: watchSince } }] })

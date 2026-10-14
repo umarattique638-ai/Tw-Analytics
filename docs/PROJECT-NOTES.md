@@ -514,6 +514,18 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - Counting starts after the save. The collector caches a key's entry for up to a minute, so hits in the
      first minute after verification may still be treated as "setup" and not counted.
 
+26. DECIDED 2026-10-14 (owner): deleting a site asks what happens to its collected data, in a dialog centred
+   on the screen (dialogs render into <body>):
+   - "Keep the data" (default): as before. Tracking stops, the site is marked deleted, data follows the
+     site's retention, and adding the domain again brings it back.
+   - "Delete all data now" (owners and admins; the domain must be typed): DELETE /sites/:id with
+     eraseData: true. In one MongoDB transaction the site becomes an erasure record (the same kind as a
+     deleted account, without the e-mail) and the site document, its saved reports and its KV outbox entry
+     are deleted. KV keys are removed and the ClickHouse deletes are sent at once; the nightly maintenance
+     run repeats both until nothing is left, then watches for late rows for a while. It cannot be undone:
+     adding the domain again starts a new, empty site. Without TW_CH_PRUNE_PASSWORD the API refuses and
+     nothing changes. The activity log keeps a "site.deleted" line saying the data was erased.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

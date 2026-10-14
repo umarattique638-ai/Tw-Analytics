@@ -268,6 +268,13 @@ export interface ControlStore {
    * `watchSince`: late rows and re-written KV keys are removed again). Least recently worked on first.
    */
   activeErasures(watchSince: Date, limit: number): Promise<ErasureDoc[]>;
+  /**
+   * "Delete the site and all its data now", all or nothing (a MongoDB transaction): the site (read inside
+   * the transaction, so its keys are complete) becomes an erasure record that the nightly job finishes and
+   * watches like an account erasure; the site document, its saved reports and its KV outbox entry are
+   * deleted. Null if the site is not there (another tab deleted it).
+   */
+  eraseSite(erasure: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, tenantId: ObjectId, siteId: number): Promise<ErasureDoc | null>;
   /** Sites still stored for a workspace (a request that raced the deletion); deleted and returned. */
   deleteSitesOf(tenantId: ObjectId): Promise<SiteDoc[]>;
   erasureById(id: ObjectId): Promise<ErasureDoc | null>;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 
@@ -9,13 +10,16 @@ type Props = {
   onClose: () => void;
   /** While true (a request is running) the dialog cannot be dismissed. */
   locked?: boolean;
+  /** Wider box, for dialogs with choices. */
+  wide?: boolean;
 };
 
 /**
  * Accessible dialog: labelled by its title, focus moves inside on open, Tab stays inside, Escape and a
  * click on the backdrop close it (unless locked), and focus returns to where it was when it closes.
+ * Rendered into <body>, so it is centred on the whole screen even when opened from the sidebar.
  */
-export default function Modal({ title, children, footer, onClose, locked }: Props) {
+export default function Modal({ title, children, footer, onClose, locked, wide }: Props) {
   const titleId = useId();
   const bodyId = useId();
   const box = useRef<HTMLDivElement>(null);
@@ -45,7 +49,7 @@ export default function Modal({ title, children, footer, onClose, locked }: Prop
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[200] grid place-items-center p-4">
       <div className="absolute inset-0 animate-[tw-fade_150ms_ease-out] bg-slate-950/60 backdrop-blur-sm" onClick={close} aria-hidden="true" />
       <div
@@ -55,7 +59,7 @@ export default function Modal({ title, children, footer, onClose, locked }: Prop
         aria-labelledby={titleId}
         aria-describedby={bodyId}
         onKeyDown={trap}
-        className="relative w-full max-w-md animate-[tw-pop_160ms_ease-out] rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 dark:ring-1 dark:ring-white/10"
+        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-md'} animate-[tw-pop_160ms_ease-out] rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 dark:ring-1 dark:ring-white/10`}
       >
         <h2 id={titleId} className="text-lg font-semibold text-slate-900 dark:text-white">
           {title}
@@ -65,6 +69,7 @@ export default function Modal({ title, children, footer, onClose, locked }: Prop
         </div>
         <div className="mt-6 flex flex-wrap justify-end gap-2">{footer}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

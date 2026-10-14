@@ -91,6 +91,7 @@ function setup(options: { eraser?: boolean; stats?: boolean } = {}) {
       post: (p: string, j: unknown = {}) => call('POST', p, j),
       patch: (p: string, j: unknown) => call('PATCH', p, j),
       del: (p: string) => call('DELETE', p, {}),
+      raw: (method: string, p: string, j: unknown) => call(method, p, j),
     };
   };
   const cron = async (path: string) => {
@@ -544,5 +545,57 @@ describe('delete the account (export-then-erase)', () => {
     s.clock.t += ERASURE_SETTLE_DAYS * DAY;
     await s.cron('/internal/maintenance');
     expect(s.store.erasures[0]!.status).toBe('completed');
+  });
+});
+
+describe('delete a site: keep its data, or erase it now', () => {
+  it('keep (default): tracking stops, the data stays for the retention, adding the domain again brings it back', async () => {
+    const s = setup();
+    const { c, sites } = await account(s);
+    s.eraser.rows.push(row('events', sites[0].id, s.clock.t));
+    const r = await c.del(`/sites/${sites[0].id}`);
+    expect(r.body).toMatchObject({ ok: true, erased: false });
+    expect(s.store.sites[0]!.status).toBe('deleted');
+    expect(s.eraser.rows).toHaveLength(1);
+    expect(s.store.erasures).toHaveLength(0);
+  });
+
+  it('erase now: the site, its reports and every collected row go at once; the nightly job checks and watches', async () => {
+    const s = setup();
+    const { c, sites } = await account(s, 'umar@example.com', ['shop.example.com', 'blog.example.com']);
+    const [shop, blog] = sites;
+    s.eraser.rows.push(row('events', shop.id, s.clock.t), row('sessions', shop.id, s.clock.t), row('events', blog.id, s.clock.t));
+    const at = new Date(s.clock.t);
+    await s.store.insertExport({
+      _id: new ObjectId(), tenantId: s.store.tenants[0]!._id, siteId: shop.id, range: '7d', from: '2026-10-05', to: '2026-10-11', timezone: 'Asia/Karachi',
+      filename: 'shop.csv', rows: 1, bytes: 10, csv: 'date,visitors', createdBy: s.store.users[0]!._id, createdAt: at, expiresAt: new Date(at.getTime() + 90 * DAY),
+    });
+
+    const r = await c.raw('DELETE', `/sites/${shop.id}`, { eraseData: true });
+    expect(r.body).toMatchObject({ ok: true, erased: true, sync: { ok: true } });
+    expect(s.store.sites.map((x) => x.domain)).toEqual(['blog.example.com']);
+    expect(s.store.exports).toHaveLength(0);
+    expect(s.eraser.rows.map((x) => x.site)).toEqual([blog.id]);
+    expect(s.kv.inner.entries.has(`site:${shop.publicKey}`)).toBe(false);
+    expect(s.store.erasures[0]).toMatchObject({ siteIds: [shop.id], email: null, status: 'pending' });
+    expect((await c.get('/audit')).body.entries[0].summary).toContain('all its collected data');
+
+    // A late row (a queue retry) is removed by the nightly job, which then completes the erasure.
+    s.eraser.rows.push(row('events', shop.id, s.clock.t));
+    s.clock.t += ERASURE_SETTLE_DAYS * DAY;
+    await s.cron('/internal/maintenance');
+    expect(s.eraser.rows.map((x) => x.site)).toEqual([blog.id]);
+    await s.cron('/internal/maintenance');
+    expect(s.store.erasures[0]!.status).toBe('completed');
+    expect(s.mailer.sent).toHaveLength(0); // no "account erased" mail for a site
+  });
+
+  it('erase needs the ClickHouse delete user; without it nothing changes', async () => {
+    const s = setup({ eraser: false });
+    const { c, sites } = await account(s);
+    const r = await c.raw('DELETE', `/sites/${sites[0].id}`, { eraseData: true });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toBe('erase_unavailable');
+    expect(s.store.sites[0]!.status).toBe('active');
   });
 });

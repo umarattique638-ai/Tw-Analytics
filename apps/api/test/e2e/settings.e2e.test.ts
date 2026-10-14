@@ -193,4 +193,40 @@ describe('Phase 3 pages', { timeout: 90_000 }, () => {
     expect(overflow).toEqual([0, 0]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/p3-settings-phone.png`, fullPage: true });
   });
+
+  it('delete a site from the sidebar: a centred dialog; "Delete all data now" erases it for good', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.goto(`${base}/login`);
+    const api = (path: string, body: unknown) => page.request.post(`${base}/api/v1${path}`, { data: body, headers: { 'content-type': 'application/json' } });
+    await api('/auth/signup', { name: 'Sidebar User', email: 'sidebar@realshop.test', password: PASSWORD });
+    for (const domain of ['keep.example.com', 'erase.example.com']) {
+      await api('/setup', { domain, timezone: 'Asia/Karachi' });
+      await api('/setup/verify', {});
+    }
+    const erase = store.sites.find((x) => x.domain === 'erase.example.com')!;
+    eraser.rows.push({ table: 'events', site: erase._id, at: new Date() });
+    await page.goto(`${base}/dashboard`);
+
+    await page.getByRole('button', { name: /Site/ }).first().click();
+    await page.getByRole('button', { name: 'Delete erase.example.com' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    // Centred on the whole screen, not inside the sidebar.
+    const box = (await dialog.boundingBox())!;
+    expect(Math.abs(box.x + box.width / 2 - 640)).toBeLessThan(20);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/p3-delete-site-dialog.png` });
+
+    await dialog.locator('[data-option="erase"]').click();
+    const submit = dialog.getByRole('button', { name: 'Delete site and data' });
+    expect(await submit.isDisabled()).toBe(true);
+    await dialog.getByLabel('Type erase.example.com to confirm').fill('erase.example.com');
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/p3-delete-site-erase.png` });
+    await submit.click();
+    await page.getByText('erase.example.com and its data deleted').waitFor();
+    expect(store.sites.some((x) => x.domain === 'erase.example.com')).toBe(false);
+    expect(eraser.rows.some((r) => r.site === erase._id)).toBe(false);
+    expect(store.sites.some((x) => x.domain === 'keep.example.com')).toBe(true);
+    await context.close();
+  });
 });

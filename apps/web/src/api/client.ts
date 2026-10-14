@@ -100,7 +100,8 @@ export const api = {
   cancelSetup: () => call<{ ok: true }>('DELETE', '/setup'),
   site: (id: number) => call<{ site: Site; snippets: Snippet[] }>('GET', `/sites/${id}`),
   updateSite: (id: number, patch: { timezone?: string; status?: 'active' | 'paused'; retentionDays?: number }) => call<{ site: Site; sync: Sync }>('PATCH', `/sites/${id}`, patch),
-  deleteSite: (id: number) => call<{ ok: true; sync: Sync }>('DELETE', `/sites/${id}`),
+  /** `eraseData`: delete everything collected for the site too, for good (owners and admins). */
+  deleteSite: (id: number, eraseData = false) => call<{ ok: true; sync: Sync; erased: boolean }>('DELETE', `/sites/${id}`, { eraseData }),
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
   /** Forgot password: always the same answer, whether the e-mail has an account or not. */
   forgot: (email: string) => call<{ ok: true; minutes: number }>('POST', '/auth/forgot', { email }),

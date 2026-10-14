@@ -231,6 +231,18 @@ export class MemoryStore implements ControlStore {
     this.tenants = this.tenants.filter((x) => !same(x._id, t));
     return clone(erasure);
   }
+  async eraseSite(input: Omit<ErasureDoc, 'siteIds' | 'publicKeys'>, tenantId: ObjectId, siteId: number) {
+    const site = this.sites.find((s) => s._id === siteId && same(s.tenantId, tenantId) && s.status !== 'deleted');
+    if (!site) return null;
+    const erasure: ErasureDoc = { ...input, siteIds: [site._id], publicKeys: site.keys.map((k) => k.publicKey) };
+    check('erasures', erasure);
+    if (this.erasures.some((e) => same(e._id, erasure._id))) throw new DuplicateError('other');
+    this.erasures.push(clone(erasure));
+    this.sites = this.sites.filter((s) => s._id !== siteId);
+    this.exports = this.exports.filter((e) => !(same(e.tenantId, tenantId) && e.siteId === siteId));
+    this.outbox = this.outbox.filter((o) => o._id !== siteId);
+    return clone(erasure);
+  }
   async activeErasures(watchSince: Date, limit: number) {
     const pendingFirst = (a: ErasureDoc, b: ErasureDoc) => Number(b.status === 'pending') - Number(a.status === 'pending') || a.updatedAt.getTime() - b.updatedAt.getTime();
     return clone(
