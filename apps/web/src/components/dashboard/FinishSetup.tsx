@@ -16,7 +16,7 @@ export default function FinishSetup({ setup }: { setup: Setup }) {
         </span>
         <h1 className="mt-4 text-3xl font-bold tracking-tight break-words text-slate-900 sm:text-4xl dark:text-white">Finish setting up {setup.domain}</h1>
         <p className={`mt-3 max-w-xl text-base leading-relaxed ${muted}`}>
-          Nothing is saved for this site yet. Add the script to your pages, then verify: the site is saved and the dashboard opens once every check passes and the first pageview has arrived.
+          Nothing is saved for this site yet. Add the script to your pages, then verify: the site is saved and the dashboard opens once every check passes.
           This setup ends by itself on {dateFmt.format(new Date(setup.expiresAt))}.
         </p>
         <div className="mt-7 flex flex-wrap items-center gap-3">

@@ -16,7 +16,7 @@ import { MemoryKv } from '../../src/kv';
 import { MemoryMailer } from '../../src/mail';
 import type { StatsReader } from '../../src/stats';
 import { MemoryStore } from '../../src/store/memory';
-import { fakeVerifier, markSeen } from '../helpers/install';
+import { fakeVerifier } from '../helpers/install';
 
 /**
  * Phase 3 in the browser: the Activity page, retention in Settings, "Download all data" and deleting the
@@ -70,10 +70,9 @@ beforeAll(async () => {
     app.request(`${base}/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json', host: new URL(base).host, cookie }, body: JSON.stringify(body) });
   const signup = await req('/auth/signup', { name: 'Umar Attique', email: 'umar@realshop.test', password: PASSWORD });
   const cookie = signup.headers.get('set-cookie')!.split(';')[0]!;
-  // A verified site, the way the dashboard makes one (decision 25): setup, first pageview, check.
+  // A verified site, the way the dashboard makes one (decision 25): setup, then the install check.
   const addSite = async (domain: string, timezone: string) => {
-    const { setup } = (await (await req('/setup', { domain, timezone }, cookie)).json()) as { setup: { publicKey: string } };
-    markSeen(kv.entries, setup.publicKey);
+    await req('/setup', { domain, timezone }, cookie);
     await req('/setup/verify', {}, cookie);
   };
   await addSite('realshop.test', 'Asia/Karachi');
@@ -183,8 +182,7 @@ describe('Phase 3 pages', { timeout: 90_000 }, () => {
     await page.getByLabel('Full name').fill('Phone User').catch(() => undefined);
     const api = (path: string, body: unknown) => page.request.post(`${base}/api/v1${path}`, { data: body, headers: { 'content-type': 'application/json' } });
     await api('/auth/signup', { name: 'Phone User', email: 'phone@realshop.test', password: PASSWORD });
-    const started = (await (await api('/setup', { domain: 'a-very-long-domain-name-for-phones.example.com', timezone: 'Asia/Karachi' })).json()) as { setup: { publicKey: string } };
-    markSeen(kv.entries, started.setup.publicKey);
+    await api('/setup', { domain: 'a-very-long-domain-name-for-phones.example.com', timezone: 'Asia/Karachi' });
     await api('/setup/verify', {});
     await page.goto(`${base}/settings`);
     await page.getByTestId('retention-list').waitFor();

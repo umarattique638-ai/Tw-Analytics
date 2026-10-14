@@ -4,8 +4,6 @@ import type { QueueMessage } from '@tailwatch/contract';
 
 export interface SiteConfigKV {
   get(key: string, options?: { cacheTtl?: number }): Promise<string | null>;
-  /** Only for the "first pageview arrived" note of a site being set up (setup.ts). */
-  put?(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 }
 
 export interface QueueBinding {

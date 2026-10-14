@@ -14,7 +14,7 @@ import { defaultConfig } from '../../src/config';
 import { MemoryKv } from '../../src/kv';
 import type { DropsReport, EventsReport, Live, Overview, Range, StatsReader } from '../../src/stats';
 import { MemoryStore } from '../../src/store/memory';
-import { fakeVerifier, markSeen } from '../helpers/install';
+import { fakeVerifier } from '../helpers/install';
 
 /**
  * Stage 6 UI: every number on the dashboard pages is what the Query API returned (the SQL itself is
@@ -90,10 +90,9 @@ beforeAll(async () => {
     app.request(`${base}/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json', host: new URL(base).host, cookie }, body: JSON.stringify(body) });
   const signup = await req('/auth/signup', { name: 'Umar Attique', email: 'umar@realshop.test', password: 'correct horse battery' });
   const cookie = signup.headers.get('set-cookie')!.split(';')[0]!;
-  // A verified site, the way the dashboard makes one (decision 25): setup, first pageview, check.
+  // A verified site, the way the dashboard makes one (decision 25): setup, then the install check.
   const addSite = async (domain: string, timezone: string) => {
-    const { setup } = (await (await req('/setup', { domain, timezone }, cookie)).json()) as { setup: { publicKey: string } };
-    markSeen(kv.entries, setup.publicKey);
+    await req('/setup', { domain, timezone }, cookie);
     await req('/setup/verify', {}, cookie);
   };
   await addSite('realshop.test', 'Asia/Karachi');

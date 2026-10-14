@@ -5,7 +5,7 @@ import { muted } from '../ui/styles';
 const steps = [
   { icon: Globe, title: 'Add your site', desc: 'Enter your domain and timezone. We never touch your DNS.' },
   { icon: Code, title: 'Install the script', desc: 'Copy one line and paste it inside the <head> of your site.' },
-  { icon: ShieldCheck, title: 'Verify the install', desc: 'We check your page and wait for the first pageview.' },
+  { icon: ShieldCheck, title: 'Verify the install', desc: 'We check your page step by step; your dashboard opens when every check passes.' },
 ];
 
 const badges = ['No IP addresses stored', 'Bots filtered out', 'Ready in about 2 minutes'];
@@ -16,7 +16,7 @@ export default function GettingStarted() {
     <div className="my-auto px-1">
       <div className="mx-auto w-full max-w-[760px]">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">Let's set up your first site</h1>
-        <p className={`mt-3 max-w-xl text-base leading-relaxed ${muted}`}>Three quick steps. Your dashboard fills in as soon as the first pageview arrives.</p>
+        <p className={`mt-3 max-w-xl text-base leading-relaxed ${muted}`}>Three quick steps. Your dashboard opens as soon as the install check passes.</p>
 
         <ol className="mt-8 grid gap-3">
           {steps.map((s, i) => (

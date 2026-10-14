@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { Seen, Setup, Site, VerifyResult } from '../api/client';
+import type { Setup, Site, VerifyResult } from '../api/client';
 import type { Step } from '../components/onboarding/CheckList';
 
-const POLL_MS = 3000;
 /** Pause between two steps turning green: quick, but slow enough to follow. */
 const STEP_MS = 380;
+/** After the last step turns green: long enough to see it, then the dashboard opens. */
+const DONE_MS = 900;
 
 /** The verifier's steps, in the order the server runs them (apps/api/src/verifier/types.ts CHECK_ORDER). */
 export const CHECKS: { id: string; label: string }[] = [
@@ -18,20 +19,14 @@ export const CHECKS: { id: string; label: string }[] = [
   { id: 'id', label: 'Site key matches' },
 ];
 
-/** Only http(s) pages can be opened from the result; anything else typed into the field is ignored for the link. */
-export const safePageUrl = (u: string) => (/^https?:\/\//i.test(u.trim()) ? u.trim() : null);
 
 /**
  * Step 3, "Verify" (decisions 24, 25). The server opens the page like a visitor and runs 7 checks in the order a
- * browser goes through; the first failing step stops the check. The site is SAVED (verified) only when every
- * step passed AND the collector noted a first pageview; before that nothing is stored anywhere.
- *  - the check starts by itself once, and again on "Check again";
- *  - meanwhile this page asks every 3 s whether the first pageview has arrived; when it does after a passing
- *    check, the check runs once more so the server can save the site.
+ * browser goes through; the first failing step stops the check. When every step passes, the server saves the
+ * site (verified) at once and returns it: before that nothing is stored anywhere. The check starts by itself
+ * once, and again on "Check again".
  */
 export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => void) {
-  const [seen, setSeen] = useState<Seen | null>(setup?.seen ?? null);
-  const [pollError, setPollError] = useState<string | null>(null);
   const [url, setUrl] = useState(setup ? `https://${setup.domain}/` : '');
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [saved, setSaved] = useState<Site | null>(null);
@@ -39,63 +34,29 @@ export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => vo
   const [checkError, setCheckError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const started = useRef<string | null>(null);
-  const rechecked = useRef(false);
   const key = setup?.publicKey;
-  const verified = !!saved;
   const onSite = useRef(onSaved);
   onSite.current = onSaved;
 
   // Another setup started while on this page: start over for it.
   useEffect(() => {
     if (!setup) return;
-    setSeen(setup.seen);
     setResult(null);
     setShown(0);
-    rechecked.current = false;
     setUrl(`https://${setup.domain}/`);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // "Waiting for your first pageview": asks until one arrives (or the site is saved).
-  useEffect(() => {
-    if (!key || verified) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      try {
-        const r = await api.setup();
-        if (!live) return;
-        setPollError(null);
-        if (r.setup?.publicKey === key && r.setup.seen) return setSeen(r.setup.seen); // got it: stop asking
-      } catch (e) {
-        if (live) setPollError(e instanceof Error ? e.message : 'Could not ask for the first pageview.');
-      }
-      if (live) timer = setTimeout(tick, POLL_MS);
-    };
-    tick();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [key, verified]);
-
   const run = useCallback(
-    async (target: string, reveal = true) => {
+    async (target: string) => {
       if (!key) return;
       setRunning(true);
       setCheckError(null);
-      if (reveal) {
-        setResult(null);
-        setShown(0);
-      }
+      setResult(null);
+      setShown(0);
       try {
         const r = await api.verifySetup(target);
         setResult(r);
-        if (r.seen) setSeen(r.seen);
-        if (!reveal) setShown(r.checks.length);
-        if (r.site) {
-          setSaved(r.site);
-          onSite.current(r.site);
-        }
+        if (r.site) setSaved(r.site);
       } catch (err) {
         setCheckError(err instanceof Error ? err.message : 'The check could not run.');
       } finally {
@@ -124,18 +85,16 @@ export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => vo
   }, [result, shown, lastShown]);
 
   const revealed = !!result && shown >= lastShown;
-  const received = !!seen;
   const passed = revealed && result!.ok;
   const failed = revealed && !result!.ok;
+  const allGood = passed && !!saved;
 
-  // Every step passed and the first pageview has now arrived: check once more, so the server saves the site.
+  // Every step is shown green and the site is saved: a moment to see it, then hand it over (the dashboard opens).
   useEffect(() => {
-    if (!passed || !received || verified || running || rechecked.current) return;
-    rechecked.current = true;
-    run(result!.url, false);
-  }, [passed, received, verified, running, result, run]);
-
-  const allGood = passed && verified;
+    if (!allGood || !saved) return;
+    const t = setTimeout(() => onSite.current(saved), DONE_MS);
+    return () => clearTimeout(t);
+  }, [allGood, saved]);
 
   // A failed check ends the list at the failing step: the steps after it are not shown at all.
   const steps: Step[] = (failed ? CHECKS.slice(0, stoppedAt + 1) : CHECKS).map((c, i) => {
@@ -144,24 +103,7 @@ export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => vo
     const isNext = (running && !result && i === 0) || (!!result && i === shown);
     return { id: c.id, label: c.label, state: isNext ? 'running' : 'waiting' };
   });
-  if (!failed)
-    steps.push(
-      passed && received
-        ? {
-            id: 'pageview',
-            label: 'First pageview received',
-            state: 'pass',
-            message: `On ${seen!.path} at ${new Date(seen!.at).toLocaleTimeString()}. ${verified ? 'Your site is saved and live.' : 'Saving your site…'}`,
-          }
-        : {
-            id: 'pageview',
-            label: 'Waiting for your first pageview',
-            state: passed ? 'running' : 'waiting',
-            message: passed ? (pollError ?? 'Open your site in a new tab: the first visit shows up here within a minute.') : undefined,
-          },
-    );
-  /** All steps, the first pageview included. */
-  const total = CHECKS.length + 1;
+  const total = CHECKS.length;
   const done = failed ? stoppedAt : steps.filter((s) => s.state === 'pass').length;
 
   return {
@@ -177,11 +119,9 @@ export function useInstallCheck(setup: Setup | null, onSaved: (site: Site) => vo
     running,
     checkError,
     revealed,
-    received,
     allGood,
     failed,
     passed,
-    verified,
     saved,
   };
 }

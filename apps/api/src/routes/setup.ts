@@ -18,13 +18,13 @@ const domainTaken = (domain: string) => new HttpError(409, 'domain_taken', `${do
 const noSetup = () => new HttpError(404, 'no_setup', 'No site is being set up. Add your site first.');
 
 /**
- * Adding a site (decision 25). The site is saved in MongoDB only at the very end, when every check passed
- * AND a real pageview arrived. Before that nothing is stored in our databases: the setup lives in
+ * Adding a site (decision 25). The site is saved in MongoDB only at the very end, when every install check
+ * passed. Before that nothing is stored in our databases: the setup lives in
  * Cloudflare KV entries that expire by themselves (services/setup.ts).
  *
  *   POST   /setup          start: domain + timezone -> key + snippet (nothing answers at the domain: refused)
- *   GET    /setup          the setup in progress, its snippet, and whether the first pageview arrived
- *   POST   /setup/verify   run the checks; all pass + pageview arrived -> the site is created, verified
+ *   GET    /setup          the setup in progress and its snippet
+ *   POST   /setup/verify   run the checks; all pass -> the site is created, verified
  *   DELETE /setup          cancel: the key stops working, nothing is left
  */
 export function setupRoutes(app: Api, s: Services) {
@@ -37,7 +37,6 @@ export function setupRoutes(app: Api, s: Services) {
     publicKey: current.publicKey,
     startedAt: current.startedAt,
     expiresAt: new Date(new Date(current.startedAt).getTime() + SETUP_TTL_DAYS * 86_400_000).toISOString(),
-    seen: await setup.seen(current.publicKey),
     snippets: snippetsFor(config.collectorUrl, current.publicKey),
   });
 
@@ -92,8 +91,8 @@ export function setupRoutes(app: Api, s: Services) {
   });
 
   /**
-   * The install check. It stops at the first failing step. Only when every step passed AND the collector
-   * saw a real pageview is the site written to MongoDB (verified from the start).
+   * The install check. It stops at the first failing step. When every step passed, the site is written to
+   * MongoDB (verified from the start) and the dashboard opens; no waiting for a first pageview.
    */
   app.post('/setup/verify', async (c) => {
     const tenantId = c.get('tenant')._id;
@@ -109,15 +108,14 @@ export function setupRoutes(app: Api, s: Services) {
       if (error instanceof VerifyInputError) throw new HttpError(400, 'invalid_url', error.message);
       throw error;
     }
-    const seen = await setup.seen(current.publicKey);
-    const site = result.ok && seen ? await createVerified(c, current) : null;
-    return c.json({ ...result, seen, verifiedAt: site?.verifiedAt?.toISOString() ?? null, site: site ? siteView(site) : null });
+    const site = result.ok ? await createVerified(c, current) : null;
+    return c.json({ ...result, verifiedAt: site?.verifiedAt?.toISOString() ?? null, site: site ? siteView(site) : null });
   });
 
   /** Saving failed after the key entry was rewritten: the key goes back to "setup" (nothing is stored). */
   const backToSetup = (tenantId: SiteDoc['tenantId'], current: Setup) => setup.start(tenantId, current).catch(() => undefined);
 
-  /** Every check passed and a pageview arrived: NOW the site is saved (KV first, then MongoDB). */
+  /** Every check passed: NOW the site is saved (KV first, then MongoDB). */
   const createVerified = async (c: Ctx, current: Setup): Promise<SiteDoc> => {
     const tenant = c.get('tenant');
     const at = now();
@@ -174,7 +172,7 @@ export function setupRoutes(app: Api, s: Services) {
       }
       await audit.record(c, 'site.created', site, `Added ${site.domain} (timezone ${site.timezone}) after every install check passed`);
     }
-    await setup.finish(tenant._id, current);
+    await setup.finish(tenant._id);
     return site;
   };
 }

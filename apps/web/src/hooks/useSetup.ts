@@ -9,7 +9,7 @@ import { notify } from '../lib/notify';
 /**
  * Step 1, "Add your site": the domain, the timezone, and the hosts the API will accept for that domain
  * (asked from the API while typing: the rule lives there). Submitting starts a SETUP, not a site: nothing is
- * stored until every check passed and the first pageview arrived (decision 25). A domain where nothing
+ * stored until every install check passed (decision 25). A domain where nothing
  * answers is refused right here.
  */
 export function useAddSite(onStarted: (setup: Setup) => void) {

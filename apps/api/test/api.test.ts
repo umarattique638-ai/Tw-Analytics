@@ -9,7 +9,7 @@ import { configFromEnv } from '../src/runtime';
 import { MemoryKv } from '../src/kv';
 import type { PutOptions, SiteConfigSink } from '../src/kv';
 import { MemoryStore } from '../src/store/memory';
-import { addSite, fakeVerifier, markSeen } from './helpers/install';
+import { addSite, fakeVerifier } from './helpers/install';
 
 /** Cheap scrypt for tests; production uses N = 2^17 (passwords.ts). */
 const FAST = { N: 1024, r: 8, p: 1 };
@@ -225,7 +225,7 @@ describe('② add a site (decision 25: nothing is stored until every check passe
     const c = await signedUp(s);
     const started = await c.post('/setup', { domain: ' https://www.Shop.Example.com/pricing ', timezone: 'asia/karachi' });
     expect(started.status).toBe(201);
-    expect(started.body.setup).toMatchObject({ domain: 'shop.example.com', allowedHosts: ['shop.example.com', '*.shop.example.com'], timezone: 'Asia/Karachi', seen: null });
+    expect(started.body.setup).toMatchObject({ domain: 'shop.example.com', allowedHosts: ['shop.example.com', '*.shop.example.com'], timezone: 'Asia/Karachi' });
     expect(started.body.setup.publicKey).toMatch(SITE_KEY_RE);
     const r = await c.addSite('shop.example.com', 'Asia/Karachi');
     expect(r.body.site).toMatchObject({ domain: 'shop.example.com', timezone: 'Asia/Karachi', status: 'active', publicKey: started.body.setup.publicKey });
@@ -253,7 +253,7 @@ describe('② add a site (decision 25: nothing is stored until every check passe
     expect(again.snippets[0].code).toContain(st.publicKey);
   });
 
-  it('a failing check stores nothing; all checks + a real pageview save the site, verified', async () => {
+  it('a failing check stores nothing; when every check passes the site is saved at once, verified', async () => {
     let html = '<html><head></head></html>';
     const fetchImpl = (async (input: URL | string) => {
       const url = String(input);
@@ -265,8 +265,7 @@ describe('② add a site (decision 25: nothing is stored until every check passe
     const c = await signedUp(s);
     const { setup: st } = (await c.post('/setup', { domain: 'example.com', timezone: 'UTC' })).body;
 
-    // The snippet is missing (a pageview noted anyway): the check stops at the first failure, nothing saved.
-    markSeen(s.kv.inner.entries, st.publicKey);
+    // The snippet is missing: the check stops at the first failure, nothing saved.
     let r = (await c.post('/setup/verify', {})).body;
     expect(r.checks.map((x: { id: string; status: string }) => `${x.id}:${x.status}`)).toEqual([
       'reach:pass', 'present:fail', 'noscript:skip', 'once:skip', 'script:skip', 'csp:skip', 'id:skip',
@@ -274,19 +273,16 @@ describe('② add a site (decision 25: nothing is stored until every check passe
     expect(r.site).toBeNull();
     expect(s.store.sites).toHaveLength(0);
 
-    // Every check passes, but no pageview yet: still nothing saved.
-    s.kv.inner.entries.delete(`seen:${st.publicKey}`);
+    // A snippet with another key: still nothing saved.
+    html = `<html><head><script async src="${COLLECTOR}/tw.js?id=tw_pub_${'x'.repeat(32)}"></script></head></html>`;
+    r = (await c.post('/setup/verify', {})).body;
+    expect(r.checks.at(-1)).toMatchObject({ id: 'id', status: 'fail' });
+    expect(s.store.sites).toHaveLength(0);
+
+    // Every check passes: saved now, verified, on the same key (no waiting for a pageview).
     html = `<html><head><script async src="${COLLECTOR}/tw.js?id=${st.publicKey}"></script></head></html>`;
     r = (await c.post('/setup/verify', {})).body;
     expect(r.ok).toBe(true);
-    expect(r.seen).toBeNull();
-    expect(r.site).toBeNull();
-    expect(s.store.sites).toHaveLength(0);
-
-    // Both: saved now, verified, on the same key; the collector entry is the real site; setup notes gone.
-    markSeen(s.kv.inner.entries, st.publicKey, '/pricing');
-    r = (await c.post('/setup/verify', {})).body;
-    expect(r.seen.path).toBe('/pricing');
     expect(r.site).toMatchObject({ id: 101, domain: 'example.com', publicKey: st.publicKey });
     expect(r.verifiedAt).not.toBeNull();
     expect(s.store.sites).toHaveLength(1);
@@ -295,7 +291,7 @@ describe('② add a site (decision 25: nothing is stored until every check passe
     expect(entry.setup).toBeUndefined();
     expect(entry.identitySecret).toMatch(/^[0-9a-f]{64}$/);
     expect(s.kv.inner.ttls.has(`site:${st.publicKey}`)).toBe(false);
-    expect([...s.kv.inner.entries.keys()].filter((k) => k.startsWith('setup:') || k.startsWith('seen:'))).toEqual([]);
+    expect([...s.kv.inner.entries.keys()]).toEqual([`site:${st.publicKey}`]);
     expect((await c.get('/setup')).body.setup).toBeNull();
     expect(s.store.audit.some((e) => e.action === 'site.created')).toBe(true);
   });

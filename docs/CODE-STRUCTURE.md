@@ -54,7 +54,6 @@ tw.js (packages/browser, packages/core)
 | `collect.ts` | One hit, step by step: limits, size, parse, site, checks, privacy, queue. |
 | `http/body.ts`, `http/responses.ts` | Reading the body with a byte cap; every response. |
 | `site-config.ts` | The site of a public key, from Cloudflare KV. |
-| `setup.ts` | A site being set up: notes its first pageview, queues nothing. |
 | `edge.ts` | Cloudflare request data, rate limiters. |
 | `identity.ts` | Daily visitor hashes (the IP exists only here). |
 | `queue.ts` | Sending events, batching identical drops. |

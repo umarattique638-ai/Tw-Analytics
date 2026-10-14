@@ -6,7 +6,6 @@
  *   collect.ts      one hit, step by step (limits, size, parse, site, checks, privacy, queue)
  *   http/           reading the body, building responses
  *   site-config.ts  the site of a public key (Cloudflare KV)
- *   setup.ts        a site being set up: note its first pageview, store nothing
  *   edge.ts         Cloudflare request data and rate limiters
  *   identity.ts     daily visitor hashes (the IP never leaves this step)
  *   queue.ts        sending events and (batched) drops to the queue

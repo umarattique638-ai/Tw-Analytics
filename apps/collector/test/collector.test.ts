@@ -264,46 +264,20 @@ describe('Stage 2 collector', () => {
     expect(h.sent).toHaveLength(1);
   });
 
-  describe('a site being set up (decision 25)', () => {
+  it('a site being set up (decision 25): hits are accepted, but no event or drop is queued', async () => {
     const setupSite = { id: 0, publicKey: PUBLIC_KEY, allowedHosts: site.allowedHosts, live: true, region: 'in' as const, setup: true };
-    const setupEnv = () => {
-      const kv = new Map<string, string>([[`site:${PUBLIC_KEY}`, JSON.stringify(setupSite)]]);
-      const puts: { key: string; ttl?: number }[] = [];
-      const h = env({
-        SITE_CONFIG: {
-          async get(key: string) {
-            return kv.get(key) ?? null;
-          },
-          async put(key: string, value: string, o?: { expirationTtl?: number }) {
-            puts.push({ key, ttl: o?.expirationTtl });
-            kv.set(key, value);
-          },
+    const h = env({
+      SITE_CONFIG: {
+        async get(key: string) {
+          return key === `site:${PUBLIC_KEY}` ? JSON.stringify(setupSite) : null;
         },
-      });
-      return { ...h, kv, puts };
-    };
-
-    it('queues nothing, and notes the first pageview once (it expires by itself)', async () => {
-      const h = setupEnv();
-      for (const path of ['/', '/pricing']) {
-        const ctx = context();
-        const res = await worker.fetch(post(validBody({ u: `https://example.com${path}` }), BROWSER), h.env, ctx);
-        expect(res.status).toBe(204);
-        await Promise.all(ctx.promises);
-      }
-      expect(h.sent).toHaveLength(0);
-      expect(h.puts).toEqual([{ key: `seen:${PUBLIC_KEY}`, ttl: 7 * 86_400 }]);
-      expect(JSON.parse(h.kv.get(`seen:${PUBLIC_KEY}`)!)).toMatchObject({ path: '/' });
+      },
     });
-
-    it('a custom event is not a pageview, and drops are not queued either', async () => {
-      const h = setupEnv();
-      const ctx = context();
-      await worker.fetch(post(validBody({ n: 'signup' }), BROWSER), h.env, ctx);
-      await worker.fetch(post(validBody({ u: 'https://evil.example/' }), BROWSER), h.env, ctx);
-      await Promise.all(ctx.promises);
-      expect(h.sent).toHaveLength(0);
-      expect(h.puts).toHaveLength(0);
-    });
+    const ctx = context();
+    const res = await worker.fetch(post(validBody(), BROWSER), h.env, ctx);
+    expect(res.status).toBe(204);
+    await worker.fetch(post(validBody({ u: 'https://evil.example/' }), BROWSER), h.env, ctx);
+    await Promise.all(ctx.promises);
+    expect(h.sent).toHaveLength(0);
   });
 });

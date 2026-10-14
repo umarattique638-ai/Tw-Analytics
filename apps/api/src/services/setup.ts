@@ -7,13 +7,12 @@ import type { SiteConfigSink } from '../kv';
 import type { ApiConfig } from '../config';
 
 /**
- * A site being set up (decision 25): NOTHING is stored in MongoDB or ClickHouse until every check passed
- * and a real pageview arrived. Until then the setup lives only in Cloudflare KV, in three entries that
- * delete themselves after SETUP_TTL_DAYS:
+ * A site being set up (decision 25): NOTHING is stored in MongoDB or ClickHouse until every install check
+ * passed. Until then the setup lives only in Cloudflare KV, in two entries that delete themselves after
+ * SETUP_TTL_DAYS:
  *
  *   setup:<workspace id>   the domain, timezone and key being set up (one setup at a time per workspace)
  *   site:<key>             what the collector reads; `setup: true`, so it queues nothing for this key
- *   seen:<key>             written by the collector when the first real pageview of that key arrives
  *
  * A wrong or abandoned domain therefore leaves nothing behind: the entries simply expire.
  */
@@ -27,13 +26,7 @@ export interface Setup {
   startedAt: string;
 }
 
-export interface Seen {
-  at: string;
-  path: string;
-}
-
 const setupName = (tenantId: ObjectId) => `setup:${tenantId.toHexString()}`;
-export const seenName = (publicKey: string) => `seen:${publicKey}`;
 
 function parse<T>(raw: string | null): T | null {
   if (!raw) return null;
@@ -78,11 +71,6 @@ export function createSetupService(kv: SiteConfigSink, config: ApiConfig) {
       return parse<Setup>(await read(setupName(tenantId)));
     },
 
-    /** The first real pageview of this key, if one arrived. */
-    async seen(publicKey: string): Promise<Seen | null> {
-      return parse<Seen>(await read(seenName(publicKey)));
-    },
-
     /** Starts (or replaces) the workspace's setup: the collector entry first, so the snippet works at once. */
     async start(tenantId: ObjectId, setup: Setup): Promise<void> {
       await write(kvName(setup.publicKey), JSON.stringify(setupSiteConfig(setup, config.region)));
@@ -96,12 +84,12 @@ export function createSetupService(kv: SiteConfigSink, config: ApiConfig) {
 
     /** Cancelled or replaced: the key stops working and nothing is left. */
     async cancel(tenantId: ObjectId, setup: Setup): Promise<void> {
-      await forget([setupName(tenantId), kvName(setup.publicKey), seenName(setup.publicKey)]);
+      await forget([setupName(tenantId), kvName(setup.publicKey)]);
     },
 
-    /** Verified: the site now lives in MongoDB and its key entry was rewritten, so only the setup notes go. */
-    async finish(tenantId: ObjectId, setup: Setup): Promise<void> {
-      await forget([setupName(tenantId), seenName(setup.publicKey)]);
+    /** Verified: the site now lives in MongoDB and its key entry was rewritten, so only the setup entry goes. */
+    async finish(tenantId: ObjectId): Promise<void> {
+      await forget([setupName(tenantId)]);
     },
   };
 }

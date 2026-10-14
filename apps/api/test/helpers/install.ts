@@ -2,8 +2,8 @@ import { snippetsFor } from '../../src/snippets';
 
 /**
  * Adding a site is a full install (decision 25): start the setup, the customer's page carries the snippet,
- * the collector notes a first pageview, the check passes, and only then is the site saved. These helpers
- * play the customer's page and the collector for tests that just need a site to exist.
+ * every check passes, and only then is the site saved. These helpers play the customer's page for tests
+ * that just need a site to exist.
  */
 
 /** A fetch that serves, for any domain being set up, a page with that setup's snippet (and tw.js itself). */
@@ -30,18 +30,13 @@ export const fakeVerifier = (entries: Map<string, string>, collectorUrl: string)
 
 type Post = (path: string, json: unknown) => Promise<{ status: number; body: any }>;
 
-/** The collector's note that a real pageview of this key arrived. */
-export const markSeen = (entries: Map<string, string>, publicKey: string, path = '/') =>
-  entries.set(`seen:${publicKey}`, JSON.stringify({ at: new Date().toISOString(), path }));
-
 /**
- * Start -> pageview -> check: the site as the API saves it. A refused start is returned as is (status + body),
+ * Start -> check: the site as the API saves it. A refused start is returned as is (status + body),
  * so tests of the refusals read the same.
  */
 export async function addSite(post: Post, entries: Map<string, string>, domain: string, timezone: string) {
   const started = await post('/setup', { domain, timezone });
   if (started.status >= 300) return started;
-  markSeen(entries, started.body.setup.publicKey);
   const checked = await post('/setup/verify', {});
   if (!checked.body?.site) throw new Error(`install check did not pass: ${JSON.stringify(checked.body)}`);
   return { status: 201, body: { site: checked.body.site, sync: { ok: true } } };

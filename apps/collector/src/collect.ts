@@ -6,7 +6,6 @@ import { dropHeaders, noContent, outcomeResponse, pixelResponse, rateLimitedOutc
 import { visitorHashes } from './identity';
 import { log } from './log';
 import { dropMessage, enqueue, queueDrop } from './queue';
-import { noteSetupPageview } from './setup';
 import { readSiteConfig } from './site-config';
 
 /**
@@ -49,11 +48,8 @@ export async function collect(request: Request, env: Env, ctx: ExecutionContextL
   }
   if (outcome.kind !== 'accept') return outcomeResponse(outcome, pixel, env);
 
-  // 5b. Being set up: only "a pageview arrived" is noted, nothing is queued.
-  if (site?.setup) {
-    ctx.waitUntil(noteSetupPageview(env, site, outcome.event));
-    return outcomeResponse(outcome, pixel, env);
-  }
+  // 5b. Being set up (decision 25): accepted, but nothing is queued, so nothing is stored.
+  if (site?.setup) return outcomeResponse(outcome, pixel, env);
 
   // 6. Privacy: no event is queued without a per-site secret and a client address.
   //    The raw IP lives only inside this hash computation.
