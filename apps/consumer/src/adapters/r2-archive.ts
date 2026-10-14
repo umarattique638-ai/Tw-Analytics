@@ -1,4 +1,4 @@
-import type { ArchivePort } from '../process';
+import type { ArchivePort } from '../pipeline/ports';
 
 /**
  * R2 raw archive (PLAN 3.1 a). R2 is on the Free plan: 10 GB-month, 1 M Class A writes a month,

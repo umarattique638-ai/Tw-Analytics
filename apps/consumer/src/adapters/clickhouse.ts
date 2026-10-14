@@ -1,4 +1,4 @@
-import type { ClickHousePort } from '../process';
+import type { ClickHousePort } from '../pipeline/ports';
 
 /**
  * ClickHouse over the HTTP interface (PLAN 3.1 d/e). Plain fetch, so it runs in a Worker and in Node.

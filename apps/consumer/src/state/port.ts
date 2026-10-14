@@ -1,6 +1,6 @@
 import { LIMITS } from '@tailwatch/contract';
 import type { SessionRecord } from '../core/rows';
-import type { StateLoad, StatePort, StateSnapshot, StateUpdate } from '../process';
+import type { StateLoad, StatePort, StateSnapshot, StateUpdate } from '../pipeline/ports';
 import type { CommitRequest, IntendRequest, LoadRequest, LoadResponse } from './store';
 
 /**

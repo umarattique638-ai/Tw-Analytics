@@ -11,7 +11,7 @@ const USED_BY: Record<QueryName, string> = {
   series_hourly_sessions: 'Visitors over time (Today): sessions per local hour',
   top_pages: 'Top pages (from the 15-minute rollup)',
   pages_all: 'Account export (Settings > Download your data): every page of a site over its stored history',
-  sources: 'Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/stats.ts channelOf) and Top referrers',
+  sources: 'Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/stats/channels.ts channelOf) and Top referrers',
   countries: 'Top locations',
   devices: 'Device breakdown',
   browsers: 'Browser breakdown',
@@ -30,7 +30,7 @@ export function queriesMarkdown(): string {
   const parts = [
     '# Dashboard queries',
     '',
-    'Generated from `apps/api/src/stats.ts` (a test fails if this file and the code differ).',
+    'Generated from `apps/api/src/stats/queries.ts` (a test fails if this file and the code differ).',
     'Every number on the dashboard comes from exactly one of these queries, so any of them can be',
     're-run by hand in the ClickHouse SQL console. Replace `{db}` with `tailwatch` and set the parameters first, e.g.:',
     '',

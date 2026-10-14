@@ -342,13 +342,13 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
     i. retentionDays for a new site: 395 (13 months), until plans define it (PLAN 10, Phase 3).
     j. The dashboard is the owner's design (apps/web). Stage 5 screens are live; Live traffic / Events / Suspicious / Reports show labelled sample data until Stage 6.
 14. DECIDED 2026-10-08 (Stage 6, owner: "everything live, real data, nothing mock"):
-    a. The Query API is part of the one backend: /api/v1/sites/:id/stats/{overview,live,events,drops}, /export.csv, /allowed-hosts. Every number comes from a named query in apps/api/src/stats.ts; docs/QUERIES.md lists them verbatim (a test fails if they differ), so any number can be re-run in the SQL console.
+    a. The Query API is part of the one backend: /api/v1/sites/:id/stats/{overview,live,events,drops}, /export.csv, /allowed-hosts. Every number comes from a named query in apps/api/src/stats/queries.ts; docs/QUERIES.md lists them verbatim (a test fails if they differ), so any number can be re-run in the SQL console.
     b. Days are the SITE's local calendar days: ranges are [local midnight, next local midnight) turned into UTC by ClickHouse (toDateTime64(..., tz)); charts bucket with toDate/toStartOfHour(..., tz). A DST day has 23 or 25 hours (proven on Europe/London, end of BST 2026).
     c. Ranges: Today (per local hour), Last 7 days, Last 30 days (per local day). KPIs show the change against the previous period of the same length.
     d. Visitors: uniqExact of daily hashes; over more than one day it is an upper bound, labelled "estimated" (STAGE-1 D6). Sessions and bounce from the sessions table with sum(sign) (VersionedCollapsingMergeTree, correct before and after merges). Bounce = 1 - engaged / sessions (PLAN 5).
     e. Capture rate: per visitor, a page load is a run of rising sequence numbers; received = distinct seqs, expected = highest seq; summed. An upper bound (a lost LAST beacon is invisible); fully blocked scripts are never visible (said on screen).
     f. Live: active visitors = distinct visitors with a hit in the last 5 minutes; chart = per minute, last 30 minutes; latest 20 hits of the last 24 h. Polled every 10 s (overview every 60 s), only while the tab is visible.
-    g. Traffic channels from the referrer host: Direct / Search / Social / Referral (apps/api/src/stats.ts channelOf).
+    g. Traffic channels from the referrer host: Direct / Search / Social / Referral (apps/api/src/stats/channels.ts channelOf).
     h. "Allow" on a hostname drop adds that host to the site's accepted hosts (MongoDB, then KV): its new hits count from then on; past drops stay dropped.
     i. Nothing on the dashboard is sample data. Features not built yet (email digest, alerts, stats API key, public link, server-log comparison, HTML-attribute / dashboard-rule events) are listed as "Coming next" instead of controls that do nothing. The login page's capture-rate illustration is labelled "(example)".
 15. DECIDED 2026-10-08 (Stage 7, owner: "follow PLAN and BUILD-ORDER, where they are silent do what is best"):
@@ -459,6 +459,18 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    `pnpm e2e:frameworks`) is removed. Install is the script tag only (decision 20), which works in any
    framework. SPA tracking stays tested by the collector's tracker e2e (Navigation API, pushState fallback,
    hash routes, StrictMode-style double init) and packages/core tests. The stage 4.5 entries below are history.
+
+22. DECIDED 2026-10-14 (owner, before the code audit): one concern per file, in every app. docs/CODE-STRUCTURE.md
+   is the map. No behaviour changed; every unit, e2e and live ClickHouse test passed before and after.
+   - apps/api: app.ts only wires the app; http/ (errors, limiters, request helpers, CSRF / session / cron
+     middleware), services/ (sessions, KV sync, activity log, sites, reports, account export, nightly jobs),
+     routes/ (one file per area), views.ts (what clients see), stats/, mail/, verifier/ as folders.
+   - apps/collector: index.ts is the Worker entry; router, collect (the steps of one hit), http/, site-config,
+     edge, identity (visitor hashes), queue (events and batched drops).
+   - apps/consumer: process.ts orchestrates pipeline/ (ports, archive, classify, state, groups, work,
+     sessionise, write: one file per PLAN 3.1 step); worker/ holds the Cloudflare wiring.
+   - apps/web: logic in hooks/, pages only compose components, shared UI in components/ui/, action results
+     as toasts (lib/notify.ts), messages that belong to a place stay inline.
 
 ## 16. Lessons from the first attempt (do not repeat)
 
