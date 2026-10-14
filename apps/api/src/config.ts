@@ -20,9 +20,8 @@ export interface ApiConfig {
   /** Tests / local development only: the active verifier may fetch private addresses. */
   verifierAllowPrivate: boolean;
   /**
-   * Who may sign up. null = anyone (local development). On a public server (TW_SIGNUP_ALLOWLIST) only
-   * these e-mails, or e-mails of a listed domain written as "@example.com". Until Phase 3 (teams,
-   * invites, quotas) a public dashboard must not be open to everyone.
+   * Who may sign up. null = anyone (the default, decision 23). Optional TW_SIGNUP_ALLOWLIST limits it to
+   * these e-mails, or e-mails of a listed domain written as "@example.com" (a private test server).
    */
   signupAllowlist: string[] | null;
   /** Where the dashboard is reachable: links in e-mails (password reset) point here. */
@@ -34,10 +33,10 @@ export interface ApiConfig {
 /** Retention a customer can choose for a site, in days (never above ApiConfig.retentionDays). */
 export const RETENTION_CHOICES = [30, 90, 180, 395] as const;
 
-/** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty -> null (open). */
+/** "a@x.com, @team.com" -> ['a@x.com', '@team.com']; empty or "*" -> null (open to everyone). */
 export function parseAllowlist(raw: string | undefined): string[] | null {
   const list = (raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return list.length ? list : null;
+  return list.length && !list.includes('*') ? list : null;
 }
 
 export function signupAllowed(allowlist: string[] | null, email: string): boolean {

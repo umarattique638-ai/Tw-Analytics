@@ -365,7 +365,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 16. DECIDED 2026-10-09 (owner: "ok kro" to Render free + MongoDB Atlas free): the dashboard goes online before Phase 3.
     a. One Node service on Render (free) = the same apps/api serving apps/web (render.yaml Blueprint). Not Cloudflare Workers: scrypt needs more CPU than the Free plan's 10 ms and the MongoDB driver does not run there.
     b. MongoDB Atlas M0 (free, 3-node replica set: transactions work). Accounts and sites are copied with their ids (pnpm db:mongo:copy), so site 101 keeps its ClickHouse data and KV entry.
-    c. A public (https) server refuses to start without TW_SIGNUP_ALLOWLIST: until Phase 3 (teams, invites, quotas) only the owner can sign up. Login is rate limited per e-mail (10/15 min) and per client address (30/15 min, the proxy-appended last X-Forwarded-For entry). Cookies are Secure on https.
+    c. Sign-up: see decision 23 (open to everyone since 2026-10-14; TW_SIGNUP_ALLOWLIST is optional). Login is rate limited per e-mail (10/15 min) and per client address (30/15 min, the proxy-appended last X-Forwarded-For entry). Cookies are Secure on https.
     d. Accepted limits of the free plan: sleeps after 15 minutes idle, ~1 minute cold start; Atlas Network Access 0.0.0.0/0 because Render free has no fixed outbound IP. Move to a paid plan at launch.
     e. 2026-10-09: Render asked for a credit card (the owner has none), so the dashboard goes on VERCEL Hobby (free, no card): the built dashboard as static files + the same API as one Node 22 serverless function (apps/api/src/vercel.ts, .vercel/output via scripts/build-vercel.mjs, vercel.json). Settings rules live in apps/api/src/runtime.ts, shared with `pnpm app` and Render. Known serverless difference: the in-memory login rate limits are per warm instance; a shared limiter is a Phase 3 item.
     g. LIVE 2026-10-09: https://tw-analytics-five.vercel.app works (login, live traffic). First hosted overview timed out: the API forced select_sequential_consistency on every dashboard query (needed only by tests that insert then read) and allowed 10 s. Now off for the dashboard, 20 s per query, one retry on network failure.
@@ -471,6 +471,12 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      sessionise, write: one file per PLAN 3.1 step); worker/ holds the Cloudflare wiring.
    - apps/web: logic in hooks/, pages only compose components, shared UI in components/ui/, action results
      as toasts (lib/notify.ts), messages that belong to a place stay inline.
+
+23. DECIDED 2026-10-14 (owner): sign-up is open to everyone. The "invitation only" lock (a public server
+   refused to start without TW_SIGNUP_ALLOWLIST) is removed. TW_SIGNUP_ALLOWLIST stays as an OPTIONAL
+   limit (e-mails or "@domain.com"; empty or "*" = open), for a private test server. Abuse limits that
+   stay: 20 sign-ups per address an hour, login limits per e-mail and per address, CSRF rules. Before a
+   public launch, still to add: e-mail verification and per-account quotas (sites, events).
 
 ## 16. Lessons from the first attempt (do not repeat)
 

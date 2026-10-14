@@ -4,7 +4,8 @@ import type { SiteConfig } from '@tailwatch/contract';
 import { BROWSER_UA } from '../../../packages/contract/fixtures/payloads';
 import { createApp, SESSION_COOKIE } from '../src/app';
 import type { AnalyticsReader, RecentActivity } from '../src/analytics';
-import { defaultConfig } from '../src/config';
+import { defaultConfig, parseAllowlist } from '../src/config';
+import { configFromEnv } from '../src/runtime';
 import { MemoryKv } from '../src/kv';
 import type { SiteConfigSink } from '../src/kv';
 import { MemoryStore } from '../src/store/memory';
@@ -156,7 +157,16 @@ describe('① sign up / log in', () => {
     expect(last).toBe(429);
   });
 
-  it('a public server only lets allow-listed e-mails sign up (TW_SIGNUP_ALLOWLIST)', async () => {
+  it('sign-up is open to everyone by default, also on a public https server', async () => {
+    const config = configFromEnv({ TW_COLLECTOR_URL: 'https://c.example.workers.dev' }, 'https://dash.example.com');
+    expect(config.signupAllowlist).toBeNull();
+    expect(parseAllowlist('*')).toBeNull();
+    expect(parseAllowlist(' , ')).toBeNull();
+    const s = setup({ signupAllowlist: config.signupAllowlist });
+    expect((await s.client().post('/auth/signup', { name: 'New', email: 'new.customer@anywhere.io', password: 'correct horse' })).status).toBe(201);
+  });
+
+  it('an optional TW_SIGNUP_ALLOWLIST limits sign-up to listed e-mails and domains', async () => {
     const s = setup({ signupAllowlist: ['umar@example.com', '@team.test'] });
     const c = s.client();
     const stranger = await c.post('/auth/signup', { name: 'X', email: 'someone@else.com', password: 'correct horse' });

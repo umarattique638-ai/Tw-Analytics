@@ -380,8 +380,7 @@ It applies the schema on Atlas, then copies accounts, workspaces, sites (with th
 1. https://vercel.com/signup → **Continue with GitHub** → Hobby.
 2. **Add New → Project** → import the GitHub repo. Framework Preset: **Other**. Leave Root Directory,
    Build and Install commands empty: `vercel.json` sets them.
-3. **Environment Variables** (Production): `TW_MONGO_URL` (Atlas, user tw_app), `TW_SIGNUP_ALLOWLIST`
-   (your e-mail), `TW_COLLECTOR_URL`, `TW_REGION=in`, `CF_ACCOUNT_ID`, `CF_KV_NAMESPACE_ID`,
+3. **Environment Variables** (Production): `TW_MONGO_URL` (Atlas, user tw_app), `TW_COLLECTOR_URL`, `TW_REGION=in`, `CF_ACCOUNT_ID`, `CF_KV_NAMESPACE_ID`,
    `CF_API_TOKEN`, `TW_CH_URL`, `TW_CH_READ_USER=tw_read`, `TW_CH_READ_PASSWORD`.
 4. **Deploy**. Your dashboard: `https://<project>.vercel.app`. Every `git push` deploys again.
 
@@ -393,10 +392,9 @@ rules as `pnpm app`) as one Node 22 function behind `/api/*`. Settings rules are
 **C2. Render (free, but asks for a card)**
 1. Push `ttw` to GitHub (it contains `render.yaml`).
 2. https://render.com → sign in with GitHub → **New → Blueprint** → choose the repo.
-3. Render asks for the secret values once: `TW_MONGO_URL` (the Atlas string), `TW_SIGNUP_ALLOWLIST`
-   (your e-mail), `CF_API_TOKEN`, `TW_CH_URL`, `TW_CH_READ_PASSWORD` (same as in your `.env`).
+3. Render asks for the secret values once: `TW_MONGO_URL` (the Atlas string), `CF_API_TOKEN`, `TW_CH_URL`, `TW_CH_READ_PASSWORD` (same as in your `.env`).
 4. **Apply**. The first build takes a few minutes. Your dashboard: `https://tailwatch-xxxx.onrender.com`.
 
 Free plan: the service sleeps after 15 minutes without visits and the first visit then takes about a
-minute. Data collection is not affected (that is Cloudflare). A public server refuses to start without
-`TW_SIGNUP_ALLOWLIST`, so nobody else can create an account until Phase 3.
+minute. Data collection is not affected (that is Cloudflare). Sign-up is open to everyone; the optional
+`TW_SIGNUP_ALLOWLIST` (e-mails, or `@domain.com`) limits it, for example on a private test server.

@@ -40,13 +40,8 @@ export function publicUrlOf(env: Env, port: number): string {
 export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
   const missing = (name: string) => new SetupError([`Missing ${name}. Put it in the root .env, or in the host's environment settings.`]);
   if (!env.TW_COLLECTOR_URL) throw missing('TW_COLLECTOR_URL');
+  // Sign-up is open to everyone (decision 23); TW_SIGNUP_ALLOWLIST optionally limits it.
   const signupAllowlist = parseAllowlist(env.TW_SIGNUP_ALLOWLIST);
-  if (publicUrl.startsWith('https://') && !signupAllowlist) {
-    throw new SetupError([
-      'Refusing to start: this is a public (https) server and TW_SIGNUP_ALLOWLIST is empty, so anyone could sign up.',
-      'Set TW_SIGNUP_ALLOWLIST to your e-mail (comma-separated, "@domain.com" allows a whole domain).',
-    ]);
-  }
   return defaultConfig({
     collectorUrl: env.TW_COLLECTOR_URL,
     region: env.TW_REGION === 'in-eu' ? 'in-eu' : 'in',

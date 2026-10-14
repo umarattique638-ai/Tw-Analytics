@@ -73,7 +73,7 @@ if (process.argv.includes('--resync')) {
   const hostname = env.TW_API_HOST || (hosted ? '0.0.0.0' : '127.0.0.1');
   const listening = serve({ fetch: server.fetch, port, hostname }, () => {
     console.log(`TailWatch API + dashboard: ${publicUrl}`);
-    console.log(signupAllowlist ? `  sign-up limited to: ${signupAllowlist.join(', ')}` : '  sign-up: open (local development)');
+    console.log(signupAllowlist ? `  sign-up limited to: ${signupAllowlist.join(', ')}` : '  sign-up: open to everyone');
     if (kv instanceof UnconfiguredKv) console.log('  WARNING: Cloudflare KV not configured (CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID, CF_API_TOKEN): new sites will not activate.');
     if (analytics instanceof UnconfiguredReader) console.log('  WARNING: ClickHouse read user not configured (TW_CH_READ_PASSWORD): the first-pageview check cannot run.');
   });

@@ -35,8 +35,6 @@ services:
       # Secrets and personal values: Render asks for these when the Blueprint is created.
       - key: TW_MONGO_URL
         sync: false
-      - key: TW_SIGNUP_ALLOWLIST
-        sync: false
       - key: CF_API_TOKEN
         sync: false
       - key: TW_CH_URL
