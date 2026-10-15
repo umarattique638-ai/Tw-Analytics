@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Row } from './types';
 
 const tick = { fontSize: 11, fill: '#94a3b8' };
@@ -82,7 +82,13 @@ export function SourcesDonut({ sources, total, caption = 'Unique visitors' }: { 
 }
 
 /* ---------- Live sessions ---------- */
-export function LiveChart({ data }: { data: { time: string; count: number }[] }) {
+/**
+ * Visitors per minute. `activeMinutes`: the last minutes are shaded and labelled: they are what
+ * "Active now" counts, so the two numbers can be told apart at a glance.
+ */
+export function LiveChart({ data, activeMinutes }: { data: { time: string; count: number }[]; activeMinutes?: number }) {
+  const from = activeMinutes && data.length > activeMinutes ? data[data.length - activeMinutes]!.time : null;
+  const to = data.length ? data[data.length - 1]!.time : null;
   return (
     <div className="h-56">
       <ResponsiveContainer width="100%" height="100%">
@@ -96,8 +102,19 @@ export function LiveChart({ data }: { data: { time: string; count: number }[] })
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.2)" />
           <XAxis dataKey="time" tick={{ ...tick, fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
           <YAxis allowDecimals={false} tick={tick} axisLine={false} tickLine={false} />
+          {from && to && (
+            <ReferenceArea
+              x1={from}
+              x2={to}
+              fill="#10b981"
+              fillOpacity={0.08}
+              stroke="none"
+              ifOverflow="extendDomain"
+              label={{ value: 'Active now', position: 'insideTop', fontSize: 10, fill: '#059669' }}
+            />
+          )}
           <Tooltip {...tooltipProps} />
-          <Area type="monotone" dataKey="count" name="Active sessions" stroke="#10b981" strokeWidth={2} fill="url(#gLive)" animationDuration={300} />
+          <Area type="monotone" dataKey="count" name="Visitors" stroke="#10b981" strokeWidth={2} fill="url(#gLive)" animationDuration={300} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

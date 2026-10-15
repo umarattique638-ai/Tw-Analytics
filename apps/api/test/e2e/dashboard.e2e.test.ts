@@ -135,7 +135,15 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '1m 23s', 'Time on site', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
       expect(t, want).toContain(want);
     }
-    await expect.poll(async () => (await text()).includes('7 active in the last 5 minutes')).toBe(true);
+    // Active now (last 5 minutes) and the per-minute chart say what they count; the chart shades those 5 minutes.
+    for (const want of ['Visitors in the last 5 minutes', 'shaded: the 5 minutes in Active now']) expect(await text(), want).toContain(want);
+    await page.locator('.recharts-reference-area').first().waitFor();
+    await page.locator('svg text', { hasText: 'Active now' }).first().waitFor();
+    if (process.env.TW_SCREENSHOTS) {
+      await page.locator('svg text', { hasText: 'Active now' }).first().scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/6d-live.png` });
+      await page.evaluate(() => document.querySelector('main')!.scrollTo(0, 0));
+    }
     // The capture rate sits in the sidebar, above the account.
     const capture = (await page.getByRole('region', { name: 'Capture rate' }).innerText()).replace(/\s+/g, ' ');
     for (const want of ['98.7%', '987 of 1,000']) expect(capture, want).toContain(want);

@@ -86,7 +86,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} />
+        <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} note="Visitors in the last 5 minutes" />
         <KpiCard icon={Activity} label="Sessions" value={k ? num(k.sessions) : null} delta={sessionsChange?.delta} up={sessionsChange?.up} positive={sessionsChange?.up} />
         <KpiCard icon={Eye} label="Page views" value={k ? num(k.pageviews) : null} delta={pageviewsChange?.delta} up={pageviewsChange?.up} positive={pageviewsChange?.up} />
         <KpiCard
@@ -128,7 +128,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel
           title="Live visitors"
-          subtitle={l ? `${num(l.active)} active in the last 5 minutes` : 'Loading…'}
+          subtitle="Visitors per minute, last 30 minutes (shaded: the 5 minutes in Active now)"
           action={
             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
               <span className="size-2 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />
@@ -136,7 +136,10 @@ function Overview({ site, name }: { site: Site; name: string }) {
             </span>
           }
         >
-          <LiveChart data={(l?.minutes ?? []).map((m) => ({ time: new Date(m.minute).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), count: m.visitors }))} />
+          <LiveChart
+            activeMinutes={5}
+            data={(l?.minutes ?? []).map((m) => ({ time: new Date(m.minute).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), count: m.visitors }))}
+          />
         </Panel>
         <Panel title="Latest hits" subtitle="The newest 20 from the last 24 hours">
           <LiveEvents events={l?.events ?? null} />
