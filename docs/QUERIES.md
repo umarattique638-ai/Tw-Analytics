@@ -25,10 +25,10 @@ WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {t
 
 ## sessions_bounce
 
-Dashboard KPIs: Sessions, Bounce rate = 1 - engaged_sessions / sessions
+Dashboard KPIs: Sessions, Bounce rate = 1 - engaged_sessions / sessions, Avg. visit time = engagement_ms / sessions
 
 ```sql
-SELECT sum(sign) AS sessions, sum(is_engaged * sign) AS engaged_sessions
+SELECT sum(sign) AS sessions, sum(is_engaged * sign) AS engaged_sessions, sum(engagement_ms * sign) AS engagement_ms
 FROM {db}.sessions
 WHERE site_id = {site:UInt64} AND start >= toDateTime64({from:String}, 3, {tz:String}) AND start < toDateTime64({until:String}, 3, {tz:String})
 ```

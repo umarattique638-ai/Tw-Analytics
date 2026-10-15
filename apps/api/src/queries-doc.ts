@@ -4,7 +4,7 @@ import type { QueryName } from './stats';
 /** Where each documented query shows up in the dashboard (BUILD-ORDER Stage 6: every number reproducible). */
 const USED_BY: Record<QueryName, string> = {
   visitors_pageviews: 'Dashboard KPIs: Visitors, Page views (and the same for the previous period, for the change %)',
-  sessions_bounce: 'Dashboard KPIs: Sessions, Bounce rate = 1 - engaged_sessions / sessions',
+  sessions_bounce: 'Dashboard KPIs: Sessions, Bounce rate = 1 - engaged_sessions / sessions, Avg. visit time = engagement_ms / sessions',
   series_daily: 'Visitors over time (7 / 30 days): visitors and page views per local day. Also the account export (whole stored history)',
   series_daily_sessions: 'Visitors over time (7 / 30 days): sessions per local day. Also the account export',
   series_hourly: 'Visitors over time (Today): visitors and page views per local hour',

@@ -151,7 +151,9 @@ export interface Overview {
     sessions: number;
     pageviews: number;
     bounceRate: number | null;
-    previous: { visitors: number; sessions: number; pageviews: number; bounceRate: number | null };
+    /** Average engaged time per visit in ms (null without sessions). */
+    avgVisitMs?: number | null;
+    previous: { visitors: number; sessions: number; pageviews: number; bounceRate: number | null; avgVisitMs?: number | null };
   };
   series: { bucket: string; label: string; visitors: number; sessions: number; pageviews: number }[];
   sources: { name: string; sessions: number }[];

@@ -26,7 +26,7 @@ const NOW = Date.now();
 
 const overview = (range: Range): Overview => ({
   range,
-  kpis: { visitors: 4321, visitorsEstimated: range.days > 1, sessions: 3456, pageviews: 98765, bounceRate: 0.375, previous: { visitors: 4000, sessions: 3200, pageviews: 90000, bounceRate: 0.4 } },
+  kpis: { visitors: 4321, visitorsEstimated: range.days > 1, sessions: 3456, pageviews: 98765, bounceRate: 0.375, avgVisitMs: 83_000, previous: { visitors: 4000, sessions: 3200, pageviews: 90000, bounceRate: 0.4, avgVisitMs: 60_000 } },
   series: [{ bucket: range.from, label: 'Oct 8', visitors: 4321, sessions: 3456, pageviews: 98765 }],
   sources: [{ name: 'Direct', sessions: 3000 }, { name: 'Search', sessions: 456 }],
   referrers: [{ label: 'news.ycombinator.com', value: 456 }],
@@ -120,7 +120,7 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     const text = async () => (await page.locator('main').innerText()).replace(/\s+/g, ' ');
     await expect.poll(async () => (await text()).includes('98,765')).toBe(true);
     const t = await text();
-    for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
+    for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '1m 23s', 'Time on site', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
       expect(t, want).toContain(want);
     }
     await expect.poll(async () => (await text()).includes('7 active in the last 5 minutes')).toBe(true);

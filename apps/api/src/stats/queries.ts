@@ -28,7 +28,7 @@ export const QUERIES = {
 FROM {db}.events
 WHERE ${IN_RANGE('timestamp')}`,
 
-  sessions_bounce: `SELECT sum(sign) AS sessions, sum(is_engaged * sign) AS engaged_sessions
+  sessions_bounce: `SELECT sum(sign) AS sessions, sum(is_engaged * sign) AS engaged_sessions, sum(engagement_ms * sign) AS engagement_ms
 FROM {db}.sessions
 WHERE ${IN_RANGE('start')}`,
 

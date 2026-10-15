@@ -22,7 +22,7 @@ export class StatsReader {
     const p = bounds(site, tz, from, to);
     const [[ev], [se]] = await Promise.all([
       this.run<{ visitors: string; pageviews: string }>('visitors_pageviews', p),
-      this.run<{ sessions: string; engaged_sessions: string }>('sessions_bounce', p),
+      this.run<{ sessions: string; engaged_sessions: string; engagement_ms: string }>('sessions_bounce', p),
     ]);
     const sessions = n(se?.sessions);
     return {
@@ -30,6 +30,8 @@ export class StatsReader {
       pageviews: n(ev?.pageviews),
       sessions,
       bounceRate: sessions > 0 ? 1 - n(se?.engaged_sessions) / sessions : null,
+      /** Average time a visit was in the foreground (tw.js engagement), in ms. */
+      avgVisitMs: sessions > 0 ? Math.round(n(se?.engagement_ms) / sessions) : null,
     };
   }
 

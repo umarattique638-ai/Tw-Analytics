@@ -1,4 +1,4 @@
-import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Users, Zap } from 'lucide-react';
+import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Timer, Users, Zap } from 'lucide-react';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
 import HealthBanner from '../components/dashboard/HealthBanner';
@@ -14,7 +14,7 @@ import Notice from '../components/ui/Notice';
 import Panel from '../components/ui/Panel';
 import PageHeader from '../components/ui/PageHeader';
 import type { Site, User } from '../api/client';
-import { capital, change, countryName, num, percent, share } from '../lib/format';
+import { capital, change, countryName, duration, num, percent, share } from '../lib/format';
 import { greeting, useCsvExport, useLive, useOverview } from '../hooks/useDashboard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useRange } from '../hooks/useRange';
@@ -23,6 +23,9 @@ import { useSession } from '../hooks/useSession';
 const deviceIcon = (label: string) => (/mobile/i.test(label) ? Smartphone : /tablet/i.test(label) ? Tablet : Monitor);
 /** "Umar Attique" -> "Umar"; no name -> the part of the e-mail before @. */
 const firstName = (u: User) => u.name?.trim().split(/\s+/)[0] || u.email.split('@')[0]!;
+/** Below this many visits a bounce rate says little (1 visit = 0% or 100%): it shows "—" instead. */
+const MIN_SESSIONS_FOR_RATE = 10;
+
 const todayLabel = () => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
 /** Every number here comes from the Query API (docs/QUERIES.md). Nothing is sample data. */
@@ -45,7 +48,12 @@ function Overview({ site, name }: { site: Site; name: string }) {
 
   const sessionsChange = k ? change(k.sessions, k.previous.sessions) : null;
   const pageviewsChange = k ? change(k.pageviews, k.previous.pageviews) : null;
-  const bounceDelta = k && k.bounceRate !== null && k.previous.bounceRate !== null ? (k.bounceRate - k.previous.bounceRate) * 100 : null;
+  const enoughNow = !!k && k.sessions >= MIN_SESSIONS_FOR_RATE;
+  const enoughBefore = !!k && k.previous.sessions >= MIN_SESSIONS_FOR_RATE;
+  const bounceDelta =
+    k && enoughNow && enoughBefore && k.bounceRate !== null && k.previous.bounceRate !== null ? (k.bounceRate - k.previous.bounceRate) * 100 : null;
+  const visitTime = k?.avgVisitMs ?? null;
+  const visitTimeChange = k && visitTime !== null && k.previous.avgVisitMs ? change(visitTime, k.previous.avgVisitMs) : null;
   const sourcesTotal = o ? o.sources.reduce((s, x) => s + x.sessions, 0) || 1 : 1;
   const tz = o?.range.tz ?? site.timezone;
 
@@ -71,17 +79,26 @@ function Overview({ site, name }: { site: Site; name: string }) {
       <HealthBanner site={site} />
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} />
         <KpiCard icon={Activity} label="Sessions" value={k ? num(k.sessions) : null} delta={sessionsChange?.delta} up={sessionsChange?.up} positive={sessionsChange?.up} />
         <KpiCard icon={Eye} label="Page views" value={k ? num(k.pageviews) : null} delta={pageviewsChange?.delta} up={pageviewsChange?.up} positive={pageviewsChange?.up} />
         <KpiCard
           icon={Zap}
           label="Bounce rate"
-          value={k ? percent(k.bounceRate) : null}
+          value={k ? (enoughNow ? percent(k.bounceRate) : '—') : null}
           delta={bounceDelta === null ? undefined : `${Math.abs(bounceDelta).toFixed(1)} pts`}
           up={(bounceDelta ?? 0) >= 0}
           positive={(bounceDelta ?? 0) <= 0}
+          note={k && !enoughNow && k.sessions > 0 ? 'Too few visits yet' : undefined}
+        />
+        <KpiCard
+          icon={Timer}
+          label="Time on site"
+          value={k ? duration(visitTime) : null}
+          delta={visitTimeChange?.delta}
+          up={visitTimeChange?.up}
+          positive={visitTimeChange?.up}
         />
       </div>
 

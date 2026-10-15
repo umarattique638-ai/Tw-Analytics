@@ -3,6 +3,16 @@ export const num = (n: number) => n.toLocaleString('en-US');
 
 export const percent = (ratio: number | null, digits = 1) => (ratio === null ? '—' : `${(ratio * 100).toFixed(digits)}%`);
 
+/** "42s", "3m 05s", "1h 02m": average visit time; "—" when there were no visits. */
+export function duration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '—';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
 /** Change vs the previous period, for KpiCard. Null when there is nothing to compare with. */
 export function change(cur: number, prev: number): { delta: string; up: boolean } | null {
   if (prev === 0) return null;
