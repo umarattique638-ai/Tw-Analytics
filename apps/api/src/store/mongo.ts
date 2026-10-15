@@ -1,7 +1,7 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
 import { DuplicateError } from './types';
-import type { AuditDoc, ControlStore, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {
@@ -33,7 +33,7 @@ export class MongoStore implements ControlStore {
   }
 
   /**
-   * The indexes the newer collections need (exports, password_resets), created by the API itself so a
+   * The indexes the newer collections need (exports, password_resets, email_verifications), created by the API itself so a
    * deployment works with an app user that has readWrite only (MongoDB Atlas). createIndex is idempotent
    * and cheap when the index exists. Validators come from `pnpm db:mongo` (needs an admin user).
    */
@@ -43,6 +43,8 @@ export class MongoStore implements ControlStore {
       this.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.resets.createIndex({ userId: 1 }),
+      this.verifications.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      this.verifications.createIndex({ userId: 1 }),
       this.outbox.createIndex({ tenantId: 1 }),
       this.audit.createIndex({ tenantId: 1, at: -1, _id: -1 }),
       this.audit.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
@@ -70,6 +72,9 @@ export class MongoStore implements ControlStore {
   }
   private get resets(): Collection<PasswordResetDoc> {
     return this.db.collection('password_resets');
+  }
+  private get verifications(): Collection<EmailVerificationDoc> {
+    return this.db.collection('email_verifications');
   }
   private get outbox(): Collection<KvIssueDoc> {
     return this.db.collection('kv_outbox');
@@ -198,6 +203,18 @@ export class MongoStore implements ControlStore {
   async deletePasswordResetsOf(userId: ObjectId) {
     await this.resets.deleteMany({ userId });
   }
+  async createEmailVerification(doc: EmailVerificationDoc) {
+    await this.verifications.insertOne(doc);
+  }
+  useEmailVerification(id: string, now: Date) {
+    return this.verifications.findOneAndUpdate({ _id: id, usedAt: null, expiresAt: { $gt: now } }, { $set: { usedAt: now } }, { returnDocument: 'after' });
+  }
+  async deleteEmailVerificationsOf(userId: ObjectId) {
+    await this.verifications.deleteMany({ userId });
+  }
+  async markEmailVerified(userId: ObjectId, now: Date) {
+    await this.users.updateOne({ _id: userId }, { $set: { emailVerifiedAt: now, updatedAt: now } });
+  }
 
   async insertExport(doc: ExportDoc) {
     await this.exports.insertOne(doc);
@@ -249,6 +266,7 @@ export class MongoStore implements ControlStore {
         await this.users.deleteMany({ _id: { $in: gone } }, { session });
         await this.sessions.deleteMany({ userId: { $in: gone } }, { session });
         await this.resets.deleteMany({ userId: { $in: gone } }, { session });
+        await this.verifications.deleteMany({ userId: { $in: gone } }, { session });
         await this.sites.deleteMany({ tenantId: t, _id: { $in: sites.map((s) => s._id) } }, { session });
         await this.exports.deleteMany({ tenantId: t }, { session });
         await this.audit.deleteMany({ tenantId: t }, { session });

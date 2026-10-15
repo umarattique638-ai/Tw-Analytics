@@ -6,6 +6,8 @@ export const SESSION_COOKIE = 'tw_session';
 export const PASSIVE_WINDOW_MINUTES = 30;
 /** A "forgot password" link works this long. */
 export const RESET_MINUTES = 60;
+/** An e-mail verification link (sent at sign-up) works this long. */
+export const VERIFY_EMAIL_HOURS = 24;
 /** Reports (saved CSV exports) are deleted this many days after they were made (TTL index). */
 export const EXPORT_KEEP_DAYS = 90;
 /** Saved reports per site at one time: enough for daily exports for the whole 90 days, and then some. */

@@ -31,6 +31,34 @@ export function resetPasswordMail(to: string, name: string | undefined, link: st
   return { to, subject: 'Reset your TailWatch password', text, html };
 }
 
+/** Sent at sign-up (and again on request): the account can log in once this link is opened. */
+export function verifyEmailMail(to: string, name: string | undefined, link: string, hours: number): MailMessage {
+  const hello = name ? `Hi ${name},` : 'Hi,';
+  const text = [
+    hello,
+    '',
+    'Welcome to TailWatch. Confirm that this is your e-mail address to finish creating your account:',
+    '',
+    link,
+    '',
+    `The link works for ${hours} hours. If you did not sign up, ignore this e-mail: no account is opened without it.`,
+    '',
+    'TailWatch',
+  ].join('\n');
+  const html = `<!doctype html><html><body style="margin:0;background:#f8fafc;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px">
+<tr><td>
+<p style="margin:0 0 4px;font-size:20px;font-weight:700;color:#0f766e">TailWatch</p>
+<h1 style="margin:16px 0 8px;font-size:20px">Confirm your e-mail</h1>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155">${esc(hello)} welcome to TailWatch. Confirm that this is your address to finish creating your account. The link works for ${hours} hours.</p>
+<p style="margin:24px 0"><a href="${esc(link)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">Confirm my e-mail</a></p>
+<p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#64748b">Or paste this into your browser:<br><span style="word-break:break-all">${esc(link)}</span></p>
+<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#64748b">If you did not sign up, ignore this e-mail: no account is opened without it.</p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { to, subject: 'Confirm your e-mail for TailWatch', text, html };
+}
+
 /** The same simple card as the reset e-mail, with plain paragraphs. */
 function card(title: string, paragraphs: string[]): string {
   return `<!doctype html><html><body style="margin:0;background:#f8fafc;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">

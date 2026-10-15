@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import CheckInbox from '../components/auth/CheckInbox';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import FormError from '../components/ui/FormError';
@@ -12,6 +13,8 @@ export default function SignupPage() {
   useDocumentTitle('Create your account');
   const navigate = useNavigate();
   const form = useSignupForm(() => navigate('/sites/new'));
+
+  if (form.pending) return <CheckInbox pending={form.pending} onResend={() => form.resend()} resending={form.resending} resendError={form.resendError} />;
 
   return (
     <>

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import FormError from '../components/ui/FormError';
+import Notice from '../components/ui/Notice';
 import PageHeader from '../components/ui/PageHeader';
 import TextLink, { textLinkCls } from '../components/ui/TextLink';
 import { muted } from '../components/ui/styles';
@@ -46,6 +47,27 @@ export default function LoginPage() {
           required
         />
         <FormError message={form.error} />
+        {form.unverified && (
+          <Notice
+            tone="warning"
+            action={
+              !form.resent && (
+                <Button type="button" variant="secondary" size="sm" onClick={() => form.resend()} loading={form.resending}>
+                  Send it again
+                </Button>
+              )
+            }
+          >
+            {form.resent ? (
+              <>
+                A new link is on its way to <b>{form.resent}</b>. Open it, then log in.
+              </>
+            ) : (
+              form.unverifiedMessage
+            )}
+          </Notice>
+        )}
+        <FormError message={form.resendError} />
         <Button type="submit" className="mt-1 w-full" loading={form.busy}>
           Log in
         </Button>

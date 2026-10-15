@@ -108,6 +108,11 @@ ensureCollection('users', {
       bsonType: 'string',
       maxLength: 512,
     },
+    emailVerifiedAt: {
+      bsonType: ['date', 'null'],
+      description:
+        'When the owner of the address opened the verification link. null = not verified yet (cannot log in). Missing = account made before e-mail verification existed (treated as verified).',
+    },
     oauth: {
       bsonType: 'object',
     },
@@ -305,6 +310,26 @@ ensureCollection('password_resets', {
   additionalProperties: false,
 });
 
+ensureCollection('email_verifications', {
+  bsonType: 'object',
+  required: ['_id', 'userId', 'createdAt', 'expiresAt', 'usedAt'],
+  properties: {
+    _id: {
+      bsonType: 'string',
+      pattern: '^[0-9a-f]{64}$',
+      description: 'SHA-256 of the verification token. The token itself is only ever in the e-mailed link.',
+    },
+    userId: { bsonType: 'objectId' },
+    createdAt: date,
+    expiresAt: {
+      bsonType: 'date',
+      description: '24 hours after createdAt. A TTL index deletes the document later.',
+    },
+    usedAt: dateOrNull,
+  },
+  additionalProperties: false,
+});
+
 ensureCollection('kv_outbox', {
   bsonType: 'object',
   required: ['_id', 'tenantId', 'error', 'attempts', 'createdAt', 'updatedAt'],
@@ -337,6 +362,7 @@ ensureCollection('audit_log', {
         'auth.login_failed',
         'auth.logout',
         'auth.password_reset',
+        'auth.email_verified',
         'site.created',
         'site.restored',
         'site.paused',
@@ -450,6 +476,8 @@ database.exports.createIndex({ tenantId: 1, siteId: 1, createdAt: -1 });
 database.exports.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.password_resets.createIndex({ userId: 1 });
+database.email_verifications.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+database.email_verifications.createIndex({ userId: 1 });
 database.kv_outbox.createIndex({ tenantId: 1 });
 database.audit_log.createIndex({ tenantId: 1, at: -1, _id: -1 });
 database.audit_log.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -32,6 +32,9 @@ export function createLimiters() {
     /** Reset e-mails: a few per address an hour, so the form cannot be used to flood someone's inbox. */
     forgot: new Limiter(3, 60 * MIN),
     forgotIp: new Limiter(10, 60 * MIN),
+    /** "Send the verification link again": a few per address an hour (it e-mails someone). */
+    verifyMail: new Limiter(3, 60 * MIN),
+    verifyMailIp: new Limiter(10, 60 * MIN),
     /** The verifier fetches other people's servers: a few checks a minute per account and per address. */
     verify: new Limiter(20, 10 * MIN),
     verifyIp: new Limiter(40, 10 * MIN),

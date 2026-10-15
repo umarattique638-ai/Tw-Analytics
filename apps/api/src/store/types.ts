@@ -7,6 +7,11 @@ export interface UserDoc {
   emailNormalized: string;
   name?: string;
   passwordHash?: string;
+  /**
+   * When the owner of the address opened the verification link. null = not verified yet: the account
+   * cannot log in. Missing = an account made before e-mail verification existed (treated as verified).
+   */
+  emailVerifiedAt?: Date | null;
   createdAt: Date;
   updatedAt?: Date;
   status: 'active' | 'disabled' | 'deleted';
@@ -90,6 +95,9 @@ export interface PasswordResetDoc {
   usedAt: Date | null;
 }
 
+/** An e-mail verification link (same shape as a reset: only the SHA-256 of the token is stored, one use). */
+export type EmailVerificationDoc = PasswordResetDoc;
+
 /**
  * A site whose Cloudflare KV entries may not match MongoDB yet (a KV write failed). One per site; the
  * reconciler re-syncs the site from MongoDB and removes it. Shown to the customer until it is gone.
@@ -112,6 +120,7 @@ export const AUDIT_ACTIONS = [
   'auth.login_failed',
   'auth.logout',
   'auth.password_reset',
+  'auth.email_verified',
   'site.created',
   'site.restored',
   'site.paused',
@@ -238,6 +247,14 @@ export interface ControlStore {
   usePasswordReset(id: string, now: Date): Promise<PasswordResetDoc | null>;
   /** Every outstanding reset of a user is cancelled (after a successful reset). */
   deletePasswordResetsOf(userId: ObjectId): Promise<void>;
+
+  createEmailVerification(doc: EmailVerificationDoc): Promise<void>;
+  /** Marks the link used and returns it; null if it was already used or has expired (one use only, race-safe). */
+  useEmailVerification(id: string, now: Date): Promise<EmailVerificationDoc | null>;
+  /** Every outstanding verification link of a user is cancelled (after verifying, or when a new one is sent). */
+  deleteEmailVerificationsOf(userId: ObjectId): Promise<void>;
+  /** The address is proven: the account can log in. */
+  markEmailVerified(userId: ObjectId, now: Date): Promise<void>;
 
   insertExport(doc: ExportDoc): Promise<void>;
   /** Newest first, expired ones left out (the TTL monitor runs about once a minute). */

@@ -534,6 +534,23 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - MongoDB `memberships` and `audit_log` of a deleted account are deleted in the same transaction; any
      left are another workspace's (for example the account signed up again).
 
+27. DECIDED 2026-10-15 (owner): e-mail verification, a stricter "forgot password", and a faster overview.
+   - Sign-up creates the account but no session: an e-mail with a link (/verify-email?token=…, 24 hours,
+     one use, only its SHA-256 stored in the new `email_verifications` collection) must be opened first.
+     Log-in with the right password but an unconfirmed address answers 403 email_unverified; the login
+     page offers "Send it again" (POST /auth/resend-verification, needs the password, 3 an hour per
+     address). Opening the link sets users.emailVerifiedAt and signs that browser in. A password reset
+     link proves the address too. Accounts made before this have no emailVerifiedAt and log in as before.
+   - Needs a working mailer (TW_BREVO_API_KEY or TW_RESEND_API_KEY, and TW_MAIL_FROM). Without one,
+     or with TW_EMAIL_VERIFICATION=off, new accounts are verified at once so sign-up never breaks.
+   - Forgot password tells an address without an account so ("No account uses this e-mail", 404
+     email_not_found) instead of the same answer for every address. Trade-off accepted by the owner:
+     anyone can learn whether an address has an account; the per-address and per-IP limits stay.
+     A failed send is now reported (503 mail_failed) instead of hidden.
+   - The dashboard overview refreshes every 30 s (was 60 s); live stays at 10 s.
+   - MongoDB: users.emailVerifiedAt, the email_verifications collection and the audit action
+     auth.email_verified are new in control-plane.schema.json: run `pnpm db:mongo` BEFORE deploying.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

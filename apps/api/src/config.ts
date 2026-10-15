@@ -29,6 +29,12 @@ export interface ApiConfig {
    * these e-mails, or e-mails of a listed domain written as "@example.com" (a private test server).
    */
   signupAllowlist: string[] | null;
+  /**
+   * New accounts must open an e-mailed link before they can log in. Needs a working mailer: without one
+   * (TW_BREVO_API_KEY / TW_RESEND_API_KEY not set) new accounts are verified at once, or nobody could
+   * sign up. On by default in production (configFromEnv); TW_EMAIL_VERIFICATION=off turns it off.
+   */
+  requireEmailVerification: boolean;
   /** Where the dashboard is reachable: links in e-mails (password reset) point here. */
   publicUrl: string;
   /** Shared secret for the scheduled KV reconcile call (Vercel Cron sends it as a Bearer token). Null: route off. */
@@ -61,6 +67,7 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   verifierAllowPrivate: false,
   checkDomainReachable: false,
   signupAllowlist: null,
+  requireEmailVerification: false,
   publicUrl: 'http://localhost:8788',
   cronSecret: null,
   ...over,

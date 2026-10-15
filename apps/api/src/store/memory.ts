@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Long, ObjectId } from 'mongodb';
 import { violation } from './validate';
 import { DuplicateError } from './types';
-import type { AuditDoc, ControlStore, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /**
  * In-memory ControlStore for tests. It enforces the same rules the real MongoDB enforces:
@@ -41,6 +41,7 @@ export class MemoryStore implements ControlStore {
   sites: SiteDoc[] = [];
   exports: ExportDoc[] = [];
   resets: PasswordResetDoc[] = [];
+  verifications: EmailVerificationDoc[] = [];
   outbox: KvIssueDoc[] = [];
   audit: AuditDoc[] = [];
   erasures: ErasureDoc[] = [];
@@ -170,6 +171,27 @@ export class MemoryStore implements ControlStore {
   async deletePasswordResetsOf(userId: ObjectId) {
     this.resets = this.resets.filter((r) => !same(r.userId, userId));
   }
+  async createEmailVerification(doc: EmailVerificationDoc) {
+    check('email_verifications', doc);
+    if (this.verifications.some((v) => v._id === doc._id)) throw new DuplicateError('other');
+    this.verifications.push(clone(doc));
+  }
+  async useEmailVerification(id: string, now: Date) {
+    const v = this.verifications.find((x) => x._id === id && x.usedAt === null && x.expiresAt.getTime() > now.getTime());
+    if (!v) return null;
+    v.usedAt = now;
+    return clone(v);
+  }
+  async deleteEmailVerificationsOf(userId: ObjectId) {
+    this.verifications = this.verifications.filter((v) => !same(v.userId, userId));
+  }
+  async markEmailVerified(userId: ObjectId, now: Date) {
+    const i = this.users.findIndex((u) => same(u._id, userId));
+    if (i < 0) return;
+    const next = { ...this.users[i]!, emailVerifiedAt: now, updatedAt: now };
+    check('users', next);
+    this.users[i] = next;
+  }
 
   async insertExport(doc: ExportDoc) {
     check('exports', doc);
@@ -224,6 +246,7 @@ export class MemoryStore implements ControlStore {
     this.users = this.users.filter((u) => !has(gone, u._id));
     this.sessions = this.sessions.filter((s) => !has(gone, s.userId));
     this.resets = this.resets.filter((r) => !has(gone, r.userId));
+    this.verifications = this.verifications.filter((v) => !has(gone, v.userId));
     this.sites = this.sites.filter((s) => !same(s.tenantId, t));
     this.exports = this.exports.filter((e) => !same(e.tenantId, t));
     this.audit = this.audit.filter((e) => !same(e.tenantId, t));

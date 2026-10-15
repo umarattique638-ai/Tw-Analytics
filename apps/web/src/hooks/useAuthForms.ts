@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import { useAction } from './useAction';
 
 const DEFAULT_MIN = 8;
@@ -20,14 +20,56 @@ export function usePasswordMin() {
   return min;
 }
 
+/**
+ * Log in. A right password on an account whose e-mail is not confirmed yet is refused with
+ * `email_unverified` (decision 27): then `unverified` is set and `resend()` sends the link again.
+ */
 export function useLoginForm(onDone: () => void) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [unverified, setUnverified] = useState(false);
+  const [resent, setResent] = useState<string | null>(null);
   const { run, busy, error } = useAction(async () => {
-    await api.login(email, password);
+    setUnverified(false);
+    setResent(null);
+    try {
+      await api.login(email, password);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'email_unverified') setUnverified(true);
+      throw e;
+    }
     onDone();
   }, 'Log-in failed.');
-  return { email, setEmail, password, setPassword, submit: run, busy, error };
+  const resend = useAction(async () => {
+    const r = await api.resendVerification(email, password);
+    if (r.alreadyVerified) {
+      setUnverified(false);
+      return run();
+    }
+    setResent(r.email ?? email);
+  }, 'The e-mail could not be sent.');
+  return {
+    email,
+    setEmail,
+    password,
+    setPassword,
+    submit: run,
+    busy,
+    error: unverified ? null : error,
+    unverified,
+    unverifiedMessage: unverified ? error : null,
+    resend: resend.run,
+    resending: resend.busy,
+    resendError: resend.error,
+    resent,
+  };
+}
+
+/** What a sign-up that still needs the e-mail confirmed returns: show "check your inbox". */
+export interface PendingVerification {
+  email: string;
+  sent: boolean;
+  hours: number;
 }
 
 export function useSignupForm(onDone: () => void) {
@@ -37,9 +79,11 @@ export function useSignupForm(onDone: () => void) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [touched, setTouched] = useState(false);
+  const [pending, setPending] = useState<PendingVerification | null>(null);
   const mismatch = touched && confirm.length > 0 && password !== confirm;
   const { run, busy, error } = useAction(async () => {
-    await api.signup(name, email, password);
+    const r = await api.signup(name, email, password);
+    if (r.verificationRequired) return setPending({ email: r.email ?? email, sent: r.sent !== false, hours: r.hours ?? 24 });
     onDone();
   }, 'Sign-up failed.');
 
@@ -49,10 +93,70 @@ export function useSignupForm(onDone: () => void) {
     run();
   };
 
-  return { min, name, setName, email, setEmail, password, setPassword, confirm, setConfirm: (v: string) => (setConfirm(v), setTouched(true)), mismatch, submit, busy, error };
+  /** "Send it again" from the check-your-inbox screen (the password is still in the form). */
+  const resend = useAction(async () => {
+    const r = await api.resendVerification(email, password);
+    if (pending) setPending({ ...pending, sent: true, hours: r.hours ?? pending.hours });
+  }, 'The e-mail could not be sent.');
+
+  return {
+    min,
+    name,
+    setName,
+    email,
+    setEmail,
+    password,
+    setPassword,
+    confirm,
+    setConfirm: (v: string) => (setConfirm(v), setTouched(true)),
+    mismatch,
+    submit,
+    busy,
+    error,
+    pending,
+    resend: resend.run,
+    resending: resend.busy,
+    resendError: resend.error,
+  };
 }
 
-/** "Forgot password": always the same answer, whether the e-mail has an account or not. */
+/**
+ * The link from the sign-up e-mail (/verify-email?token=…). The token is read once and removed from the
+ * address bar, then sent to the API, which confirms the address and signs this browser in.
+ */
+export function useVerifyEmail(onDone: () => void) {
+  const [token] = useState(() => new URLSearchParams(window.location.search).get('token') ?? '');
+  const [state, setState] = useState<'checking' | 'done' | 'invalid'>(token ? 'checking' : 'invalid');
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+    let live = true;
+    api.verifyEmail(token).then(
+      () => live && setState('done'),
+      (e: unknown) => {
+        if (!live) return;
+        setMessage(e instanceof Error ? e.message : null);
+        setState('invalid');
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [token]);
+
+  // Signed in by the link: on to adding a site after a moment.
+  useEffect(() => {
+    if (state !== 'done') return;
+    const t = setTimeout(onDone, 1800);
+    return () => clearTimeout(t);
+  }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { state, message };
+}
+
+/** "Forgot password": an e-mail without an account is refused with a message (owner decision 2026-10-15). */
 export function useForgotPassword() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState<{ to: string; minutes: number } | null>(null);

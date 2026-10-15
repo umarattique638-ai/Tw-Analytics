@@ -16,7 +16,7 @@ const BackToLogin = () => (
   </p>
 );
 
-/** Step 1 of a password reset: ask for the e-mail, then "check your inbox" (the same answer for every e-mail). */
+/** Step 1 of a password reset: ask for the e-mail (one without an account is refused), then "check your inbox". */
 export default function ForgotPasswordPage() {
   useDocumentTitle('Reset your password');
   const f = useForgotPassword();
@@ -32,14 +32,12 @@ export default function ForgotPasswordPage() {
           title="Check your inbox"
           description={
             <>
-              If an account exists for <b className="text-slate-700 dark:text-slate-200">{f.sent.to}</b>, we have sent a link to choose a new password. It works for{' '}
-              {f.sent.minutes} minutes.
+              We sent a link to <b className="text-slate-700 dark:text-slate-200">{f.sent.to}</b> to choose a new password. It works for {f.sent.minutes} minutes.
             </>
           }
         />
         <ul className={`grid list-disc gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-3.5 pr-4 pl-8 text-sm dark:border-slate-800 dark:bg-slate-800/40 ${muted}`}>
           <li>No e-mail after a few minutes? Look in Spam or Promotions.</li>
-          <li>Make sure it is the e-mail you signed up with.</li>
         </ul>
         <Button variant="secondary" className="mt-5 w-full" onClick={f.again}>
           Use a different e-mail

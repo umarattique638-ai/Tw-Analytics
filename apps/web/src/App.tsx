@@ -20,6 +20,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage'));
 const SuspiciousPage = lazy(() => import('./pages/SuspiciousPage'));
 const VerifyPage = lazy(() => import('./pages/VerifyPage'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
         </Route>
 
         {/* Signed in: RequireAuth loads the user and their sites, AppShell draws the sidebar. */}

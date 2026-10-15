@@ -5,7 +5,7 @@ import type { Overview, RangeKey } from '../api/client';
 import { notify } from '../lib/notify';
 import { usePoll } from './usePoll';
 
-export const OVERVIEW_EVERY_MS = 60_000;
+export const OVERVIEW_EVERY_MS = 30_000;
 export const LIVE_EVERY_MS = 10_000;
 
 /**

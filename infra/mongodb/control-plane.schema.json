@@ -110,6 +110,13 @@
             "bsonType": "string",
             "maxLength": 512
           },
+          "emailVerifiedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ],
+            "description": "When the owner of the address opened the verification link. null = not verified yet (cannot log in). Missing = account made before e-mail verification existed (treated as verified)."
+          },
           "oauth": {
             "bsonType": "object"
           },
@@ -437,6 +444,42 @@
         "additionalProperties": false
       }
     },
+    "email_verifications": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "userId",
+          "createdAt",
+          "expiresAt",
+          "usedAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the verification token. The token itself is only ever in the e-mailed link."
+          },
+          "userId": {
+            "bsonType": "objectId"
+          },
+          "createdAt": {
+            "bsonType": "date"
+          },
+          "expiresAt": {
+            "bsonType": "date",
+            "description": "24 hours after createdAt. A TTL index deletes the document later."
+          },
+          "usedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "kv_outbox": {
       "document": {
         "bsonType": "object",
@@ -525,6 +568,7 @@
               "auth.login_failed",
               "auth.logout",
               "auth.password_reset",
+              "auth.email_verified",
               "site.created",
               "site.restored",
               "site.paused",
@@ -827,6 +871,21 @@
     },
     {
       "collection": "password_resets",
+      "keys": {
+        "userId": 1
+      }
+    },
+    {
+      "collection": "email_verifications",
+      "keys": {
+        "expiresAt": 1
+      },
+      "options": {
+        "expireAfterSeconds": 0
+      }
+    },
+    {
+      "collection": "email_verifications",
       "keys": {
         "userId": 1
       }

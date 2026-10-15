@@ -27,7 +27,7 @@ const stats = {
   }),
 } as unknown as StatsReader;
 
-async function setup(mailer: Mailer = new MemoryMailer()) {
+async function setup(mailer: Mailer = new MemoryMailer(), over: Partial<Parameters<typeof defaultConfig>[0]> = {}) {
   clock = new Date('2026-10-08T10:00:00Z');
   const store = new MemoryStore();
   const kv = new MemoryKv();
@@ -38,7 +38,7 @@ async function setup(mailer: Mailer = new MemoryMailer()) {
     analytics: { recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }) },
     stats,
     mailer,
-    config: defaultConfig({ collectorUrl: 'https://c.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 }, publicUrl: 'https://dash.test' }),
+    config: defaultConfig({ collectorUrl: 'https://c.test', secureCookies: false, scrypt: { N: 1024, r: 8, p: 1 }, publicUrl: 'https://dash.test', ...over }),
     now: () => clock,
   });
   const client = () => {
@@ -62,7 +62,13 @@ async function setup(mailer: Mailer = new MemoryMailer()) {
     };
   };
   const a = client();
-  await a('POST', '/auth/signup', { name: 'Umar', email: 'umar@x.co', password: 'correct horse' });
+  const signedUp = await a('POST', '/auth/signup', { name: 'Umar', email: 'umar@x.co', password: 'correct horse' });
+  if (signedUp.body.verificationRequired) {
+    // Open the e-mailed link in this browser (decision 27), then the mail list starts empty for the test.
+    const token = /verify-email\?token=([A-Za-z0-9_-]+)/.exec((mailer as MemoryMailer).sent.at(-1)!.text)![1]!;
+    await a('POST', '/auth/verify-email', { token });
+    (mailer as MemoryMailer).sent.length = 0;
+  }
   const site = (await addSite((p, j) => a('POST', p, j), kv.entries, 'shop.example.com', 'Asia/Karachi')).body.site;
   return { a, client, site, store, mailer };
 }
@@ -174,10 +180,13 @@ describe('Forgot password', () => {
     expect((await anon('POST', '/auth/reset', { token, password: 'a brand new password' })).body.error).toBe('reset_invalid');
   });
 
-  it('an unknown e-mail gets the same answer and no e-mail; requests are limited per address', async () => {
+  it('an e-mail without an account is told so (owner decision 2026-10-15) and gets no e-mail; requests are limited per address', async () => {
     const { client, mailer } = await setup();
     const anon = client();
-    expect((await anon('POST', '/auth/forgot', { email: 'nobody@x.co' })).body).toEqual({ ok: true, minutes: RESET_MINUTES });
+    const unknown = await anon('POST', '/auth/forgot', { email: 'nobody@x.co' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toBe('email_not_found');
+    expect(unknown.body.message).toContain('No account uses this e-mail');
     expect((mailer as MemoryMailer).sent).toHaveLength(0);
     expect((await anon('POST', '/auth/forgot', { email: 'not an email' })).status).toBe(400);
     for (let i = 0; i < 3; i++) expect((await anon('POST', '/auth/forgot', { email: 'umar@x.co' })).status).toBe(200);
@@ -199,5 +208,88 @@ describe('Forgot password', () => {
     expect(m.text).toContain('https://d.test/reset-password?token=abc');
     expect(m.html).toContain('Umar &lt;b&gt;');
     expect(m.html).not.toContain('Umar <b>');
+  });
+});
+
+describe('E-mail verification (decision 27): a new account logs in only after opening the e-mailed link', () => {
+  const VERIFY = { requireEmailVerification: true };
+  const linkIn = (mailer: Mailer, i = -1) => /https:\/\/dash\.test\/verify-email\?token=([A-Za-z0-9_-]+)/.exec((mailer as MemoryMailer).sent.at(i)!.text)![1]!;
+
+  it('sign up -> no session, an e-mail with a link; log in refused until the link is opened; the link signs in, once', async () => {
+    const { client, mailer, store } = await setup(new MemoryMailer(), VERIFY);
+    const c = client();
+    const r = await c('POST', '/auth/signup', { name: 'Ali', email: 'Ali@x.co', password: 'correct horse' });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ verificationRequired: true, email: 'Ali@x.co', sent: true, hours: 24 });
+    expect((await c('GET', '/me')).status).toBe(401); // no session yet
+    const mail = (mailer as MemoryMailer).sent.at(-1)!;
+    expect(mail.to).toBe('Ali@x.co');
+    expect(mail.subject).toBe('Confirm your e-mail for TailWatch');
+    const token = linkIn(mailer);
+    expect(mail.html).toContain(`https://dash.test/verify-email?token=${token}`);
+    expect(store.users.find((u) => u.email === 'Ali@x.co')!.emailVerifiedAt).toBeNull();
+
+    const refused = await client()('POST', '/auth/login', { email: 'ali@x.co', password: 'correct horse' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe('email_unverified');
+    // A wrong password never says whether the address is verified.
+    expect((await client()('POST', '/auth/login', { email: 'ali@x.co', password: 'wrong horse!' })).body.error).toBe('invalid_credentials');
+
+    const v = client();
+    const ok = await v('POST', '/auth/verify-email', { token });
+    expect(ok.status).toBe(200);
+    expect((await v('GET', '/me')).status).toBe(200); // signed in by the link
+    expect(store.users.find((u) => u.email === 'Ali@x.co')!.emailVerifiedAt).toBeInstanceOf(Date);
+    expect((await client()('POST', '/auth/verify-email', { token })).body.error).toBe('verify_invalid'); // one use
+    expect((await client()('POST', '/auth/login', { email: 'ali@x.co', password: 'correct horse' })).status).toBe(200);
+    expect(store.audit.some((e) => e.action === 'auth.email_verified')).toBe(true);
+  });
+
+  it('the link expires after 24 hours', async () => {
+    const { client, mailer } = await setup(new MemoryMailer(), VERIFY);
+    await client()('POST', '/auth/signup', { name: 'Ali', email: 'ali@x.co', password: 'correct horse' });
+    const token = linkIn(mailer);
+    clock = new Date(clock.getTime() + 24 * 3_600_000 + 1);
+    expect((await client()('POST', '/auth/verify-email', { token })).body.error).toBe('verify_invalid');
+  });
+
+  it('send the link again: needs the password, replaces the old link, and is limited', async () => {
+    const { client, mailer } = await setup(new MemoryMailer(), VERIFY);
+    await client()('POST', '/auth/signup', { name: 'Ali', email: 'ali@x.co', password: 'correct horse' });
+    const first = linkIn(mailer);
+    const anon = client();
+    expect((await anon('POST', '/auth/resend-verification', { email: 'ali@x.co', password: 'nope nope' })).status).toBe(401);
+    const again = await anon('POST', '/auth/resend-verification', { email: 'ali@x.co', password: 'correct horse' });
+    expect(again.body).toMatchObject({ ok: true, hours: 24 });
+    const second = linkIn(mailer);
+    expect(second).not.toBe(first);
+    expect((await client()('POST', '/auth/verify-email', { token: first })).body.error).toBe('verify_invalid');
+    expect((await anon('POST', '/auth/resend-verification', { email: 'ali@x.co', password: 'correct horse' })).status).toBe(200);
+    expect((await anon('POST', '/auth/resend-verification', { email: 'ali@x.co', password: 'correct horse' })).status).toBe(429);
+    expect((await client()('POST', '/auth/verify-email', { token: linkIn(mailer) })).status).toBe(200);
+  }, 15_000);
+
+  it('a password reset link proves the address too', async () => {
+    const { client, mailer, store } = await setup(new MemoryMailer(), VERIFY);
+    await client()('POST', '/auth/signup', { name: 'Ali', email: 'ali@x.co', password: 'correct horse' });
+    await client()('POST', '/auth/forgot', { email: 'ali@x.co' });
+    const token = /reset-password\?token=([A-Za-z0-9_-]+)/.exec((mailer as MemoryMailer).sent.at(-1)!.text)![1]!;
+    expect((await client()('POST', '/auth/reset', { token, password: 'a new password' })).status).toBe(200);
+    expect(store.users.find((u) => u.email === 'ali@x.co')!.emailVerifiedAt).toBeInstanceOf(Date);
+    expect((await client()('POST', '/auth/login', { email: 'ali@x.co', password: 'a new password' })).status).toBe(200);
+  });
+
+  it('without an e-mail service nobody is locked out: sign-up logs in at once', async () => {
+    const { client } = await setup(new UnconfiguredMailer(), VERIFY);
+    const c = client();
+    const r = await c('POST', '/auth/signup', { name: 'Ali', email: 'ali@x.co', password: 'correct horse' });
+    expect(r.body.verificationRequired).toBeUndefined();
+    expect((await c('GET', '/me')).status).toBe(200);
+  });
+
+  it('accounts made before verification existed (no emailVerifiedAt) log in as before', async () => {
+    const { client, store } = await setup(new MemoryMailer(), VERIFY);
+    delete store.users.find((u) => u.email === 'umar@x.co')!.emailVerifiedAt;
+    expect((await client()('POST', '/auth/login', { email: 'umar@x.co', password: 'correct horse' })).status).toBe(200);
   });
 });
