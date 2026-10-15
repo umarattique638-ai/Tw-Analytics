@@ -9,7 +9,8 @@ import { muted } from '../components/ui/styles';
 import { useLoginForm } from '../hooks/useAuthForms';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-type From = { from?: string } | null;
+/** `from`: where to go after logging in. `verified`: the e-mail just confirmed by the sign-up link. */
+type From = { from?: string; verified?: string } | null;
 /** Only paths inside this app (never "//other.site"). */
 const safeFrom = (p?: string) => (p && p.startsWith('/') && !p.startsWith('//') && p !== '/login' ? p : '/dashboard');
 
@@ -17,11 +18,16 @@ export default function LoginPage() {
   useDocumentTitle('Log in');
   const navigate = useNavigate();
   const state = useLocation().state as From;
-  const form = useLoginForm(() => navigate(safeFrom(state?.from), { replace: true }));
+  const form = useLoginForm(() => navigate(safeFrom(state?.from), { replace: true }), state?.verified ?? '');
 
   return (
     <>
       <PageHeader compact title="Welcome back" description="Log in to see your analytics." />
+      {state?.verified && !form.unverified && (
+        <Notice tone="success" className="mb-5">
+          E-mail confirmed. Log in with your password to continue.
+        </Notice>
+      )}
 
       <form
         className="grid gap-5"

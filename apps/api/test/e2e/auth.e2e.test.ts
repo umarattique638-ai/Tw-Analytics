@@ -55,7 +55,7 @@ const lastLink = (kind: 'verify-email' | 'reset-password') => {
 };
 
 describe('e-mail verification and forgot password, in Chromium', { timeout: 60_000 }, () => {
-  it('sign up -> check your inbox -> log in refused -> send again -> open the link -> signed in', async () => {
+  it('sign up -> check your inbox -> log in refused -> send again -> open the link -> Log in page -> signed in', async () => {
     const page = await (await browser.newContext()).newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -84,12 +84,19 @@ describe('e-mail verification and forgot password, in Chromium', { timeout: 60_0
     const second = lastLink('verify-email');
     expect(second).not.toBe(first);
 
-    // The old link no longer works; the new one confirms and signs in.
+    // The old link no longer works; the new one confirms, then Log in opens (no automatic sign-in).
     await page.goto(first);
     await page.getByTestId('email-verify-invalid').waitFor();
     await page.goto(second);
     await page.getByTestId('email-verified').waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/a3-verified.png`, fullPage: true });
+    await page.waitForURL('**/login', { timeout: 10_000 });
+    await page.getByText('E-mail confirmed. Log in with your password to continue.').waitFor();
+    expect(await page.getByLabel('Work email').inputValue()).toBe('ali@shop.test');
+    expect((await page.request.get(`${base}/api/v1/me`)).status()).toBe(401); // not signed in by the link
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/a3b-login-after-verify.png`, fullPage: true });
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await page.getByRole('button', { name: 'Log in' }).click();
     await page.waitForURL(/\/(dashboard|sites\/new)/, { timeout: 10_000 });
     expect(errors).toEqual([]);
   });

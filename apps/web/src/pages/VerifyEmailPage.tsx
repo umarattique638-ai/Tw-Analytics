@@ -6,11 +6,11 @@ import Spinner from '../components/ui/Spinner';
 import { useVerifyEmail } from '../hooks/useAuthForms';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-/** The link from the sign-up e-mail: confirms the address, signs in, then on to adding the first site. */
+/** The link from the sign-up e-mail: confirms the address, then on to Log in (no automatic sign-in). */
 export default function VerifyEmailPage() {
   useDocumentTitle('Confirm your e-mail');
   const navigate = useNavigate();
-  const v = useVerifyEmail(() => navigate('/dashboard', { replace: true }));
+  const v = useVerifyEmail((email) => navigate('/login', { replace: true, state: { verified: email } }));
 
   if (v.state === 'checking') {
     return (
@@ -27,7 +27,10 @@ export default function VerifyEmailPage() {
         <span className="mb-5 grid size-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20">
           <CheckCircle2 className="size-6" aria-hidden="true" />
         </span>
-        <PageHeader compact title="E-mail confirmed" description="Your account is ready and you are logged in. Taking you to your dashboard…" />
+        <PageHeader compact title="E-mail confirmed" description="Your account is ready. Taking you to log in…" />
+        <LinkButton to="/login" state={{ verified: v.email }} className="mt-2 w-full">
+          Log in now
+        </LinkButton>
       </div>
     );
   }

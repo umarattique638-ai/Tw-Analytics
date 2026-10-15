@@ -24,8 +24,8 @@ export function usePasswordMin() {
  * Log in. A right password on an account whose e-mail is not confirmed yet is refused with
  * `email_unverified` (decision 27): then `unverified` is set and `resend()` sends the link again.
  */
-export function useLoginForm(onDone: () => void) {
-  const [email, setEmail] = useState('');
+export function useLoginForm(onDone: () => void, initialEmail = '') {
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [unverified, setUnverified] = useState(false);
   const [resent, setResent] = useState<string | null>(null);
@@ -122,19 +122,25 @@ export function useSignupForm(onDone: () => void) {
 
 /**
  * The link from the sign-up e-mail (/verify-email?token=…). The token is read once and removed from the
- * address bar, then sent to the API, which confirms the address and signs this browser in.
+ * address bar, then sent to the API, which confirms the address. No session: `onDone(email)` then opens
+ * Log in (owner decision 2026-10-15).
  */
-export function useVerifyEmail(onDone: () => void) {
+export function useVerifyEmail(onDone: (email: string) => void) {
   const [token] = useState(() => new URLSearchParams(window.location.search).get('token') ?? '');
   const [state, setState] = useState<'checking' | 'done' | 'invalid'>(token ? 'checking' : 'invalid');
   const [message, setMessage] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     if (!token) return;
     window.history.replaceState(window.history.state, '', window.location.pathname);
     let live = true;
     api.verifyEmail(token).then(
-      () => live && setState('done'),
+      (r) => {
+        if (!live) return;
+        setEmail(r.email);
+        setState('done');
+      },
       (e: unknown) => {
         if (!live) return;
         setMessage(e instanceof Error ? e.message : null);
@@ -146,14 +152,14 @@ export function useVerifyEmail(onDone: () => void) {
     };
   }, [token]);
 
-  // Signed in by the link: on to adding a site after a moment.
+  // Confirmed: on to Log in after a moment.
   useEffect(() => {
     if (state !== 'done') return;
-    const t = setTimeout(onDone, 1800);
+    const t = setTimeout(() => onDone(email), 1800);
     return () => clearTimeout(t);
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { state, message };
+  return { state, message, email };
 }
 
 /** "Forgot password": an e-mail without an account is refused with a message (owner decision 2026-10-15). */

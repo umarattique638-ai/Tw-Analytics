@@ -539,7 +539,8 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      one use, only its SHA-256 stored in the new `email_verifications` collection) must be opened first.
      Log-in with the right password but an unconfirmed address answers 403 email_unverified; the login
      page offers "Send it again" (POST /auth/resend-verification, needs the password, 3 an hour per
-     address). Opening the link sets users.emailVerifiedAt and signs that browser in. A password reset
+     address). Opening the link sets users.emailVerifiedAt but does NOT sign in (owner, same day): the
+     dashboard opens Log in with the e-mail filled in and "E-mail confirmed", and the user logs in. A password reset
      link proves the address too. Accounts made before this have no emailVerifiedAt and log in as before.
    - Needs a working mailer (TW_BREVO_API_KEY or TW_RESEND_API_KEY, and TW_MAIL_FROM). Without one,
      or with TW_EMAIL_VERIFICATION=off, new accounts are verified at once so sign-up never breaks.

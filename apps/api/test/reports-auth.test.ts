@@ -67,6 +67,7 @@ async function setup(mailer: Mailer = new MemoryMailer(), over: Partial<Paramete
     // Open the e-mailed link in this browser (decision 27), then the mail list starts empty for the test.
     const token = /verify-email\?token=([A-Za-z0-9_-]+)/.exec((mailer as MemoryMailer).sent.at(-1)!.text)![1]!;
     await a('POST', '/auth/verify-email', { token });
+    await a('POST', '/auth/login', { email: 'umar@x.co', password: 'correct horse' });
     (mailer as MemoryMailer).sent.length = 0;
   }
   const site = (await addSite((p, j) => a('POST', p, j), kv.entries, 'shop.example.com', 'Asia/Karachi')).body.site;
@@ -215,7 +216,7 @@ describe('E-mail verification (decision 27): a new account logs in only after op
   const VERIFY = { requireEmailVerification: true };
   const linkIn = (mailer: Mailer, i = -1) => /https:\/\/dash\.test\/verify-email\?token=([A-Za-z0-9_-]+)/.exec((mailer as MemoryMailer).sent.at(i)!.text)![1]!;
 
-  it('sign up -> no session, an e-mail with a link; log in refused until the link is opened; the link signs in, once', async () => {
+  it('sign up -> no session, an e-mail with a link; log in refused until the link is opened; the link confirms (no sign-in), once', async () => {
     const { client, mailer, store } = await setup(new MemoryMailer(), VERIFY);
     const c = client();
     const r = await c('POST', '/auth/signup', { name: 'Ali', email: 'Ali@x.co', password: 'correct horse' });
@@ -238,7 +239,8 @@ describe('E-mail verification (decision 27): a new account logs in only after op
     const v = client();
     const ok = await v('POST', '/auth/verify-email', { token });
     expect(ok.status).toBe(200);
-    expect((await v('GET', '/me')).status).toBe(200); // signed in by the link
+    expect(ok.body).toEqual({ ok: true, email: 'Ali@x.co' });
+    expect((await v('GET', '/me')).status).toBe(401);
     expect(store.users.find((u) => u.email === 'Ali@x.co')!.emailVerifiedAt).toBeInstanceOf(Date);
     expect((await client()('POST', '/auth/verify-email', { token })).body.error).toBe('verify_invalid'); // one use
     expect((await client()('POST', '/auth/login', { email: 'ali@x.co', password: 'correct horse' })).status).toBe(200);

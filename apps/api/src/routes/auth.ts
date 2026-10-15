@@ -114,7 +114,10 @@ export function authRoutes(app: Api, s: Services) {
     return c.json({ user: userView(user), ...extra });
   });
 
-  /** The link from the sign-up e-mail: the address is proven, the account can log in, and this browser is signed in. */
+  /**
+   * The link from the sign-up e-mail: the address is proven and the account can log in. It does NOT sign
+   * this browser in (owner decision 2026-10-15): the dashboard sends the user to Log in, e-mail filled in.
+   */
   app.post('/auth/verify-email', async (c) => {
     const b = await body(c);
     const token = str(b.token);
@@ -129,10 +132,7 @@ export function authRoutes(app: Api, s: Services) {
       await audit.forUser(user, 'auth.email_verified', `Confirmed the e-mail address ${user.email}`);
     }
     await store.deleteEmailVerificationsOf(user._id);
-    // `token` in this body is the e-mailed token, so a client that wants a Bearer token asks with `session: true`.
-    const extra = await session.start(c as Ctx, { ...user, emailVerifiedAt: user.emailVerifiedAt ?? at }, b.session === true);
-    await audit.forUser(user, 'auth.login', 'Signed in');
-    return c.json({ user: userView(user), ...extra });
+    return c.json({ ok: true, email: user.email });
   });
 
   /**

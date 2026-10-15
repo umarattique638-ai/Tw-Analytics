@@ -91,8 +91,8 @@ export const api = {
   /** `verificationRequired`: no session yet, the account logs in after the e-mailed link is opened. */
   signup: (name: string, email: string, password: string) =>
     call<{ user: User; verificationRequired?: boolean; email?: string; sent?: boolean; hours?: number }>('POST', '/auth/signup', { name, email, password }),
-  /** The link from the sign-up e-mail: proves the address and signs this browser in. */
-  verifyEmail: (token: string) => call<{ user: User }>('POST', '/auth/verify-email', { token }),
+  /** The link from the sign-up e-mail: proves the address. It does not sign in (the user logs in next). */
+  verifyEmail: (token: string) => call<{ ok: true; email: string }>('POST', '/auth/verify-email', { token }),
   resendVerification: (email: string, password: string) =>
     call<{ ok: true; alreadyVerified?: boolean; email?: string; hours?: number }>('POST', '/auth/resend-verification', { email, password }),
   login: (email: string, password: string) => call<{ user: User }>('POST', '/auth/login', { email, password }),
