@@ -158,7 +158,8 @@ describe('Phase 3 pages', { timeout: 90_000 }, () => {
     await form.getByLabel('Your password').fill(PASSWORD);
     await submit.click();
     await page.waitForURL(/\/login/);
-    await page.getByText('Your account was deleted. Tracking has stopped.').waitFor();
+    await page.getByText('Account deleted. Tracking has stopped.').waitFor();
+    await page.getByText('Your data is being erased now.', { exact: false }).waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/p3-deleted-login.png` });
 
     expect(store.users).toHaveLength(0);

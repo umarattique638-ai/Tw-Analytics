@@ -16,8 +16,8 @@ const Step = ({ n }: { n: number }) => (
 );
 
 const toastDeleted = (stopped: boolean, days: number) =>
-  notify.success(`Your account was deleted. ${stopped ? 'Tracking has stopped.' : 'Tracking stops within a day.'}`, {
-    description: `Collected analytics are erased within ${days} days; we e-mail you when it is done.`,
+  notify.success(`Account deleted. ${stopped ? 'Tracking has stopped.' : 'Tracking stops within a day.'}`, {
+    description: `Your data is being erased now. We e-mail you once we have confirmed nothing is left (within ${days} days).`,
   });
 
 /** Owner only: delete the account, after the password and the word DELETE. */
@@ -37,7 +37,7 @@ export default function DeleteAccountPanel({ siteCount }: { siteCount: number })
           <ul className="grid flex-1 list-disc gap-1.5 pl-5 text-sm text-slate-600 marker:text-rose-400 dark:text-slate-300">
             <li>Your login, workspace, {siteCount === 1 ? 'site' : `${siteCount} sites`}, saved reports and activity log are deleted at once.</li>
             <li>Tracking stops: the collector no longer accepts your site keys.</li>
-            <li>Collected analytics are erased within a few days, and we e-mail you when that is confirmed.</li>
+            <li>Collected analytics start being erased at once. We check that nothing is left and e-mail you when that is confirmed.</li>
           </ul>
           <Button variant="dangerOutline" className="flex-none" onClick={() => setOpen(true)}>
             <Trash2 className="size-4" aria-hidden="true" /> Delete account…
