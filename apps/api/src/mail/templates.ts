@@ -127,6 +127,37 @@ export function siteBrokenMail(to: string, name: string | null, domain: string, 
   };
 }
 
+/** Decision 31: far more traffic than usual in the last 24 hours, and where it came from. */
+export function siteSpikeMail(
+  to: string,
+  name: string | null,
+  domain: string,
+  spike: { pageviews: number; usual: number; times: number },
+  details: { pages: { label: string; count: number }[]; countries: { label: string; count: number }[]; referrers: { label: string; count: number }[]; blocked: number },
+  link: string,
+): MailMessage {
+  const hello = name ? `Hi ${name},` : 'Hi,';
+  const n = (v: number) => Math.round(v).toLocaleString('en-US');
+  const list = (rows: { label: string; count: number }[], empty: string) => (rows.length ? rows.map((r) => `${r.label || empty} (${n(r.count)})`).join(', ') : '-');
+  const usual =
+    spike.usual >= 1 ? `about ${spike.times >= 10 ? Math.round(spike.times) : spike.times.toFixed(1)} times its usual ${n(spike.usual)} a day` : 'while it usually gets almost none';
+  const lines = [
+    `${hello} ${domain} had ${n(spike.pageviews)} page views in the last 24 hours, ${usual}.`,
+    `Top pages: ${list(details.pages, '/')}.`,
+    `Top countries: ${list(details.countries, 'unknown')}.`,
+    `Top referrers: ${list(details.referrers, 'direct')}.`,
+    details.blocked > 0
+      ? `In the same 24 hours we blocked ${n(details.blocked)} hits (bots, other websites using your key). Those are not in the numbers above.`
+      : 'We blocked no hits in the same 24 hours, so this looks like real visitors.',
+  ];
+  return {
+    to,
+    subject: `Unusual traffic on ${domain}: ${n(spike.pageviews)} page views in 24 hours`,
+    text: [...lines, '', link, '', 'At most one such e-mail a day.', '', 'TailWatch'].join('\n\n'),
+    html: cardWithButton(`Unusual traffic on ${domain}`, lines, { label: 'Open the dashboard', link }, ['At most one such e-mail a day.']),
+  };
+}
+
 /** Decision 28: data arrives again from a site we e-mailed about. */
 export function siteRecoveredMail(to: string, name: string | null, domain: string, link: string): MailMessage {
   const hello = name ? `Hi ${name},` : 'Hi,';

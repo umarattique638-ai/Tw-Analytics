@@ -133,6 +133,8 @@ export interface SiteHealthDoc {
   lastEventAt: Date | null;
   silentHours: number;
   alertedAt: Date | null;
+  /** When the last "unusual traffic" e-mail went out (decision 31): at most one a day. */
+  spikeAlertedAt?: Date | null;
 }
 
 /** Everything the activity log can say happened. `system` entries are made by the nightly jobs. */
@@ -153,6 +155,7 @@ export const AUDIT_ACTIONS = [
   'site.deleted',
   'site.stopped_sending',
   'site.sending_again',
+  'site.traffic_spike',
   'key.created',
   'key.revoked',
   'host.allowed',

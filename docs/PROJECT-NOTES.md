@@ -601,6 +601,17 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      events (top_pages_filtered: the rollup has no country or device). Never filtered: Active now, Live
      visitors, Latest hits, capture rate, warnings, and Export CSV.
 
+31. DECIDED 2026-10-15 (owner): an e-mail when a site gets far more traffic than usual (services/spikes.ts).
+   - Part of the nightly health run (/internal/health, 06:23 PKT). Per site: page views in the last 24 hours
+     vs "usual" = the median of the 14 24-hour windows before (no timezone involved; one big day does not
+     move a median). Unusual = at least 100 page views AND at least 5x usual.
+   - Only sites verified 7+ days ago; at most one e-mail every 20 hours (site_health.spikeAlertedAt).
+   - The e-mail (owners and admins) says how many, how many times usual, the top 3 pages, countries and
+     referrers of those 24 hours, and how many hits were blocked then (a bot flood shows there). An
+     activity line site.traffic_spike too. Nothing on the dashboard changes.
+   - MongoDB: site_health.spikeAlertedAt and the audit action site.traffic_spike: run `pnpm db:mongo`
+     BEFORE deploying.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

@@ -1,6 +1,7 @@
 import type { SiteActivity, WrongHost } from '../analytics';
 import { errorText, logError, logInfo } from '../http/errors';
-import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail } from '../mail';
+import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail, siteSpikeMail } from '../mail';
+import { SPIKE_BASELINE_DAYS, SPIKE_MIN_AGE_DAYS, SPIKE_REPEAT_HOURS, spikeOf } from './spikes';
 import type { SiteDoc, SiteHealthDoc } from '../store/types';
 import { LABELS, runActiveCheck } from '../verifier';
 import type { CheckId } from '../verifier';
@@ -188,6 +189,8 @@ export function createHealthService(s: Services) {
       lastEventAt: activity?.lastAt ?? prev?.lastEventAt ?? null,
       silentHours,
       alertedAt: prev?.alertedAt ?? null,
+      // Decision 31's daily limit belongs to the site, whatever its health was.
+      spikeAlertedAt: prevRaw?.spikeAlertedAt ?? null,
     };
 
     const silence = spanText(at.getTime() - lastSignal(site, activity).getTime());
@@ -226,6 +229,42 @@ export function createHealthService(s: Services) {
     }
   };
 
+  /**
+   * Decision 31: sites with far more page views than usual in the last 24 hours get one e-mail (at most one
+   * a day) and an activity line. `prevOf` is updated, so a later health check keeps the new date.
+   */
+  const spikeAlerts = async (sites: SiteDoc[], prevOf: Map<number, SiteHealthDoc>): Promise<number> => {
+    if (!reader.dailyPageviews || !reader.spikeDetails) return 0;
+    const at = now();
+    const old = sites.filter((x) => at.getTime() - (x.verifiedAt ?? x.createdAt).getTime() >= SPIKE_MIN_AGE_DAYS * 86_400_000);
+    if (!old.length) return 0;
+    let sent = 0;
+    try {
+      const days = await reader.dailyPageviews(
+        old.map((x) => x._id),
+        SPIKE_BASELINE_DAYS + 1,
+      );
+      const due = old
+        .map((site) => ({ site, spike: spikeOf(days.get(site._id) ?? []), saved: prevOf.get(site._id) }))
+        .filter((x) => x.spike && x.saved && (!x.saved.spikeAlertedAt || at.getTime() - x.saved.spikeAlertedAt.getTime() >= SPIKE_REPEAT_HOURS * 3_600_000));
+      if (!due.length) return 0;
+      const details = await reader.spikeDetails(due.map((x) => x.site._id));
+      for (const { site, spike, saved } of due) {
+        const d = details.get(site._id) ?? { pages: [], countries: [], referrers: [], blocked: 0 };
+        const times = spike!.usual >= 1 ? `${Math.round(spike!.times)}x its usual ${Math.round(spike!.usual)} a day` : 'usually almost none';
+        await audit.write(site.tenantId, null, 'site.traffic_spike', site._id, `Unusual traffic on ${site.domain}: ${spike!.pageviews} page views in 24 hours (${times})`);
+        await mailAll(site, (to, name) => siteSpikeMail(to, name, site.domain, spike!, d, dashboardLink(site)));
+        const next = { ...saved!, spikeAlertedAt: at };
+        await store.saveHealth(next);
+        prevOf.set(site._id, next);
+        sent += 1;
+      }
+    } catch (error) {
+      logError('spike_check_failed', { message: errorText(error) });
+    }
+    return sent;
+  };
+
   return {
     /** ClickHouse can tell when data last arrived (without it there is nothing to judge). */
     get configured() {
@@ -252,7 +291,7 @@ export function createHealthService(s: Services) {
     /** The nightly run over every watched site. */
     async runAll() {
       const deadline = Date.now() + HEALTH_BUDGET_MS;
-      const result = { configured: !!reader.siteActivity, sites: 0, healthy: 0, quiet: 0, broken: 0, silent: 0, notChecked: 0, failed: 0, pipelineSuspect: false };
+      const result = { configured: !!reader.siteActivity, sites: 0, healthy: 0, quiet: 0, broken: 0, silent: 0, notChecked: 0, failed: 0, pipelineSuspect: false, spikes: 0 };
       if (!reader.siteActivity) return result;
       const sites = (await store.allSites()).filter(watched);
       result.sites = sites.length;
@@ -280,7 +319,9 @@ export function createHealthService(s: Services) {
       const tally = (h: SiteHealthDoc) => (result[h.status] += 1);
       const run = async (site: SiteDoc) => {
         try {
-          tally(await evaluate(site, activity.get(site._id), wrong.get(site._id), prevOf.get(site._id) ?? null, !result.pipelineSuspect));
+          const h = await evaluate(site, activity.get(site._id), wrong.get(site._id), prevOf.get(site._id) ?? null, !result.pipelineSuspect);
+          prevOf.set(site._id, h); // what is saved now: the spike step below builds on it
+          tally(h);
         } catch (error) {
           result.failed += 1;
           logError('health_check_failed', { site: site._id, message: errorText(error) });
@@ -290,6 +331,8 @@ export function createHealthService(s: Services) {
       // Sites with data first: no fetching, quick (and a recovery is never held up by the slow ones).
       const silentIds = new Set(silent.map((x) => x._id));
       for (const site of sites.filter((x) => !silentIds.has(x._id))) await run(site);
+      // Decision 31: unusual traffic (quick queries; before the slow install checks).
+      result.spikes = await spikeAlerts(sites, prevOf);
       // Then the silent ones, a few at a time, the longest unchecked first, until the time is used up.
       const queue = [...silent].sort((a, b) => (prevOf.get(a._id)?.checkedAt.getTime() ?? 0) - (prevOf.get(b._id)?.checkedAt.getTime() ?? 0));
       const worker = async () => {

@@ -361,6 +361,7 @@ ensureCollection('site_health', {
     lastEventAt: dateOrNull,
     silentHours: { bsonType: 'int', minimum: 0 },
     alertedAt: dateOrNull,
+    spikeAlertedAt: dateOrNull,
   },
   additionalProperties: false,
 });
@@ -394,6 +395,7 @@ ensureCollection('audit_log', {
         'site.deleted',
         'site.stopped_sending',
         'site.sending_again',
+        'site.traffic_spike',
         'key.created',
         'key.revoked',
         'host.allowed',

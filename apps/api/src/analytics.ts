@@ -23,6 +23,15 @@ export interface WrongHost {
   lastAt: Date;
 }
 
+/** Decision 31: what an unusual day was made of (last 24 hours, most first). */
+export interface SpikeDetails {
+  pages: { label: string; count: number }[];
+  countries: { label: string; count: number }[];
+  referrers: { label: string; count: number }[];
+  /** Hits dropped in the same 24 hours (bots, wrong host, ...): a flood often shows here too. */
+  blocked: number;
+}
+
 export interface AnalyticsReader {
   recent(siteId: number, minutes: number): Promise<RecentActivity>;
   /**
@@ -32,6 +41,10 @@ export interface AnalyticsReader {
   siteActivity?(siteIds: number[], days: number): Promise<Map<number, SiteActivity>>;
   /** Decision 29: per site, the other hosts its key was used on over the last `days`, most hits first. */
   wrongHosts?(siteIds: number[], days: number): Promise<Map<number, WrongHost[]>>;
+  /** Decision 31: page views per 24-hour window, newest first ([0] = the last 24 hours), `days` windows. */
+  dailyPageviews?(siteIds: number[], days: number): Promise<Map<number, number[]>>;
+  /** Decision 31: top pages, countries and referrers of the last 24 hours, and the hits dropped then. */
+  spikeDetails?(siteIds: number[]): Promise<Map<number, SpikeDetails>>;
 }
 
 /** Minimal ClickHouse HTTP client: parameterised queries ({name:Type}), JSON rows, UInt64 as strings. */
@@ -153,6 +166,65 @@ export class ClickHouseReader implements AnalyticsReader {
       const list = out.get(id) ?? [];
       list.push({ host: r.host, hits: Number(r.hits), lastAt: new Date(`${r.last_at.replace(' ', 'T')}Z`) });
       out.set(id, list);
+    }
+    return out;
+  }
+
+  async dailyPageviews(siteIds: number[], days: number): Promise<Map<number, number[]>> {
+    const out = new Map<number, number[]>();
+    if (!siteIds.length) return out;
+    const rows = await this.ch.query<{ site_id: string; ago: string; pageviews: string }>(
+      `SELECT site_id, intDiv(toUnixTimestamp(now64(3)) - toUnixTimestamp(received_at), 86400) AS ago, count() AS pageviews
+         FROM ${this.ch.database}.events
+        WHERE site_id IN {sites:Array(UInt64)} AND name = 'pageview' AND received_at > now64(3) - toIntervalDay({days:UInt32})
+        GROUP BY site_id, ago`,
+      { sites: `[${siteIds.map((id) => Math.trunc(id)).join(',')}]`, days },
+    );
+    for (const id of siteIds) out.set(id, Array.from({ length: days }, () => 0));
+    for (const r of rows) {
+      const list = out.get(Number(r.site_id));
+      const ago = Number(r.ago);
+      if (list && ago >= 0 && ago < days) list[ago] = Number(r.pageviews);
+    }
+    return out;
+  }
+
+  async spikeDetails(siteIds: number[]): Promise<Map<number, SpikeDetails>> {
+    const out = new Map<number, SpikeDetails>();
+    if (!siteIds.length) return out;
+    const p = { sites: `[${siteIds.map((id) => Math.trunc(id)).join(',')}]` };
+    const db = this.ch.database;
+    const top = (col: string) =>
+      this.ch.query<{ site_id: string; label: string; n: string }>(
+        `SELECT site_id, ${col} AS label, count() AS n
+           FROM ${db}.events
+          WHERE site_id IN {sites:Array(UInt64)} AND name = 'pageview' AND received_at > now64(3) - INTERVAL 1 DAY
+          GROUP BY site_id, label
+          ORDER BY site_id, n DESC
+          LIMIT 3 BY site_id`,
+        p,
+      );
+    const [pages, countries, referrers, blocked] = await Promise.all([
+      top('pathname'),
+      top('country_code'),
+      top('referrer_source'),
+      this.ch.query<{ site_id: string; hits: string }>(
+        `SELECT site_id, sum(hits) AS hits FROM ${db}.dropped_hits
+          WHERE site_id IN {sites:Array(UInt64)} AND at > now64(3) - INTERVAL 1 DAY
+          GROUP BY site_id`,
+        p,
+      ),
+    ]);
+    for (const id of siteIds) out.set(id, { pages: [], countries: [], referrers: [], blocked: 0 });
+    const fill = (rows: { site_id: string; label: string; n: string }[], key: 'pages' | 'countries' | 'referrers') => {
+      for (const r of rows) out.get(Number(r.site_id))?.[key].push({ label: r.label, count: Number(r.n) });
+    };
+    fill(pages, 'pages');
+    fill(countries, 'countries');
+    fill(referrers, 'referrers');
+    for (const r of blocked) {
+      const d = out.get(Number(r.site_id));
+      if (d) d.blocked = Number(r.hits);
     }
     return out;
   }

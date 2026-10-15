@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader, SiteActivity, WrongHost } from '../src/analytics';
+import type { AnalyticsReader, SiteActivity, SpikeDetails, WrongHost } from '../src/analytics';
 import { defaultConfig } from '../src/config';
 import { MemoryKv } from '../src/kv';
 import { MemoryMailer } from '../src/mail';
 import { isSilent, silentHoursFor } from '../src/services/health';
+import { median, spikeOf } from '../src/services/spikes';
 import { snippetsFor } from '../src/snippets';
 import { MemoryStore } from '../src/store/memory';
 import { addSite, fakeSiteFetch } from './helpers/install';
@@ -32,7 +33,12 @@ function setup(over: { ownerEmail?: string } = {}) {
   let activityCalls = 0;
   /** dropped_hits "hostname" per site (decision 29). */
   const wrongHosts = new Map<number, WrongHost[]>();
+  /** Page views per 24-hour window per site ([0] = last 24 hours) and the spike breakdown (decision 31). */
+  const daily = new Map<number, number[]>();
+  const details = new Map<number, SpikeDetails>();
   const analytics: AnalyticsReader = {
+    dailyPageviews: async (ids, days) => new Map(ids.map((id) => [id, [...(daily.get(id) ?? []), ...Array<number>(days).fill(0)].slice(0, days)])),
+    spikeDetails: async (ids) => new Map(ids.map((id) => [id, details.get(id) ?? { pages: [], countries: [], referrers: [], blocked: 0 }])),
     wrongHosts: async (ids) => new Map([...wrongHosts].filter(([id]) => ids.includes(id))),
     recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }),
     siteActivity: async (ids) => {
@@ -104,7 +110,7 @@ function setup(over: { ownerEmail?: string } = {}) {
   const lastEvent = (siteId: number, agoMs: number, gapMinutes = 60) => activity.set(siteId, { lastAt: at(agoMs), maxGapMinutes: gapMinutes });
   const serve = (domain: string, page: Page) => (pages.get(domain)!.page = page);
   const audit = (action: string) => store.audit.filter((e) => e.action === action);
-  return { store, kv, mailer, clock, activity, wrongHosts, pages, app, client, cron, account, lastEvent, serve, audit, counts: () => ({ fetches, activityCalls }) };
+  return { store, kv, mailer, clock, activity, wrongHosts, daily, details, pages, app, client, cron, account, lastEvent, serve, audit, counts: () => ({ fetches, activityCalls }) };
 }
 
 describe('silence threshold', () => {
@@ -329,5 +335,65 @@ describe('site health', { timeout: 30_000 }, () => {
     const r = await c.post(`/sites/${sites[0]!.id}/domain`, { domain: 'blog.test' });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe('domain_taken');
+  });
+});
+
+describe('unusual traffic (decision 31)', { timeout: 30_000 }, () => {
+  it('the rule: at least 100 page views and 5x the usual day (median of the 14 before)', () => {
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([4, 1, 2, 3])).toBe(2.5);
+    const usual = Array<number>(14).fill(100);
+    expect(spikeOf([600, ...usual])).toEqual({ pageviews: 600, usual: 100, times: 6 });
+    expect(spikeOf([400, ...usual])).toBeNull(); // 4x: not unusual enough
+    expect(spikeOf([90, ...Array<number>(14).fill(1)])).toBeNull(); // 90x, but too small to matter
+    expect(spikeOf([150, ...Array<number>(14).fill(0)])).toMatchObject({ pageviews: 150, usual: 0 });
+    expect(spikeOf([700, 5000, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100])).toMatchObject({ usual: 100 }); // one big day does not move the median
+  });
+
+  it('a spike: one e-mail with where it came from, an activity line, at most once a day; health untouched', async () => {
+    const s = setup();
+    const { sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 10 * DAY;
+    s.lastEvent(id, 5 * 60_000);
+    s.daily.set(id, [2400, ...Array<number>(14).fill(300)]);
+    s.details.set(id, {
+      pages: [{ label: '/sale', count: 1900 }, { label: '/', count: 400 }],
+      countries: [{ label: 'PK', count: 2000 }],
+      referrers: [{ label: 'facebook.com', count: 1500 }, { label: '', count: 900 }],
+      blocked: 320,
+    });
+    const night = await s.cron();
+    expect(night.body).toMatchObject({ healthy: 1, spikes: 1 });
+    expect(s.mailer.sent).toHaveLength(1);
+    const mail = s.mailer.sent[0]!;
+    expect(mail.subject).toBe('Unusual traffic on shop.test: 2,400 page views in 24 hours');
+    for (const want of ['about 8.0 times its usual 300 a day', '/sale (1,900)', 'PK (2,000)', 'facebook.com (1,500), direct (900)', 'we blocked 320 hits']) expect(mail.text).toContain(want);
+    expect(s.audit('site.traffic_spike')[0]!.summary).toBe('Unusual traffic on shop.test: 2400 page views in 24 hours (8x its usual 300 a day)');
+    expect(s.store.health.find((h) => h._id === id)).toMatchObject({ status: 'healthy' });
+
+    // Same day again (the cron re-run by hand): nothing new. A day later, still unusual: one more.
+    s.clock.t += 2 * HOUR;
+    expect((await s.cron()).body.spikes).toBe(0);
+    s.clock.t += DAY;
+    s.lastEvent(id, 5 * 60_000);
+    expect((await s.cron()).body.spikes).toBe(1);
+    expect(s.mailer.sent).toHaveLength(2);
+  });
+
+  it('a site younger than 7 days or an ordinary day: no e-mail', async () => {
+    const s = setup();
+    const { sites } = await s.account(['shop.test', 'blog.test']);
+    s.clock.t += 3 * DAY; // both too young
+    s.lastEvent(sites[0]!.id, 60_000);
+    s.lastEvent(sites[1]!.id, 60_000);
+    s.daily.set(sites[0]!.id, [5000]);
+    expect((await s.cron()).body.spikes).toBe(0);
+    s.clock.t += 10 * DAY;
+    s.lastEvent(sites[0]!.id, 60_000);
+    s.lastEvent(sites[1]!.id, 60_000);
+    s.daily.set(sites[0]!.id, [350, ...Array<number>(14).fill(300)]);
+    expect((await s.cron()).body.spikes).toBe(0);
+    expect(s.mailer.sent).toHaveLength(0);
   });
 });

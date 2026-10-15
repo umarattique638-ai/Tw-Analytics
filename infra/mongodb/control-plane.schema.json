@@ -595,6 +595,12 @@
               "date",
               "null"
             ]
+          },
+          "spikeAlertedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -659,6 +665,7 @@
               "site.deleted",
               "site.stopped_sending",
               "site.sending_again",
+              "site.traffic_spike",
               "key.created",
               "key.revoked",
               "host.allowed",

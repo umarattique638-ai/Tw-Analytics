@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Clock3, Download, FileText, Globe, History, KeyRound, LogIn, LogOut, Pause, Play, PlugZap, ShieldAlert, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { ArrowRightLeft, Clock3, TrendingUp, Download, FileText, Globe, History, KeyRound, LogIn, LogOut, Pause, Play, PlugZap, ShieldAlert, Trash2, Unplug, UserPlus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AuditEntry } from '../../api/client';
 
@@ -21,6 +21,7 @@ const LOOK: Record<string, { icon: LucideIcon; tone: Tone }> = {
   'site.deleted': { icon: Trash2, tone: 'rose' },
   'site.stopped_sending': { icon: Unplug, tone: 'rose' },
   'site.sending_again': { icon: PlugZap, tone: 'teal' },
+  'site.traffic_spike': { icon: TrendingUp, tone: 'amber' },
   'key.created': { icon: KeyRound, tone: 'teal' },
   'key.revoked': { icon: KeyRound, tone: 'rose' },
   'host.allowed': { icon: Globe, tone: 'slate' },
