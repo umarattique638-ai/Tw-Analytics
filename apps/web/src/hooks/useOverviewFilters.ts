@@ -26,10 +26,6 @@ export function useOverviewFilters(siteId: number) {
         next.set(key, value);
         return next;
       });
-      // The click was far down the page: go back up, where the filter and the changed numbers are.
-      const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      // The dashboard scrolls inside <main> (AppShell), not the window.
-      (document.querySelector('main') ?? window).scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
     },
     [setParams],
   );

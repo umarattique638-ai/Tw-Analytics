@@ -217,6 +217,9 @@ export function startDownload(url: string, filename: string) {
 
 export const stats = {
   /** `filters` (decision 30): narrow the overview to a page, country, referrer, device or browser. */
+  /** The Filter menu: values of one filter in the period, most used first (`q`: search). */
+  filterValues: (id: number, range: RangeKey, key: FilterKey, q = '') =>
+    call<{ values: { value: string; count: number }[] }>('GET', `/sites/${id}/stats/filter-values?${new URLSearchParams({ range, key, q })}`),
   overview: (id: number, range: RangeKey, filters: OverviewFilters = {}) => {
     const q = new URLSearchParams({ range });
     for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);

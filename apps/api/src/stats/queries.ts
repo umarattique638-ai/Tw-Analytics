@@ -67,6 +67,44 @@ GROUP BY pathname
 ORDER BY pageviews DESC, pathname
 LIMIT 10`,
 
+  // The Filter menu (decision 30): the values a filter can take in the period, most used first, optionally
+  // narrowed by a search ({q:String}, case-insensitive, '' = everything).
+  filter_values_page: `SELECT pathname AS value, count() AS n
+FROM {db}.events
+WHERE ${IN_RANGE('timestamp')} AND name = 'pageview' AND pathname != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(pathname, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100`,
+
+  filter_values_country: `SELECT country_code AS value, count() AS n
+FROM {db}.events
+WHERE ${IN_RANGE('timestamp')} AND name = 'pageview' AND country_code != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(country_code, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100`,
+
+  filter_values_source: `SELECT referrer_source AS value, sum(sign) AS n
+FROM {db}.sessions
+WHERE ${IN_RANGE('start')} AND referrer_source != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(referrer_source, {q:String}) > 0)
+GROUP BY value
+HAVING n > 0
+ORDER BY n DESC, value
+LIMIT 100`,
+
+  filter_values_device: `SELECT device AS value, count() AS n
+FROM {db}.events
+WHERE ${IN_RANGE('timestamp')} AND name = 'pageview' AND device != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(device, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100`,
+
+  filter_values_browser: `SELECT browser AS value, count() AS n
+FROM {db}.events
+WHERE ${IN_RANGE('timestamp')} AND name = 'pageview' AND browser != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(browser, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100`,
+
   pages_all: `SELECT pathname, countMerge(pageviews) AS pageviews, uniqMerge(visitors) AS visitors
 FROM {db}.rollup_15m_pages
 WHERE site_id = {site:UInt64} AND bucket >= toDateTime({from:String}, {tz:String}) AND bucket < toDateTime({until:String}, {tz:String})

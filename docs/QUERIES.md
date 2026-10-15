@@ -103,6 +103,72 @@ ORDER BY pageviews DESC, pathname
 LIMIT 10
 ```
 
+## filter_values_page
+
+Filter menu: pages of the period (search: q)
+
+```sql
+SELECT pathname AS value, count() AS n
+FROM {db}.events
+WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview' AND pathname != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(pathname, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100
+```
+
+## filter_values_country
+
+Filter menu: countries of the period
+
+```sql
+SELECT country_code AS value, count() AS n
+FROM {db}.events
+WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview' AND country_code != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(country_code, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100
+```
+
+## filter_values_source
+
+Filter menu: referrers of the period
+
+```sql
+SELECT referrer_source AS value, sum(sign) AS n
+FROM {db}.sessions
+WHERE site_id = {site:UInt64} AND start >= toDateTime64({from:String}, 3, {tz:String}) AND start < toDateTime64({until:String}, 3, {tz:String}) AND referrer_source != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(referrer_source, {q:String}) > 0)
+GROUP BY value
+HAVING n > 0
+ORDER BY n DESC, value
+LIMIT 100
+```
+
+## filter_values_device
+
+Filter menu: devices of the period
+
+```sql
+SELECT device AS value, count() AS n
+FROM {db}.events
+WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview' AND device != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(device, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100
+```
+
+## filter_values_browser
+
+Filter menu: browsers of the period
+
+```sql
+SELECT browser AS value, count() AS n
+FROM {db}.events
+WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview' AND browser != '' AND ({q:String} = '' OR positionCaseInsensitiveUTF8(browser, {q:String}) > 0)
+GROUP BY value
+ORDER BY n DESC, value
+LIMIT 100
+```
+
 ## pages_all
 
 Account export (Settings > Download your data): every page of a site over its stored history

@@ -2,7 +2,7 @@ import { AUTOMATIC_EVENTS } from '@tailwatch/contract';
 import type { ClickHouseClient } from '../analytics';
 import { channelOf } from './channels';
 import { QUERIES, activeFilters, filtered } from './queries';
-import type { Filters, QueryName } from './queries';
+import type { FilterKey, Filters, QueryName } from './queries';
 import { bounds, chartBuckets } from './range';
 import type { Range } from './range';
 import type { DropsReport, EventsReport, Live, Overview, SiteExport } from './types';
@@ -35,6 +35,13 @@ export class StatsReader {
       /** Average time a visit was in the foreground (tw.js engagement), in ms. */
       avgVisitMs: sessions > 0 ? Math.round(n(se?.engagement_ms) / sessions) : null,
     };
+  }
+
+  /** The Filter menu (decision 30): values of one filter in the period, most used first. */
+  async filterValues(site: number, range: Range, key: FilterKey, q: string): Promise<{ value: string; count: number }[]> {
+    const p = bounds(site, range.tz, range.from, range.to);
+    const rows = await this.run<{ value: string; n: string }>(`filter_values_${key}`, { ...p, q });
+    return rows.map((r) => ({ value: r.value, count: n(r.n) }));
   }
 
   /** `filters` (decision 30): narrow everything except the capture rate and the warnings to a page, country, ... */

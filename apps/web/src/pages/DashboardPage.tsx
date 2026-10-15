@@ -1,5 +1,6 @@
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Timer, Users, Zap } from 'lucide-react';
 import FilterBar from '../components/dashboard/FilterBar';
+import FilterMenu from '../components/dashboard/FilterMenu';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
 import HealthBanner from '../components/dashboard/HealthBanner';
@@ -71,6 +72,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
         }
         actions={
           <>
+            <FilterMenu siteId={site.id} range={range} filters={filter.filters} onPick={filter.set} />
             <RangeSelect value={range} onChange={setRange} />
             <Button variant="secondary" size="sm" className="h-10" onClick={csv.exportCsv} loading={csv.busy}>
               {!csv.busy && <Download className="size-4" aria-hidden="true" />} Export CSV
@@ -143,44 +145,27 @@ function Overview({ site, name }: { site: Site; name: string }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Top pages" subtitle="Page views in this period">
-          <BarList rows={share((o?.pages ?? []).map((r) => ({ ...r, key: r.label })))} onSelect={(r) => filter.set('page', r.key!)} />
+          <BarList rows={share(o?.pages ?? [])} />
         </Panel>
         <Panel title="Top referrers" subtitle="Sessions by referring site">
-          <BarList
-            rows={share((o?.referrers ?? []).map((r) => ({ ...r, key: r.label })))}
-            icon={Globe}
-            empty="No referrers yet: all direct traffic."
-            onSelect={(r) => filter.set('source', r.key!)}
-          />
+          <BarList rows={share(o?.referrers ?? [])} icon={Globe} empty="No referrers yet: all direct traffic." />
         </Panel>
         <Panel title="Top locations" subtitle="Visitors by country">
-          <BarList
-            rows={share((o?.countries ?? []).map((r) => ({ ...r, label: countryName(r.label), key: r.label || undefined })))}
-            icon={MapPin}
-            onSelect={(r) => filter.set('country', r.key!)}
-          />
+          <BarList rows={share((o?.countries ?? []).map((r) => ({ ...r, label: countryName(r.label) })))} icon={MapPin} />
         </Panel>
         <WarningsFeed items={o?.drops ?? []} />
         <Panel title="Devices" subtitle="Visitors by device">
           {o && o.devices.length === 0 ? (
             <EmptyState compact title="No data yet" />
           ) : (
-            <VerticalBars
-              rows={share((o?.devices ?? []).map((r) => ({ ...r, label: capital(r.label), key: r.label || undefined })))}
-              iconFor={deviceIcon}
-              onSelect={(r) => filter.set('device', r.key!)}
-            />
+            <VerticalBars rows={share((o?.devices ?? []).map((r) => ({ ...r, label: capital(r.label) })))} iconFor={deviceIcon} />
           )}
         </Panel>
         <Panel title="Browsers" subtitle="Visitors by browser">
           {o && o.browsers.length === 0 ? (
             <EmptyState compact title="No data yet" />
           ) : (
-            <VerticalBars
-              rows={share((o?.browsers ?? []).map((r) => ({ ...r, label: r.label || 'Other', key: r.label || undefined })))}
-              iconFor={() => Globe}
-              onSelect={(r) => filter.set('browser', r.key!)}
-            />
+            <VerticalBars rows={share((o?.browsers ?? []).map((r) => ({ ...r, label: r.label || 'Other' })))} iconFor={() => Globe} />
           )}
         </Panel>
       </div>

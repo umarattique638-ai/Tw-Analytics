@@ -28,6 +28,10 @@ function fakeStats(calls: string[]): StatsReader {
   return {
     overview,
     live: async () => ({ now: NOW.getTime(), active: 2, minutes: [], events: [] }),
+    filterValues: async (_s: number, range: ReturnType<typeof resolveRange>, key: string, q: string) => {
+      calls.push(`values ${range.key} ${key} "${q}"`);
+      return [{ value: '/pricing', count: 7 }];
+    },
     events: async (_s: number, range: ReturnType<typeof resolveRange>) => ({ range, events: [], highCardinality: [] }),
     drops: async (_s: number, range: ReturnType<typeof resolveRange>) => ({ range, rows: [] }),
   } as unknown as StatsReader;
@@ -81,6 +85,14 @@ describe('Query API (Stage 6) over HTTP', () => {
     const q = new URLSearchParams({ range: 'today', page: '/pricing', country: 'PK', device: '', colour: 'red' });
     expect((await a('GET', `/sites/${site.id}/stats/overview?${q}`)).status).toBe(200);
     expect(calls).toEqual([`overview ${site.id} today Asia/Karachi 2026-10-08..2026-10-08 {"page":"/pricing","country":"PK"}`]);
+  });
+
+  it('the Filter menu lists values of one filter; an unknown filter is refused', async () => {
+    const { a, site, calls } = await setup();
+    const r = await a('GET', `/sites/${site.id}/stats/filter-values?range=30d&key=page&q=%20pri%20`);
+    expect(JSON.parse(r.text)).toEqual({ values: [{ value: '/pricing', count: 7 }] });
+    expect(calls).toEqual(['values 30d page "pri"']);
+    expect((await a('GET', `/sites/${site.id}/stats/filter-values?key=colour`)).status).toBe(400);
   });
 
   it('another tenant cannot read the stats', async () => {

@@ -1,7 +1,8 @@
 import { attachment } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import { FILTER_KEYS } from '../stats';
-import type { Filters } from '../stats';
+import type { FilterKey, Filters } from '../stats';
+import { HttpError } from '../http/errors';
 import type { Services } from '../services';
 
 /** Overview filters from the query string (?page=/pricing&country=PK): plain values, length-capped. */
@@ -22,6 +23,16 @@ export function statsRoutes(app: Api, { sites, reports, now }: Services) {
     const site = await sites.load(c);
     const range = rangeOf(c, site);
     return c.json(await reading(() => reader().overview(site._id, range, filtersOf(c))));
+  });
+
+  /** The Filter menu (decision 30): ?key=page|country|source|device|browser&q=search. */
+  app.get('/sites/:id/stats/filter-values', async (c) => {
+    const site = await sites.load(c);
+    const range = rangeOf(c, site);
+    const key = c.req.query('key') as FilterKey;
+    if (!FILTER_KEYS.includes(key)) throw new HttpError(400, 'invalid_filter', 'Unknown filter.');
+    const q = (c.req.query('q') ?? '').trim().slice(0, 100);
+    return c.json({ values: await reading(() => reader().filterValues(site._id, range, key, q)) });
   });
 
   app.get('/sites/:id/stats/live', async (c) => {

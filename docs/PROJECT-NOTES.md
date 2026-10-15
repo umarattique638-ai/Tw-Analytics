@@ -592,9 +592,12 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      when both periods have 10+ (display only; the API value is unchanged).
    - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
      change vs the previous period.
-   - A click on a page, referrer, country, device or browser filters the whole overview (several = all).
-     The filters live in the address (?page=/pricing&country=PK), are cleared when another site is
-     chosen, and show as removable chips. API: GET /sites/:id/stats/overview?range=..&page=..&country=..
+   - A "Filter" menu next to the period filters the whole overview by a page, referrer, country, device or
+     browser (several = all): pick what to filter by, then a value from the period's own values (most used
+     first, with search; GET /sites/:id/stats/filter-values?range=..&key=..&q=.., queries filter_values_*).
+     Owner, same day: no click-on-a-row filtering (it did not feel professional). The filters live in the
+     address (?page=/pricing&country=PK), are cleared when another site is chosen, and show as removable
+     chips. API: GET /sites/:id/stats/overview?range=..&page=..&country=..
      &source=..&device=..&browser=.. Each filter adds one parameterised condition after a query's range
      condition (stats/queries.ts filtered(); docs/QUERIES.md "Filters"); "page" = the hits on that page for
      event queries and the visits that viewed it for session queries. Filtered top pages come from raw
