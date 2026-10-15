@@ -1,7 +1,7 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
 import { DuplicateError } from './types';
-import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, SiteHealthDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {
@@ -46,6 +46,7 @@ export class MongoStore implements ControlStore {
       this.verifications.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.verifications.createIndex({ userId: 1 }),
       this.outbox.createIndex({ tenantId: 1 }),
+      this.health.createIndex({ tenantId: 1 }),
       this.audit.createIndex({ tenantId: 1, at: -1, _id: -1 }),
       this.audit.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       this.erasures.createIndex({ status: 1, updatedAt: 1 }),
@@ -78,6 +79,9 @@ export class MongoStore implements ControlStore {
   }
   private get outbox(): Collection<KvIssueDoc> {
     return this.db.collection('kv_outbox');
+  }
+  private get health(): Collection<SiteHealthDoc> {
+    return this.db.collection('site_health');
   }
   private get audit(): Collection<AuditDoc> {
     return this.db.collection('audit_log');
@@ -185,6 +189,13 @@ export class MongoStore implements ControlStore {
     await this.outbox.deleteOne({ _id: siteId });
   }
 
+  healthOf(siteIds: number[]) {
+    return siteIds.length ? this.health.find({ _id: { $in: siteIds } }).toArray() : Promise.resolve([]);
+  }
+  async saveHealth(doc: SiteHealthDoc) {
+    await this.health.replaceOne({ _id: doc._id }, doc, { upsert: true });
+  }
+
   async setPassword(userId: ObjectId, passwordHash: string, now: Date) {
     await this.users.updateOne({ _id: userId }, { $set: { passwordHash, updatedAt: now } });
   }
@@ -271,6 +282,7 @@ export class MongoStore implements ControlStore {
         await this.exports.deleteMany({ tenantId: t }, { session });
         await this.audit.deleteMany({ tenantId: t }, { session });
         await this.outbox.deleteMany({ tenantId: t }, { session });
+        await this.health.deleteMany({ tenantId: t }, { session });
         await this.tenants.deleteOne({ _id: t }, { session });
       });
     } catch (error) {
@@ -294,6 +306,7 @@ export class MongoStore implements ControlStore {
         await this.sites.deleteOne({ _id: siteId, tenantId }, { session });
         await this.exports.deleteMany({ tenantId, siteId }, { session });
         await this.outbox.deleteOne({ _id: siteId }, { session });
+        await this.health.deleteOne({ _id: siteId }, { session });
       });
     } catch (error) {
       duplicate(error);
@@ -310,6 +323,7 @@ export class MongoStore implements ControlStore {
       .toArray();
   }
   async removeSite(id: number) {
+    await this.health.deleteOne({ _id: id });
     return (await this.sites.deleteOne({ _id: id })).deletedCount === 1;
   }
   async deleteSitesOf(tenantId: ObjectId) {

@@ -113,6 +113,26 @@ export interface KvIssueDoc {
 
 export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret' | 'retentionDays'>>;
 
+/**
+ * Is a site still sending data (decision 28)? One per site, written by the health check (services/health.ts).
+ *   healthy  data arrived recently (for this site's usual rhythm)
+ *   quiet    no data for a while, but the install check passes: simply no visitors
+ *   broken   no data for a while AND the install check fails (`failedCheck`, `reason`)
+ * `alertedAt` is set once the "stopped sending data" e-mail went out (cleared by the recovery e-mail).
+ */
+export interface SiteHealthDoc {
+  _id: number;
+  tenantId: ObjectId;
+  status: 'healthy' | 'quiet' | 'broken';
+  reason: string | null;
+  failedCheck: string | null;
+  since: Date;
+  checkedAt: Date;
+  lastEventAt: Date | null;
+  silentHours: number;
+  alertedAt: Date | null;
+}
+
 /** Everything the activity log can say happened. `system` entries are made by the nightly jobs. */
 export const AUDIT_ACTIONS = [
   'account.created',
@@ -128,6 +148,8 @@ export const AUDIT_ACTIONS = [
   'site.timezone_changed',
   'site.retention_changed',
   'site.deleted',
+  'site.stopped_sending',
+  'site.sending_again',
   'key.created',
   'key.revoked',
   'host.allowed',
@@ -236,6 +258,11 @@ export interface ControlStore {
   /** Outstanding KV issues: of one tenant, or all (oldest first). */
   kvIssues(tenantId: ObjectId | null, limit: number): Promise<KvIssueDoc[]>;
   clearKvIssue(siteId: number): Promise<void>;
+
+  /** Health of these sites (missing: never checked). */
+  healthOf(siteIds: number[]): Promise<SiteHealthDoc[]>;
+  /** Replaces a site's health document (upsert). */
+  saveHealth(doc: SiteHealthDoc): Promise<void>;
 
   /** New password: replaces the hash and ends every session of the user (all devices). */
   setPassword(userId: ObjectId, passwordHash: string, now: Date): Promise<void>;

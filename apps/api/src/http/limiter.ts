@@ -38,6 +38,10 @@ export function createLimiters() {
     /** The verifier fetches other people's servers: a few checks a minute per account and per address. */
     verify: new Limiter(20, 10 * MIN),
     verifyIp: new Limiter(40, 10 * MIN),
+    /** Site health when the dashboard opens (decision 28): re-checks at most hourly per site anyway. */
+    health: new Limiter(60, 60 * MIN),
+    /** "Check again" on the health banner: it opens the customer's site, like the install check. */
+    healthCheck: new Limiter(10, 10 * MIN),
     /** Password checks of "delete account": its own counter, so it can neither lock out nor bypass sign-in. */
     deleteAccount: new Limiter(5, 15 * MIN),
   };

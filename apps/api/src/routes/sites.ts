@@ -10,6 +10,7 @@ import type { Services } from '../services';
 import { snippetsFor } from '../snippets';
 import type { KeyDoc, SiteDoc, SitePatch } from '../store/types';
 import { siteView } from '../views';
+import { current, healthView, watched } from '../services/health';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
 const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a timezone from the list.');
@@ -20,13 +21,52 @@ const revokeAll = (keys: KeyDoc[], at: Date) => keys.map((k) => ({ ...k, status:
  * which saves it only after every install check passed (decision 25).
  */
 export function siteRoutes(app: Api, s: Services) {
-  const { store, config, sites, kvSync, audit, now } = s;
+  const { store, config, sites, kvSync, audit, now, health, limits } = s;
 
   app.get('/sites', async (c) => {
     const tenantId = c.get('tenant')._id;
     const issues = await kvSync.issuesOf(tenantId);
     const list = await store.sitesOf(tenantId);
-    return c.json({ sites: list.map(siteView), kvIssues: await Promise.all(issues.map(kvSync.issueView)) });
+    const stored = new Map((await store.healthOf(list.map((x) => x._id))).map((h) => [h._id, h]));
+    return c.json({
+      sites: list.map((x) => ({ ...siteView(x), health: healthView(x, current(x, stored.get(x._id))).status })),
+      kvIssues: await Promise.all(issues.map(kvSync.issueView)),
+    });
+  });
+
+  /**
+   * Is this site still sending data (decision 28)? The stored result, re-checked when it is older than an
+   * hour. A failure to check is not an error for the dashboard: it shows the last known state.
+   */
+  app.get('/sites/:id/health', async (c) => {
+    const site = await sites.load(c);
+    let h = await health.stored(site);
+    if (health.configured && watched(site) && health.stale(site, h) && limits.health.take(`t:${c.get('tenant')._id.toHexString()}`, Date.now())) {
+      try {
+        h = await health.checkOne(site);
+      } catch (error) {
+        logError('health_check_failed', { site: site._id, message: errorText(error) });
+      }
+    }
+    return c.json({ health: healthView(site, h) });
+  });
+
+  /** "Check again" on the banner: now, whatever the age of the stored result. */
+  app.post('/sites/:id/health/check', async (c) => {
+    const site = await sites.load(c);
+    if (!health.configured) throw new HttpError(503, 'health_unavailable', 'The health check needs ClickHouse, which is not configured on the server.');
+    if (!watched(site)) return c.json({ health: healthView(site, await health.stored(site)) });
+    if (!limits.healthCheck.take(`t:${c.get('tenant')._id.toHexString()}`, Date.now())) {
+      throw new HttpError(429, 'rate_limited', 'Too many checks. Wait a few minutes and try again.');
+    }
+    let h;
+    try {
+      h = await health.checkOne(site);
+    } catch (error) {
+      logError('health_check_failed', { site: site._id, message: errorText(error) });
+      throw new HttpError(503, 'health_failed', 'We could not check right now. Try again in a minute.');
+    }
+    return c.json({ health: healthView(site, h) });
   });
 
   /** "Retry now" on the dashboard's Cloudflare warning: re-sync every site of this account with an issue. */

@@ -94,3 +94,57 @@ export function erasureDoneMail(to: string, name: string | null, rows: number, w
   ];
   return { to, subject: 'Your TailWatch data has been erased', text: [...lines, '', 'TailWatch'].join('\n\n'), html: card('Your data has been erased', lines) };
 }
+
+/** A card with one button (site-health e-mails). */
+function cardWithButton(title: string, paragraphs: string[], button: { label: string; link: string }, after: string[] = []): string {
+  const p = (t: string) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#334155">${esc(t)}</p>`;
+  return `<!doctype html><html><body style="margin:0;background:#f8fafc;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px">
+<tr><td>
+<p style="margin:0 0 4px;font-size:20px;font-weight:700;color:#0f766e">TailWatch</p>
+<h1 style="margin:16px 0 8px;font-size:20px">${esc(title)}</h1>
+${paragraphs.map(p).join('\n')}
+<p style="margin:22px 0"><a href="${esc(button.link)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">${esc(button.label)}</a></p>
+${after.map((t) => `<p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#64748b">${esc(t)}</p>`).join('\n')}
+</td></tr></table></td></tr></table></body></html>`;
+}
+
+/** Decision 28: a site went silent and its install check fails. Sent once per outage. */
+export function siteBrokenMail(to: string, name: string | null, domain: string, silence: string, reason: string, link: string): MailMessage {
+  const hello = name ? `Hi ${name},` : 'Hi,';
+  const lines = [
+    `${hello} TailWatch has received no data from ${domain} for ${silence}.`,
+    `We opened your site to find out why. What we found: ${reason}`,
+    'Until this is fixed, visits to the site are not counted. Open the dashboard to see the details, copy the script again and run the check.',
+  ];
+  const after = ['We send this once. When data arrives again, you get one short e-mail saying so.'];
+  return {
+    to,
+    subject: `${domain} stopped sending data to TailWatch`,
+    text: [...lines, '', link, '', ...after, '', 'TailWatch'].join('\n\n'),
+    html: cardWithButton(`${domain} stopped sending data`, lines, { label: 'Open the dashboard', link }, after),
+  };
+}
+
+/** Decision 28: data arrives again from a site we e-mailed about. */
+export function siteRecoveredMail(to: string, name: string | null, domain: string, link: string): MailMessage {
+  const hello = name ? `Hi ${name},` : 'Hi,';
+  const lines = [`${hello} good news: ${domain} is sending data to TailWatch again, and visits are being counted.`, 'Nothing else to do.'];
+  return {
+    to,
+    subject: `${domain} is sending data again`,
+    text: [...lines, '', link, '', 'TailWatch'].join('\n\n'),
+    html: cardWithButton(`${domain} is sending data again`, lines, { label: 'Open the dashboard', link }),
+  };
+}
+
+/** Decision 28: most sites went silent at once. That is our pipeline, not the customers: only the operator hears. */
+export function pipelineSilentMail(to: string, silent: number, total: number, domains: string[]): MailMessage {
+  const lines = [
+    `${silent} of ${total} active sites have sent no data for longer than usual. That many at once points at the TailWatch pipeline (collector, queue, consumer or ClickHouse), not at the sites.`,
+    'No customer was e-mailed about it tonight. Check the collector and consumer logs in Cloudflare, and the ClickHouse service.',
+    `Silent: ${domains.slice(0, 20).join(', ')}${domains.length > 20 ? `, and ${domains.length - 20} more` : ''}.`,
+  ];
+  return { to, subject: `TailWatch: ${silent} of ${total} sites are silent`, text: [...lines, '', 'TailWatch health check'].join('\n\n'), html: card('Many sites are silent at once', lines) };
+}

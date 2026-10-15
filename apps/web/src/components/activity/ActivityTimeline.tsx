@@ -1,4 +1,4 @@
-import { Clock3, Download, FileText, Globe, History, KeyRound, LogIn, LogOut, Pause, Play, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
+import { Clock3, Download, FileText, Globe, History, KeyRound, LogIn, LogOut, Pause, Play, PlugZap, ShieldAlert, Trash2, Unplug, UserPlus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AuditEntry } from '../../api/client';
 
@@ -18,6 +18,8 @@ const LOOK: Record<string, { icon: LucideIcon; tone: Tone }> = {
   'site.timezone_changed': { icon: Clock3, tone: 'slate' },
   'site.retention_changed': { icon: Clock3, tone: 'amber' },
   'site.deleted': { icon: Trash2, tone: 'rose' },
+  'site.stopped_sending': { icon: Unplug, tone: 'rose' },
+  'site.sending_again': { icon: PlugZap, tone: 'teal' },
   'key.created': { icon: KeyRound, tone: 'teal' },
   'key.revoked': { icon: KeyRound, tone: 'rose' },
   'host.allowed': { icon: Globe, tone: 'slate' },

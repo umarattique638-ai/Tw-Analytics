@@ -1,6 +1,7 @@
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Users, Zap } from 'lucide-react';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
+import HealthBanner from '../components/dashboard/HealthBanner';
 import KpiCard from '../components/dashboard/KpiCard';
 import LiveEvents from '../components/dashboard/LiveEvents';
 import RangeSelect from '../components/dashboard/RangeSelect';
@@ -67,6 +68,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
         }
       />
 
+      <HealthBanner site={site} />
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

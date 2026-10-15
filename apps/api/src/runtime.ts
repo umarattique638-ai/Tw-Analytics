@@ -51,6 +51,7 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
     signupAllowlist,
     requireEmailVerification: env.TW_EMAIL_VERIFICATION !== 'off',
     publicUrl: publicUrl.replace(/\/+$/, ''),
+    ownerEmail: env.TW_OWNER_EMAIL?.includes('@') ? env.TW_OWNER_EMAIL.trim() : null,
     cronSecret: env.CRON_SECRET && env.CRON_SECRET.length >= 16 ? env.CRON_SECRET : null,
   });
 }

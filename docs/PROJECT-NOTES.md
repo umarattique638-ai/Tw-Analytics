@@ -552,6 +552,25 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - MongoDB: users.emailVerifiedAt, the email_verifications collection and the audit action
      auth.email_verified are new in control-plane.schema.json: run `pnpm db:mongo` BEFORE deploying.
 
+28. DECIDED 2026-10-15 (owner): tell the customer when a site STOPS sending data, and tell "broken" apart
+   from "no visitors" (services/health.ts).
+   - Silent = no event for longer than the site's own habit: 2 x the longest gap between events over the
+     last 7 days, kept between 6 hours and 3 days. A site verified less than 2 days ago: 24 hours. The
+     clock starts at the last event, or at the verification if that is later (a site added again).
+   - A silent site is opened and the same 7 install checks run. A step fails -> broken: red banner on the
+     dashboard with the reason, "Get the script" and "Check again", a red dot in the site switcher, an
+     activity line (site.stopped_sending) and ONE e-mail to the owners and admins. Every step passes ->
+     quiet: one calm line ("installed correctly, no visitors in the last X"), no e-mail. Data again after
+     broken -> healthy, an activity line (site.sending_again) and one "sending again" e-mail if we sent one.
+   - Runs nightly (Vercel Cron /api/v1/internal/health at 01:23 UTC = 06:23 PKT) and when the dashboard
+     opens a site (GET /sites/:id/health; re-checked at most hourly; "Check again" = POST
+     /sites/:id/health/check). The dashboard check never sends the "stopped" e-mail; the nightly run does.
+     Paused and deleted sites are not watched.
+   - Pipeline guard: if more than half of the sites (and at least 3) are silent at once the fault is ours,
+     so no customer is e-mailed; the operator is (TW_OWNER_EMAIL), once per night.
+   - MongoDB: new collection site_health (one document per site) and two audit actions: run
+     `pnpm db:mongo` BEFORE deploying.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

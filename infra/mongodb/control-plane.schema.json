@@ -520,6 +520,79 @@
         "additionalProperties": false
       }
     },
+    "site_health": {
+      "document": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "tenantId",
+          "status",
+          "reason",
+          "failedCheck",
+          "since",
+          "checkedAt",
+          "lastEventAt",
+          "silentHours",
+          "alertedAt"
+        ],
+        "properties": {
+          "_id": {
+            "bsonType": [
+              "long",
+              "int"
+            ],
+            "description": "Site id. Is the site still sending data (decision 28)?"
+          },
+          "tenantId": {
+            "bsonType": "objectId"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "quiet",
+              "broken"
+            ]
+          },
+          "reason": {
+            "bsonType": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "failedCheck": {
+            "bsonType": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20
+          },
+          "since": {
+            "bsonType": "date"
+          },
+          "checkedAt": {
+            "bsonType": "date"
+          },
+          "lastEventAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
+          },
+          "silentHours": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "alertedAt": {
+            "bsonType": [
+              "date",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "audit_log": {
       "document": {
         "bsonType": "object",
@@ -576,6 +649,8 @@
               "site.timezone_changed",
               "site.retention_changed",
               "site.deleted",
+              "site.stopped_sending",
+              "site.sending_again",
               "key.created",
               "key.revoked",
               "host.allowed",
@@ -892,6 +967,12 @@
     },
     {
       "collection": "kv_outbox",
+      "keys": {
+        "tenantId": 1
+      }
+    },
+    {
+      "collection": "site_health",
       "keys": {
         "tenantId": 1
       }

@@ -9,8 +9,20 @@ export interface RecentActivity {
   drops: { reason: string; hits: number; detail: string }[];
 }
 
+/** A site's rhythm over the last days: when data last arrived, and the longest pause between two arrivals. */
+export interface SiteActivity {
+  lastAt: Date;
+  /** Longest gap between two minutes that had events, in minutes (0 with a single active minute). */
+  maxGapMinutes: number;
+}
+
 export interface AnalyticsReader {
   recent(siteId: number, minutes: number): Promise<RecentActivity>;
+  /**
+   * The health check (decision 28): per site, the last event and the longest gap over the last `days`.
+   * A site with no event in that window is missing from the map. Optional: test fakes may leave it out.
+   */
+  siteActivity?(siteIds: number[], days: number): Promise<Map<number, SiteActivity>>;
 }
 
 /** Minimal ClickHouse HTTP client: parameterised queries ({name:Type}), JSON rows, UInt64 as strings. */
@@ -96,6 +108,24 @@ export class ClickHouseReader implements AnalyticsReader {
       last: events > 0 && summary ? { at: `${summary.last_at.replace(' ', 'T')}Z`, name: summary.last_name, path: summary.last_path } : null,
       drops: drops.map((d) => ({ reason: d.reason, hits: Number(d.hits), detail: d.detail })),
     };
+  }
+
+  async siteActivity(siteIds: number[], days: number): Promise<Map<number, SiteActivity>> {
+    const out = new Map<number, SiteActivity>();
+    if (!siteIds.length) return out;
+    // Events grouped to the minute first, so a busy site still yields at most days x 1440 values.
+    const rows = await this.ch.query<{ site_id: string; last_at: string; max_gap: string }>(
+      `SELECT site_id, toString(max(received_at)) AS last_at,
+              arrayMax(arrayPushBack(arrayDifference(arraySort(groupUniqArray(intDiv(toUInt32(toUnixTimestamp(received_at)), 60)))), 0)) AS max_gap
+         FROM ${this.ch.database}.events
+        WHERE site_id IN {sites:Array(UInt64)} AND received_at >= now64(3) - toIntervalDay({days:UInt32})
+        GROUP BY site_id`,
+      { sites: `[${siteIds.map((id) => Math.trunc(id)).join(',')}]`, days },
+    );
+    for (const r of rows) {
+      out.set(Number(r.site_id), { lastAt: new Date(`${r.last_at.replace(' ', 'T')}Z`), maxGapMinutes: Number(r.max_gap) });
+    }
+    return out;
   }
 }
 

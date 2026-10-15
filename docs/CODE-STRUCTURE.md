@@ -37,6 +37,7 @@ tw.js (packages/browser, packages/core)
 | `services/reports.ts` | Reading analytics, the report period, the CSV. |
 | `services/account-export.ts` | "Download all data". |
 | `services/maintenance.ts` | Nightly jobs: erasures, retention, KV reconcile. |
+| `services/health.ts` | Is each site still sending data (decision 28): silence threshold, install check, banner state, e-mails. |
 | `routes/*.ts` | `public`, `auth`, `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal`. |
 | `stats/` | Query API: `range`, `queries` (the SQL of docs/QUERIES.md), `types`, `channels`, `reader`. |
 | `verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`, `probe` (does the domain answer). |

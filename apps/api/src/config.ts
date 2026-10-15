@@ -37,6 +37,11 @@ export interface ApiConfig {
   requireEmailVerification: boolean;
   /** Where the dashboard is reachable: links in e-mails (password reset) point here. */
   publicUrl: string;
+  /**
+   * The operator's address (TW_OWNER_EMAIL): told when most sites go silent at once, which points at the
+   * pipeline rather than the sites (decision 28). Null: nobody is told (the log still says so).
+   */
+  ownerEmail: string | null;
   /** Shared secret for the scheduled KV reconcile call (Vercel Cron sends it as a Bearer token). Null: route off. */
   cronSecret: string | null;
 }
@@ -69,6 +74,7 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   signupAllowlist: null,
   requireEmailVerification: false,
   publicUrl: 'http://localhost:8788',
+  ownerEmail: null,
   cronSecret: null,
   ...over,
 });

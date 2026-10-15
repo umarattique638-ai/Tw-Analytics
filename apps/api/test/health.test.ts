@@ -1,0 +1,258 @@
+import { describe, expect, it } from 'vitest';
+import { createApp, SESSION_COOKIE } from '../src/app';
+import type { AnalyticsReader, SiteActivity } from '../src/analytics';
+import { defaultConfig } from '../src/config';
+import { MemoryKv } from '../src/kv';
+import { MemoryMailer } from '../src/mail';
+import { isSilent, silentHoursFor } from '../src/services/health';
+import { snippetsFor } from '../src/snippets';
+import { MemoryStore } from '../src/store/memory';
+import { addSite, fakeSiteFetch } from './helpers/install';
+
+/**
+ * Decision 28: is each site still sending data? Silent for longer than its habit -> the install check runs:
+ * broken (red banner, one e-mail, activity line), quiet (no visitors, no e-mail) or healthy again.
+ */
+const FAST = { N: 1024, r: 8, p: 1 };
+const HOST = 'app.test';
+const SECRET = 'cron-secret-0123456789';
+const COLLECTOR = 'https://collector.test';
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+type Page = 'ok' | 'removed' | 'down';
+
+function setup(over: { ownerEmail?: string } = {}) {
+  const store = new MemoryStore();
+  const kv = new MemoryKv();
+  const mailer = new MemoryMailer();
+  const clock = { t: Date.parse('2026-10-01T09:00:00Z') };
+  /** What ClickHouse "knows" per site; missing = no event in the last 7 days. */
+  const activity = new Map<number, SiteActivity>();
+  let activityCalls = 0;
+  const analytics: AnalyticsReader = {
+    recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }),
+    siteActivity: async (ids) => {
+      activityCalls += 1;
+      return new Map([...activity].filter(([id]) => ids.includes(id)));
+    },
+  };
+  /** What each installed domain serves now (the setup pages come from fakeSiteFetch). */
+  const pages = new Map<string, { page: Page; key: string }>();
+  let fetches = 0;
+  const setupFetch = fakeSiteFetch(kv.entries, COLLECTOR);
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+    const p = pages.get(url.hostname);
+    if (!p || url.pathname.endsWith('/tw.js')) return setupFetch(input, init);
+    fetches += 1;
+    if (p.page === 'down') return new Response('oops', { status: 502, headers: { 'content-type': 'text/html' } });
+    const tag = p.page === 'ok' ? snippetsFor(COLLECTOR, p.key).find((x) => x.group === 'script-tag')!.code : '';
+    return new Response(`<!doctype html><html><head>${tag}</head><body>shop</body></html>`, { headers: { 'content-type': 'text/html' } });
+  }) as typeof fetch;
+
+  const app = createApp({
+    store,
+    kv,
+    analytics,
+    mailer,
+    config: defaultConfig({ collectorUrl: COLLECTOR, secureCookies: false, scrypt: FAST, cronSecret: SECRET, ownerEmail: over.ownerEmail ?? null }),
+    verifier: { fetchImpl, resolve: async () => ['93.184.216.34'] },
+    now: () => new Date((clock.t += 1)),
+  });
+
+  const client = () => {
+    let cookie = '';
+    const call = async (method: string, path: string, json?: unknown) => {
+      const res = await app.request(`http://${HOST}/api/v1${path}`, {
+        method,
+        headers: { host: HOST, ...(json !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}) },
+        body: json !== undefined ? JSON.stringify(json) : undefined,
+      });
+      const set = res.headers.get('set-cookie');
+      if (set?.startsWith(`${SESSION_COOKIE}=`)) cookie = set.split(';')[0]!;
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    };
+    return { get: (p: string) => call('GET', p), post: (p: string, j: unknown = {}) => call('POST', p, j), patch: (p: string, j: unknown) => call('PATCH', p, j) };
+  };
+  const cron = async () => {
+    const r = await app.request(`http://${HOST}/api/v1/internal/health`, { headers: { host: HOST, authorization: `Bearer ${SECRET}` } });
+    return { status: r.status, body: (await r.json()) as any };
+  };
+
+  /** Sign up and install these domains; every site starts "installed and serving the snippet". */
+  const account = async (domains: string[], email = 'umar@shop.test') => {
+    const c = client();
+    expect((await c.post('/auth/signup', { name: 'Umar', email, password: 'correct horse' })).status).toBe(201);
+    const sites = [];
+    for (const domain of domains) {
+      const r = await addSite(c.post, kv.entries, domain, 'Asia/Karachi');
+      expect(r.status).toBe(201);
+      pages.set(domain, { page: 'ok', key: r.body.site.publicKey });
+      sites.push(r.body.site as { id: number; domain: string; publicKey: string });
+    }
+    return { c, sites };
+  };
+
+  const at = (msAgo: number) => new Date(clock.t - msAgo);
+  /** Data from this site arrived `agoMs` ago; its longest pause in the window was `gapMinutes`. */
+  const lastEvent = (siteId: number, agoMs: number, gapMinutes = 60) => activity.set(siteId, { lastAt: at(agoMs), maxGapMinutes: gapMinutes });
+  const serve = (domain: string, page: Page) => (pages.get(domain)!.page = page);
+  const audit = (action: string) => store.audit.filter((e) => e.action === action);
+  return { store, mailer, clock, activity, pages, app, client, cron, account, lastEvent, serve, audit, counts: () => ({ fetches, activityCalls }) };
+}
+
+describe('silence threshold', () => {
+  const now = new Date('2026-10-15T00:00:00Z');
+  const old = { verifiedAt: new Date(now.getTime() - 10 * DAY), createdAt: new Date(now.getTime() - 10 * DAY) };
+  const young = { verifiedAt: new Date(now.getTime() - DAY), createdAt: new Date(now.getTime() - DAY) };
+  const act = (gapMinutes: number, agoMs = HOUR) => ({ lastAt: new Date(now.getTime() - agoMs), maxGapMinutes: gapMinutes });
+
+  it('is twice the longest pause of the last days, between 6 hours and 3 days', () => {
+    expect(silentHoursFor(old, act(30), now)).toBe(6); // a busy site: 1 h -> 6 h floor
+    expect(silentHoursFor(old, act(10 * 60), now)).toBe(20);
+    expect(silentHoursFor(old, act(5 * 24 * 60), now)).toBe(72); // a sleepy site: capped at 3 days
+    expect(silentHoursFor(old, undefined, now)).toBe(6);
+  });
+
+  it('is 24 hours for a site verified less than 2 days ago', () => {
+    expect(silentHoursFor(young, act(5), now)).toBe(24);
+    expect(isSilent(young, undefined, now)).toBe(true); // verified a day ago, nothing since
+    expect(isSilent({ ...young, verifiedAt: new Date(now.getTime() - 5 * HOUR) }, undefined, now)).toBe(false);
+  });
+
+  it('counts from the verification when the last event is older (a site added again)', () => {
+    const restored = { verifiedAt: new Date(now.getTime() - 3 * HOUR), createdAt: new Date(now.getTime() - 100 * DAY) };
+    expect(isSilent(restored, act(60, 20 * DAY), now)).toBe(false);
+  });
+});
+
+describe('site health', { timeout: 30_000 }, () => {
+  it('data arriving: healthy, and nothing is fetched from the site', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    s.lastEvent(sites[0]!.id, 10 * 60_000);
+    const r = await c.get(`/sites/${sites[0]!.id}/health`);
+    expect(r.status).toBe(200);
+    expect(r.body.health).toMatchObject({ status: 'healthy', reason: null, silentHours: 24 });
+    expect(s.counts().fetches).toBe(0);
+    expect((await c.get('/sites')).body.sites[0].health).toBe('healthy');
+  });
+
+  it('silent and the snippet is gone: broken, one e-mail, one activity line; data again: recovered', async () => {
+    const s = setup();
+    const { sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 5 * DAY; // past the "new site" period
+    s.lastEvent(id, 8 * HOUR, 60); // habit: 1 h pauses -> 6 h threshold
+    s.serve('shop.test', 'removed');
+
+    const night = await s.cron();
+    expect(night.status).toBe(200);
+    expect(night.body).toMatchObject({ sites: 1, silent: 1, broken: 1, pipelineSuspect: false });
+    const h = s.store.health.find((x) => x._id === id)!;
+    expect(h).toMatchObject({ status: 'broken', failedCheck: 'present', silentHours: 6 });
+    expect(h.alertedAt).not.toBeNull();
+    expect(s.mailer.sent).toHaveLength(1);
+    expect(s.mailer.sent[0]).toMatchObject({ to: 'umar@shop.test', subject: 'shop.test stopped sending data to TailWatch' });
+    expect(s.mailer.sent[0]!.text).toContain('for 8 hours');
+    expect(s.mailer.sent[0]!.text).toContain(`/dashboard?site=${id}`);
+    expect(s.audit('site.stopped_sending')).toHaveLength(1);
+
+    // Still broken the next night: no second e-mail, no second line.
+    s.clock.t += DAY;
+    await s.cron();
+    expect(s.mailer.sent).toHaveLength(1);
+    expect(s.audit('site.stopped_sending')).toHaveLength(1);
+
+    // The customer puts the snippet back and visitors come: one "sending again" e-mail.
+    s.serve('shop.test', 'ok');
+    s.lastEvent(id, 5 * 60_000);
+    const back = await s.cron();
+    expect(back.body).toMatchObject({ healthy: 1, broken: 0 });
+    expect(s.store.health.find((x) => x._id === id)).toMatchObject({ status: 'healthy', alertedAt: null, reason: null });
+    expect(s.mailer.sent).toHaveLength(2);
+    expect(s.mailer.sent[1]!.subject).toBe('shop.test is sending data again');
+    expect(s.audit('site.sending_again')).toHaveLength(1);
+  });
+
+  it('silent but installed correctly: quiet (no visitors), no e-mail', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    s.clock.t += 5 * DAY;
+    s.lastEvent(sites[0]!.id, 2 * DAY, 120);
+    const night = await s.cron();
+    expect(night.body).toMatchObject({ quiet: 1, broken: 0 });
+    expect(s.mailer.sent).toHaveLength(0);
+    const r = await c.get(`/sites/${sites[0]!.id}/health`);
+    expect(r.body.health.status).toBe('quiet');
+    expect(r.body.health.lastEventAt).toBeTruthy();
+  });
+
+  it('the dashboard check shows the problem at once but never e-mails; the nightly run does', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 5 * DAY;
+    s.lastEvent(id, 30 * HOUR, 60);
+    s.serve('shop.test', 'down');
+    const r = await c.get(`/sites/${id}/health`);
+    expect(r.body.health).toMatchObject({ status: 'broken', failedCheck: 'reach', failedLabel: 'Site reachable' });
+    expect(r.body.health.reason).toContain('HTTP 502');
+    expect(s.mailer.sent).toHaveLength(0);
+
+    // Opened again within the hour: the stored result, nothing re-fetched.
+    const before = s.counts().fetches;
+    await c.get(`/sites/${id}/health`);
+    expect(s.counts().fetches).toBe(before);
+
+    await s.cron();
+    expect(s.mailer.sent).toHaveLength(1);
+    expect(s.audit('site.stopped_sending')).toHaveLength(1);
+  });
+
+  it('"Check again" re-checks now: fixed install -> the banner goes', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 5 * DAY;
+    s.lastEvent(id, 30 * HOUR, 60);
+    s.serve('shop.test', 'removed');
+    expect((await c.get(`/sites/${id}/health`)).body.health.status).toBe('broken');
+    s.serve('shop.test', 'ok');
+    const again = await c.post(`/sites/${id}/health/check`);
+    expect(again.status).toBe(200);
+    expect(again.body.health.status).toBe('quiet');
+    expect(s.audit('site.sending_again')).toHaveLength(1);
+    expect(s.mailer.sent).toHaveLength(0); // nothing was e-mailed, so no "sending again" e-mail either
+  });
+
+  it('most sites silent at once: our pipeline, so only the operator is e-mailed', async () => {
+    const s = setup({ ownerEmail: 'ops@tailwatch.test' });
+    const { sites } = await s.account(['a.test', 'b.test', 'c.test', 'd.test']);
+    s.clock.t += 5 * DAY;
+    for (const site of sites.slice(0, 3)) {
+      s.lastEvent(site.id, 20 * HOUR, 60);
+      s.serve(site.domain, 'removed');
+    }
+    s.lastEvent(sites[3]!.id, 10 * 60_000);
+    const night = await s.cron();
+    expect(night.body).toMatchObject({ sites: 4, silent: 3, pipelineSuspect: true, broken: 3, healthy: 1 });
+    expect(s.mailer.sent.map((m) => m.to)).toEqual(['ops@tailwatch.test']);
+    expect(s.mailer.sent[0]!.subject).toBe('TailWatch: 3 of 4 sites are silent');
+    expect(s.store.health.every((h) => h.alertedAt === null)).toBe(true);
+  });
+
+  it('a paused site is not watched', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test', 'blog.test']);
+    await c.patch(`/sites/${sites[0]!.id}`, { status: 'paused' });
+    s.clock.t += 5 * DAY;
+    const r = await c.get(`/sites/${sites[0]!.id}/health`);
+    expect(r.body.health.status).toBe('paused');
+    const night = await s.cron();
+    expect(night.body.sites).toBe(1);
+    expect((await c.get('/sites')).body.sites.find((x: { id: number }) => x.id === sites[0]!.id).health).toBe('paused');
+  });
+});

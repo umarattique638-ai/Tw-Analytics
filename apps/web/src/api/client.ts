@@ -17,6 +17,23 @@ export interface Site {
   retentionDays: number;
   publicKey: string | null;
   keys: Key[];
+  /** Is it still sending data (decision 28); only in the site list. */
+  health?: HealthStatus;
+}
+export type HealthStatus = 'healthy' | 'quiet' | 'broken' | 'unknown' | 'paused';
+/** GET /sites/:id/health. `reason` and `failedCheck` only when broken. */
+export interface SiteHealth {
+  status: HealthStatus;
+  reason: string | null;
+  failedCheck: string | null;
+  failedLabel: string | null;
+  since: string | null;
+  checkedAt: string | null;
+  lastEventAt: string | null;
+  /** Hours without data when it was last checked. */
+  silentForHours: number | null;
+  /** How long this site may stay silent before it is checked (its habit). */
+  silentHours: number | null;
 }
 export type Role = 'owner' | 'admin' | 'viewer';
 export interface Me {
@@ -109,6 +126,8 @@ export const api = {
   /** `eraseData`: delete everything collected for the site too, for good (owners and admins). */
   deleteSite: (id: number, eraseData = false) => call<{ ok: true; sync: Sync; erased: boolean }>('DELETE', `/sites/${id}`, { eraseData }),
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
+  health: (id: number) => call<{ health: SiteHealth }>('GET', `/sites/${id}/health`),
+  checkHealth: (id: number) => call<{ health: SiteHealth }>('POST', `/sites/${id}/health/check`),
   /** Forgot password: always the same answer, whether the e-mail has an account or not. */
   forgot: (email: string) => call<{ ok: true; minutes: number }>('POST', '/auth/forgot', { email }),
   resetValid: (token: string) => call<{ valid: boolean }>('GET', `/auth/reset?token=${encodeURIComponent(token)}`),

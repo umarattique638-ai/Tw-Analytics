@@ -8,8 +8,19 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useDeleteSite } from '../../hooks/useSiteActions';
 import type { Site } from '../../api/client';
 
-const dot = (s: Site) => (s.status === 'paused' ? 'bg-amber-400' : s.verifiedAt ? 'bg-emerald-400' : 'bg-slate-500');
-const dotLabel = (s: Site) => (s.status === 'paused' ? 'Paused' : s.verifiedAt ? 'Collecting' : 'Not installed yet');
+/** Decision 28: red = stopped sending data, yellow = installed but no visitors lately, grey = paused. */
+const dot = (s: Site) =>
+  s.status === 'paused' ? 'bg-slate-500' : !s.verifiedAt ? 'bg-slate-500' : s.health === 'broken' ? 'bg-rose-500' : s.health === 'quiet' ? 'bg-amber-300' : 'bg-emerald-400';
+const dotLabel = (s: Site) =>
+  s.status === 'paused'
+    ? 'Paused'
+    : !s.verifiedAt
+      ? 'Not installed yet'
+      : s.health === 'broken'
+        ? 'Stopped sending data'
+        : s.health === 'quiet'
+          ? 'No visitors lately'
+          : 'Collecting';
 
 /** The site being looked at, in the sidebar: switch to another site, add one, or delete one. */
 export default function SiteSwitcher() {
@@ -34,8 +45,11 @@ export default function SiteSwitcher() {
           open ? 'border-teal-400/40 bg-white/10' : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]'
         }`}
       >
-        <span className="grid size-8 flex-none place-items-center rounded-lg bg-teal-400/15 text-teal-300">
+        <span className="relative grid size-8 flex-none place-items-center rounded-lg bg-teal-400/15 text-teal-300">
           <Globe className="size-4" aria-hidden="true" />
+          {current?.health === 'broken' && (
+            <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-rose-500 ring-2 ring-slate-900" title="Stopped sending data" data-testid="switcher-alert" />
+          )}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[11px] text-slate-400">Site</span>
@@ -62,7 +76,8 @@ export default function SiteSwitcher() {
                     }}
                     className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none ${on ? 'text-white' : 'text-slate-300'}`}
                   >
-                    <span className={`size-2 flex-none rounded-full ${dot(s)}`} title={dotLabel(s)} />
+                    <span className={`size-2 flex-none rounded-full ${dot(s)}`} title={dotLabel(s)} data-health={s.health ?? 'unknown'} />
+                    <span className="sr-only">{dotLabel(s)}:</span>
                     <span className="truncate">{s.domain}</span>
                     {on && <Check className="ml-auto size-3.5 flex-none text-teal-300" aria-label="Selected" />}
                   </button>

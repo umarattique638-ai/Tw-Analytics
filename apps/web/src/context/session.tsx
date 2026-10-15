@@ -93,7 +93,11 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
         setUser(user);
         setMe({ role: role ?? 'viewer', retention: retention ?? { choices: [], max: 0, default: 0 } });
         const verified = list.filter((s) => !!s.verifiedAt);
-        setCurrentId((id) => (id && verified.some((s) => s.id === id) ? id : (verified[0]?.id ?? null)));
+        // A link from an e-mail (/dashboard?site=101) opens that site.
+        const linked = Number(new URLSearchParams(window.location.search).get('site'));
+        setCurrentId((id) =>
+          verified.some((s) => s.id === linked) ? linked : id && verified.some((s) => s.id === id) ? id : (verified[0]?.id ?? null),
+        );
         setState('in');
       })
       .catch(() => live && setState('out'));

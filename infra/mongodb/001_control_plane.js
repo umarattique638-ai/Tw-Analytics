@@ -344,6 +344,26 @@ ensureCollection('kv_outbox', {
   additionalProperties: false,
 });
 
+// Decision 28: is each site still sending data? One document per site, written by the health check
+// (nightly, and when the dashboard opens). No document yet: not checked.
+ensureCollection('site_health', {
+  bsonType: 'object',
+  required: ['_id', 'tenantId', 'status', 'reason', 'failedCheck', 'since', 'checkedAt', 'lastEventAt', 'silentHours', 'alertedAt'],
+  properties: {
+    _id: { ...numericId, description: 'Site id. Is the site still sending data (decision 28)?' },
+    tenantId: { bsonType: 'objectId' },
+    status: { enum: ['healthy', 'quiet', 'broken'] },
+    reason: { bsonType: ['string', 'null'], maxLength: 500 },
+    failedCheck: { bsonType: ['string', 'null'], maxLength: 20 },
+    since: date,
+    checkedAt: date,
+    lastEventAt: dateOrNull,
+    silentHours: { bsonType: 'int', minimum: 0 },
+    alertedAt: dateOrNull,
+  },
+  additionalProperties: false,
+});
+
 // Phase 3: the workspace activity log ("who changed what, when"). No IP address or user agent.
 ensureCollection('audit_log', {
   bsonType: 'object',
@@ -370,6 +390,8 @@ ensureCollection('audit_log', {
         'site.timezone_changed',
         'site.retention_changed',
         'site.deleted',
+        'site.stopped_sending',
+        'site.sending_again',
         'key.created',
         'key.revoked',
         'host.allowed',
@@ -479,6 +501,7 @@ database.password_resets.createIndex({ userId: 1 });
 database.email_verifications.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.email_verifications.createIndex({ userId: 1 });
 database.kv_outbox.createIndex({ tenantId: 1 });
+database.site_health.createIndex({ tenantId: 1 });
 database.audit_log.createIndex({ tenantId: 1, at: -1, _id: -1 });
 database.audit_log.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 database.erasures.createIndex({ status: 1, updatedAt: 1 });

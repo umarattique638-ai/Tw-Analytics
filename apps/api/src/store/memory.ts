@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Long, ObjectId } from 'mongodb';
 import { violation } from './validate';
 import { DuplicateError } from './types';
-import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, SiteHealthDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
 
 /**
  * In-memory ControlStore for tests. It enforces the same rules the real MongoDB enforces:
@@ -43,6 +43,7 @@ export class MemoryStore implements ControlStore {
   resets: PasswordResetDoc[] = [];
   verifications: EmailVerificationDoc[] = [];
   outbox: KvIssueDoc[] = [];
+  health: SiteHealthDoc[] = [];
   audit: AuditDoc[] = [];
   erasures: ErasureDoc[] = [];
   counter = Long.fromNumber(0);
@@ -139,6 +140,14 @@ export class MemoryStore implements ControlStore {
   }
   async clearKvIssue(siteId: number) {
     this.outbox = this.outbox.filter((o) => o._id !== siteId);
+  }
+
+  async healthOf(siteIds: number[]) {
+    return clone(this.health.filter((h) => siteIds.includes(h._id)));
+  }
+  async saveHealth(doc: SiteHealthDoc) {
+    check('site_health', doc);
+    this.health = [...this.health.filter((h) => h._id !== doc._id), clone(doc)];
   }
 
   async setPassword(userId: ObjectId, passwordHash: string, now: Date) {
@@ -251,6 +260,7 @@ export class MemoryStore implements ControlStore {
     this.exports = this.exports.filter((e) => !same(e.tenantId, t));
     this.audit = this.audit.filter((e) => !same(e.tenantId, t));
     this.outbox = this.outbox.filter((o) => !same(o.tenantId, t));
+    this.health = this.health.filter((h) => !same(h.tenantId, t));
     this.tenants = this.tenants.filter((x) => !same(x._id, t));
     return clone(erasure);
   }
@@ -264,6 +274,7 @@ export class MemoryStore implements ControlStore {
     this.sites = this.sites.filter((s) => s._id !== siteId);
     this.exports = this.exports.filter((e) => !(same(e.tenantId, tenantId) && e.siteId === siteId));
     this.outbox = this.outbox.filter((o) => o._id !== siteId);
+    this.health = this.health.filter((h) => h._id !== siteId);
     return clone(erasure);
   }
   async activeErasures(watchSince: Date, limit: number) {
@@ -278,6 +289,7 @@ export class MemoryStore implements ControlStore {
   async removeSite(id: number) {
     const before = this.sites.length;
     this.sites = this.sites.filter((s) => s._id !== id);
+    this.health = this.health.filter((h) => h._id !== id);
     return this.sites.length < before;
   }
   async deleteSitesOf(tenantId: ObjectId) {

@@ -59,6 +59,8 @@ writeFileSync(
         { path: '/api/v1/internal/reconcile', schedule: '17 3 * * *' },
         // Retention pruning + account erasures (Phase 3). Vercel Hobby: once a day, within the hour.
         { path: '/api/v1/internal/maintenance', schedule: '41 2 * * *' },
+        // Decision 28: is every site still sending data (06:23 in Pakistan, so an e-mail arrives in the morning).
+        { path: '/api/v1/internal/health', schedule: '23 1 * * *' },
       ],
     },
     null,
