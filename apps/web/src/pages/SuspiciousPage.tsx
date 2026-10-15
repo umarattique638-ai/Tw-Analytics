@@ -10,23 +10,22 @@ import Panel from '../components/ui/Panel';
 import SegmentedControl from '../components/ui/SegmentedControl';
 import type { Site } from '../api/client';
 import { dropLabel, num } from '../lib/format';
-import { useAllowHost, useDropsReport } from '../hooks/useDrops';
+import { useDropsReport } from '../hooks/useDrops';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useRange } from '../hooks/useRange';
 import { useSession } from '../hooks/useSession';
 
-/** Every dropped hit from dropped_hits, with its reason. "Allow" exists where it makes sense: a host. */
+/** Every dropped hit from dropped_hits, with its reason (read-only). */
 export default function SuspiciousPage() {
   useDocumentTitle('Suspicious activity');
-  const { current, upsert } = useSession();
+  const { current } = useSession();
   if (!current) return <NoSiteYet />;
-  return <Suspicious site={current} onSite={upsert} />;
+  return <Suspicious site={current} />;
 }
 
-function Suspicious({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
+function Suspicious({ site }: { site: Site }) {
   const [range, setRange] = useRange();
   const { report, byReason, total, reasons, shown, filter, setFilter } = useDropsReport(site.id, range);
-  const hosts = useAllowHost(site, onSite);
   const ready = !!report.data;
   const count = (reason: string) => (ready ? num(byReason.get(reason) ?? 0) : null);
 
@@ -55,7 +54,7 @@ function Suspicious({ site, onSite }: { site: Site; onSite: (s: Site) => void })
             )
           }
         >
-          <DropsList rows={shown} loading={!ready && !report.error} isAllowed={hosts.isAllowed} busyHost={hosts.busyHost} onAllow={hosts.allow} />
+          <DropsList rows={shown} loading={!ready && !report.error} />
         </Panel>
       </div>
     </div>

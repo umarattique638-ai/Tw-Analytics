@@ -31,8 +31,8 @@ export default function DropReasons({ reasons, total }: { reasons: [string, numb
         </ul>
       )}
       <p className="mt-5 border-t border-slate-100 pt-4 text-[13px] leading-relaxed text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        Dropped hits never count in your stats. Bots are recognised by the known-bot list, headless-browser checks, datacentre networks and the referrer-spam list. If one of your
-        own hosts was dropped, allow it and its hits count from then on.
+        Dropped hits never count in your stats. Bots are recognised by the known-bot list, headless-browser checks, datacentre networks and the referrer-spam list. "Wrong hostname" means the
+        script with this site's key ran on another website: give that website its own site in TailWatch.
       </p>
     </Panel>
   );

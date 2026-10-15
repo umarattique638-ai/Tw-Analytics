@@ -139,10 +139,8 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     await page.getByRole('link', { name: 'Suspicious activity' }).click();
     await page.getByText('ua_denylist').waitFor();
     expect(await text()).toContain('57'); // 17 + 40 hits dropped
-    await page.getByRole('button', { name: 'Allow host' }).click();
-    await page.getByText('staging.realshop.test is now accepted').waitFor();
-    expect(store.sites[0]!.allowedHosts).toContain('staging.realshop.test');
-    expect(JSON.parse([...kv.entries.values()][0]!).allowedHosts).toContain('staging.realshop.test');
+    // Read-only (owner, 2026-10-15): no "Allow host" button, a dropped host stays dropped.
+    expect(await page.getByRole('button', { name: /Allow/ }).count()).toBe(0);
 
     await page.getByRole('link', { name: 'Reports' }).click();
     await page.getByText('No reports yet').waitFor();

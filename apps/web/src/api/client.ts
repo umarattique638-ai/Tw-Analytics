@@ -212,7 +212,6 @@ export const stats = {
   live: (id: number) => call<Live>('GET', `/sites/${id}/stats/live`),
   events: (id: number, range: RangeKey) => call<EventsReport>('GET', `/sites/${id}/stats/events?range=${range}`),
   drops: (id: number, range: RangeKey) => call<DropsReport>('GET', `/sites/${id}/stats/drops?range=${range}`),
-  allowHost: (id: number, host: string) => call<{ site: Site; sync: Sync }>('POST', `/sites/${id}/allowed-hosts`, { host }),
 };
 
 // ------------------------------------------------------------------ Phase 3: activity log, export, delete

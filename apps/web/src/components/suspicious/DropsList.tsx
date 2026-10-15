@@ -1,6 +1,5 @@
-import { ShieldCheck, Undo2 } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import Badge from '../ui/Badge';
-import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonRows } from '../ui/Skeleton';
 import { ago, countryName, dropDetail, dropLabel, num } from '../../lib/format';
@@ -9,8 +8,11 @@ import { dropTone } from './dropTone';
 
 type Row = DropsReport['rows'][number];
 
-/** Each group of dropped hits, newest first. A wrong-hostname drop can be allowed from here. */
-export default function DropsList({ rows, loading, isAllowed, busyHost, onAllow }: { rows: Row[]; loading: boolean; isAllowed: (h: string) => boolean; busyHost: string | null; onAllow: (h: string) => void }) {
+/**
+ * Each group of dropped hits, newest first. Read-only (owner, 2026-10-15): a dropped host cannot be allowed
+ * from here, so another website's hits never mix into this site's numbers by one click.
+ */
+export default function DropsList({ rows, loading }: { rows: Row[]; loading: boolean }) {
   if (loading) return <SkeletonRows rows={4} />;
   if (rows.length === 0)
     return (
@@ -21,7 +23,6 @@ export default function DropsList({ rows, loading, isAllowed, busyHost, onAllow 
   return (
     <ul className="divide-y divide-slate-100 dark:divide-slate-800" data-testid="drops">
       {rows.map((d, i) => {
-        const allowed = isAllowed(d.detail);
         return (
           <li key={`${d.reason}-${d.detail}-${d.country}-${d.asn}-${i}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 first:pt-0 last:pb-0">
             <Badge tone={dropTone(d.reason).badge} className="w-36 flex-none justify-center py-1">
@@ -37,14 +38,6 @@ export default function DropsList({ rows, loading, isAllowed, busyHost, onAllow 
               </p>
             </div>
             <span className="w-20 flex-none text-right text-sm font-semibold text-slate-900 tabular-nums dark:text-white">{num(d.hits)} hits</span>
-            <span className="flex w-28 flex-none justify-end">
-              {d.reason === 'hostname' && d.detail && (
-                <Button variant="ghost" size="sm" className="h-8 px-2 text-teal-700 dark:text-teal-400" onClick={() => onAllow(d.detail)} disabled={allowed} loading={busyHost === d.detail}>
-                  {busyHost !== d.detail && <Undo2 className="size-3.5" aria-hidden="true" />}
-                  {allowed ? 'Allowed' : 'Allow host'}
-                </Button>
-              )}
-            </span>
           </li>
         );
       })}
