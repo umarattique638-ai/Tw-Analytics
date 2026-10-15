@@ -567,6 +567,13 @@
             ],
             "maxLength": 20
           },
+          "movedTo": {
+            "bsonType": [
+              "string",
+              "null"
+            ],
+            "maxLength": 253
+          },
           "since": {
             "bsonType": "date"
           },
@@ -646,6 +653,7 @@
               "site.restored",
               "site.paused",
               "site.resumed",
+              "site.domain_changed",
               "site.timezone_changed",
               "site.retention_changed",
               "site.deleted",

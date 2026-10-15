@@ -46,6 +46,15 @@ export async function runActiveCheck(
     headers = got.res.headers;
     finalUrl = got.finalUrl;
     if (!got.res.ok) return stop(result('reach', 'fail', `We reached ${page.hostname}, but it answered HTTP ${got.res.status}.`));
+    // Redirected to another website: the snippet may well be there, but its hits come from that host and
+    // the collector drops them (wrong hostname). The usual reason: the site moved to a new domain.
+    const landed = new URL(finalUrl).hostname;
+    if (!hostAllowed(landed, site.allowedHosts)) {
+      const moved = stop(
+        result('reach', 'fail', `${page.hostname} redirects to ${landed}, which is not this site's domain, so visits there are not counted. If the site moved, change its domain.`),
+      );
+      return { ...moved, movedTo: landed };
+    }
     html = got.body;
     checks.push(result('reach', 'pass', `${new URL(finalUrl).hostname} answered HTTP ${got.res.status}.`));
   } catch (error) {

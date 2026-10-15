@@ -115,7 +115,7 @@ export function siteBrokenMail(to: string, name: string | null, domain: string, 
   const hello = name ? `Hi ${name},` : 'Hi,';
   const lines = [
     `${hello} TailWatch has received no data from ${domain} for ${silence}.`,
-    `We opened your site to find out why. What we found: ${reason}`,
+    `We looked into why. What we found: ${reason}`,
     'Until this is fixed, visits to the site are not counted. Open the dashboard to see the details, copy the script again and run the check.',
   ];
   const after = ['We send this once. When data arrives again, you get one short e-mail saying so.'];

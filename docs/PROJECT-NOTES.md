@@ -571,6 +571,22 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - MongoDB: new collection site_health (one document per site) and two audit actions: run
      `pnpm db:mongo` BEFORE deploying.
 
+29. DECIDED 2026-10-15 (owner): a site that MOVED to a new domain (shop.com -> shop.pk). Its visits keep
+   coming but are dropped as "wrong hostname", and since the "Allow host" button was removed the same day
+   (Suspicious activity is read-only) there was no way out.
+   - Health check: a silent site whose key sent at least 3 hits from ONE other host since it went silent
+     (dropped_hits, reason hostname; localhost, *.local and IP addresses never count) is broken with
+     failedCheck "moved" and site_health.movedTo = that host. Without such drops the install check runs as
+     before, and it now FAILS when the home page redirects to a host the site does not accept
+     ("shop.com redirects to shop.pk ..."), which setup also refuses from now on.
+   - Change domain (Settings > Site domains, or "Change the domain" on the red banner, pre-filled):
+     POST /sites/:id/domain, owners and admins, active sites only. The new domain must pass all 7
+     install checks with THIS site's key; then the site keeps its id, keys, retention and history, accepts
+     only the new domain and its subdomains (KV first, then MongoDB), verifiedAt = now (the health check
+     starts fresh), activity line site.domain_changed. A failing check changes nothing and shows the step.
+   - MongoDB: site_health.movedTo and the audit action site.domain_changed: run `pnpm db:mongo` BEFORE
+     deploying.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

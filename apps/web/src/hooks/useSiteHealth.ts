@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { Site, SiteHealth } from '../api/client';
 import { notify } from '../lib/notify';
@@ -15,13 +15,17 @@ export function useSiteHealth(site: Site) {
   const { upsert } = useSession();
   const [health, setHealth] = useState<SiteHealth | null>(null);
   const [checking, setChecking] = useState(false);
+  // The latest copy of the site: an answer that arrives later must not write an older copy back.
+  const latest = useRef(site);
+  latest.current = site;
 
   const show = useCallback(
     (h: SiteHealth) => {
       setHealth(h);
-      if (site.health !== h.status) upsert({ ...site, health: h.status });
+      const s = latest.current;
+      if (s.health !== h.status) upsert({ ...s, health: h.status });
     },
-    [site, upsert],
+    [upsert],
   );
 
   useEffect(() => {
@@ -62,5 +66,8 @@ export function useSiteHealth(site: Site) {
     }
   }, [site.id, show]);
 
-  return { health, checking, checkAgain };
+  /** The site changed under it (a new domain): the old result no longer applies. */
+  const clear = useCallback(() => setHealth(null), []);
+
+  return { health, checking, checkAgain, clear };
 }

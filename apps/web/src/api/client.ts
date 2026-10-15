@@ -27,6 +27,8 @@ export interface SiteHealth {
   reason: string | null;
   failedCheck: string | null;
   failedLabel: string | null;
+  /** failedCheck "moved": the domain the visits now come from (decision 29). */
+  movedTo: string | null;
   since: string | null;
   checkedAt: string | null;
   lastEventAt: string | null;
@@ -126,6 +128,8 @@ export const api = {
   /** `eraseData`: delete everything collected for the site too, for good (owners and admins). */
   deleteSite: (id: number, eraseData = false) => call<{ ok: true; sync: Sync; erased: boolean }>('DELETE', `/sites/${id}`, { eraseData }),
   sync: (id: number) => call<{ sync: Sync }>('POST', `/sites/${id}/sync`),
+  /** Decision 29: move the site to a new domain; only if the new domain passes the install check. */
+  changeDomain: (id: number, domain: string) => call<{ ok: boolean; url: string; checks: Check[]; site: Site | null }>('POST', `/sites/${id}/domain`, { domain }),
   health: (id: number) => call<{ health: SiteHealth }>('GET', `/sites/${id}/health`),
   checkHealth: (id: number) => call<{ health: SiteHealth }>('POST', `/sites/${id}/health/check`),
   /** Forgot password: always the same answer, whether the e-mail has an account or not. */

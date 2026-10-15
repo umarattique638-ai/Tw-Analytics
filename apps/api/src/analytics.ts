@@ -16,6 +16,13 @@ export interface SiteActivity {
   maxGapMinutes: number;
 }
 
+/** Hits of a site dropped because they came from another website (dropped_hits, reason "hostname"). */
+export interface WrongHost {
+  host: string;
+  hits: number;
+  lastAt: Date;
+}
+
 export interface AnalyticsReader {
   recent(siteId: number, minutes: number): Promise<RecentActivity>;
   /**
@@ -23,6 +30,8 @@ export interface AnalyticsReader {
    * A site with no event in that window is missing from the map. Optional: test fakes may leave it out.
    */
   siteActivity?(siteIds: number[], days: number): Promise<Map<number, SiteActivity>>;
+  /** Decision 29: per site, the other hosts its key was used on over the last `days`, most hits first. */
+  wrongHosts?(siteIds: number[], days: number): Promise<Map<number, WrongHost[]>>;
 }
 
 /** Minimal ClickHouse HTTP client: parameterised queries ({name:Type}), JSON rows, UInt64 as strings. */
@@ -124,6 +133,26 @@ export class ClickHouseReader implements AnalyticsReader {
     );
     for (const r of rows) {
       out.set(Number(r.site_id), { lastAt: new Date(`${r.last_at.replace(' ', 'T')}Z`), maxGapMinutes: Number(r.max_gap) });
+    }
+    return out;
+  }
+
+  async wrongHosts(siteIds: number[], days: number): Promise<Map<number, WrongHost[]>> {
+    const out = new Map<number, WrongHost[]>();
+    if (!siteIds.length) return out;
+    const rows = await this.ch.query<{ site_id: string; host: string; hits: string; last_at: string }>(
+      `SELECT site_id, detail AS host, sum(hits) AS hits, toString(max(at)) AS last_at
+         FROM ${this.ch.database}.dropped_hits
+        WHERE site_id IN {sites:Array(UInt64)} AND reason = 'hostname' AND detail != '' AND at >= now64(3) - toIntervalDay({days:UInt32})
+        GROUP BY site_id, detail
+        ORDER BY site_id, hits DESC`,
+      { sites: `[${siteIds.map((id) => Math.trunc(id)).join(',')}]`, days },
+    );
+    for (const r of rows) {
+      const id = Number(r.site_id);
+      const list = out.get(id) ?? [];
+      list.push({ host: r.host, hits: Number(r.hits), lastAt: new Date(`${r.last_at.replace(' ', 'T')}Z`) });
+      out.set(id, list);
     }
     return out;
   }

@@ -16,6 +16,8 @@ export interface ActiveResult {
   /** Every step passed. */
   ok: boolean;
   checks: CheckResult[];
+  /** The page redirects to a host this site does not accept (the site moved): that host (decision 29). */
+  movedTo?: string;
 }
 
 export interface FoundTag {

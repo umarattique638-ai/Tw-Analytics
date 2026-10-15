@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Code2, Moon, RefreshCw } from 'lucide-react';
+import { ArrowRightLeft, Code2, Moon, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import Notice from '../ui/Notice';
 import Skeleton from '../ui/Skeleton';
 import CodeBlock from '../onboarding/CodeBlock';
+import ChangeDomainDialog from '../settings/ChangeDomainDialog';
 import { muted } from '../ui/styles';
 import { useSiteHealth } from '../../hooks/useSiteHealth';
 import { useSnippets } from '../../hooks/useSetup';
+import { useSession } from '../../hooks/useSession';
 import type { Site } from '../../api/client';
 
 /** "8 hours", "3 days" without data (since the last event, or since the site was added if none came). */
@@ -25,9 +27,13 @@ function silence(hours: number | null): string {
  *   healthy, paused, not checked yet: nothing
  */
 export default function HealthBanner({ site }: { site: Site }) {
-  const { health, checking, checkAgain } = useSiteHealth(site);
+  const { health, checking, checkAgain, clear } = useSiteHealth(site);
+  const { role, upsert } = useSession();
   const [scriptOpen, setScriptOpen] = useState(false);
+  const [domainOpen, setDomainOpen] = useState(false);
   if (!health) return null;
+  const moved = health.failedCheck === 'moved';
+  const canEdit = role === 'owner' || role === 'admin';
 
   if (health.status === 'quiet') {
     return (
@@ -47,21 +53,40 @@ export default function HealthBanner({ site }: { site: Site }) {
         <div data-testid="health-broken">
           <p className="font-semibold">{site.domain} has stopped sending data</p>
           <p className="mt-1 leading-relaxed">
-            Nothing has arrived for {silence(health.silentForHours)}, so visits are not being counted. We opened your site and found a problem:
+            Nothing has arrived for {silence(health.silentForHours)}, so visits are not being counted.{' '}
+            {moved ? 'It looks like the site moved:' : 'We opened your site and found a problem:'}
           </p>
           {health.reason && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 font-medium dark:bg-black/20">{health.reason}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button size="sm" className="h-9" onClick={checkAgain} loading={checking}>
+            {moved && canEdit && (
+              <Button size="sm" className="h-9" onClick={() => setDomainOpen(true)}>
+                <ArrowRightLeft className="size-4" aria-hidden="true" /> Change the domain
+              </Button>
+            )}
+            <Button variant={moved && canEdit ? 'secondary' : 'primary'} size="sm" className="h-9" onClick={checkAgain} loading={checking}>
               {!checking && <RefreshCw className="size-4" aria-hidden="true" />} Check again
             </Button>
-            <Button variant="secondary" size="sm" className="h-9" onClick={() => setScriptOpen(true)}>
-              <Code2 className="size-4" aria-hidden="true" /> Get the script
-            </Button>
+            {!moved && (
+              <Button variant="secondary" size="sm" className="h-9" onClick={() => setScriptOpen(true)}>
+                <Code2 className="size-4" aria-hidden="true" /> Get the script
+              </Button>
+            )}
             <span className="text-[13px] opacity-80">We e-mail you once when this starts, and once when data arrives again.</span>
           </div>
         </div>
       </Notice>
       {scriptOpen && <ScriptDialog site={site} onClose={() => setScriptOpen(false)} />}
+      {domainOpen && (
+        <ChangeDomainDialog
+          site={site}
+          suggested={health.movedTo}
+          onClose={() => setDomainOpen(false)}
+          onChanged={(updated) => {
+            clear();
+            upsert({ ...updated, health: 'unknown' });
+          }}
+        />
+      )}
     </>
   );
 }

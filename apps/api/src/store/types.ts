@@ -111,7 +111,7 @@ export interface KvIssueDoc {
   updatedAt: Date;
 }
 
-export type SitePatch = Partial<Pick<SiteDoc, 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret' | 'retentionDays'>>;
+export type SitePatch = Partial<Pick<SiteDoc, 'domain' | 'timezone' | 'status' | 'verifiedAt' | 'keys' | 'allowedHosts' | 'identitySecret' | 'retentionDays'>>;
 
 /**
  * Is a site still sending data (decision 28)? One per site, written by the health check (services/health.ts).
@@ -126,6 +126,8 @@ export interface SiteHealthDoc {
   status: 'healthy' | 'quiet' | 'broken';
   reason: string | null;
   failedCheck: string | null;
+  /** failedCheck "moved": the host the visits now come from (decision 29). */
+  movedTo?: string | null;
   since: Date;
   checkedAt: Date;
   lastEventAt: Date | null;
@@ -145,6 +147,7 @@ export const AUDIT_ACTIONS = [
   'site.restored',
   'site.paused',
   'site.resumed',
+  'site.domain_changed',
   'site.timezone_changed',
   'site.retention_changed',
   'site.deleted',

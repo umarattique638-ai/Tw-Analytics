@@ -8,8 +8,10 @@ import { body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
 import { snippetsFor } from '../snippets';
+import { DuplicateError } from '../store/types';
 import type { KeyDoc, SiteDoc, SitePatch } from '../store/types';
 import { siteView } from '../views';
+import { VerifyInputError, probeDomain, runActiveCheck } from '../verifier';
 import { current, healthView, watched } from '../services/health';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
@@ -212,6 +214,56 @@ export function siteRoutes(app: Api, s: Services) {
   app.post('/sites/:id/sync', async (c) => {
     const site = await sites.load(c);
     return c.json({ sync: await kvSync.sync(site) });
+  });
+
+  /**
+   * Decision 29: the site moved to a new domain (shop.com -> shop.pk). The new domain must pass the install
+   * check with this site's own key first; then the site keeps its id, keys and history and accepts only the
+   * new domain (and its subdomains). Owners and admins. Nothing changes when a check fails.
+   */
+  app.post('/sites/:id/domain', async (c) => {
+    const site = await sites.load(c);
+    const role = await sites.roleOf(c);
+    if (role !== 'owner' && role !== 'admin') throw new HttpError(403, 'forbidden', 'Only the owner or an admin can change the domain.');
+    if (site.status !== 'active') throw new HttpError(409, 'site_paused', 'Resume tracking first, then change the domain.');
+    const domain = normalizeDomain(str((await body(c)).domain));
+    if (!domain) throw invalidDomain();
+    if (domain === site.domain) throw new HttpError(400, 'same_domain', `${domain} is already this site's domain.`);
+    const tenantId = c.get('tenant')._id;
+    const other = await store.siteByDomain(tenantId, domain);
+    if (other && other.status !== 'deleted') throw new HttpError(409, 'domain_taken', `${domain} is already one of your sites.`);
+    if (other) throw new HttpError(409, 'domain_deleted', `${domain} was one of your sites before. Add it again from "Add a site" to bring its history back.`);
+    const tenantKey = `t:${tenantId.toHexString()}`;
+    if (!s.limits.verify.take(tenantKey, Date.now())) throw new HttpError(429, 'rate_limited', 'Too many checks. Wait a few minutes and try again.');
+
+    if (config.checkDomainReachable) {
+      const probe = await probeDomain(domain, { allowPrivate: config.verifierAllowPrivate, ...s.deps.verifier });
+      if (!probe.ok) throw new HttpError(400, 'domain_unreachable', `We couldn't reach ${domain} (${probe.why}). Check the spelling; the new site must be online.`);
+    }
+    const target = { domain, allowedHosts: allowedHostsFor(domain), keys: site.keys };
+    let result;
+    try {
+      result = await runActiveCheck(target, undefined, { allowPrivate: config.verifierAllowPrivate, ...s.deps.verifier });
+    } catch (error) {
+      if (error instanceof VerifyInputError) throw new HttpError(400, 'invalid_url', error.message);
+      throw error;
+    }
+    if (!result.ok) return c.json({ ...result, site: null });
+
+    const at = now();
+    // verifiedAt = now: the health check starts fresh for the new domain (a new site's 24 hours).
+    const patch: SitePatch = { domain, allowedHosts: allowedHostsFor(domain), verifiedAt: at };
+    await kvSync.activateFirst({ ...site, ...patch } as SiteDoc);
+    let updated: SiteDoc;
+    try {
+      updated = await sites.patch(c, site, patch);
+    } catch (error) {
+      await kvSync.rollbackGrant(site, []);
+      if (error instanceof DuplicateError && error.field === 'domain') throw new HttpError(409, 'domain_taken', `${domain} is already one of your sites.`);
+      throw error;
+    }
+    await audit.record(c, 'site.domain_changed', updated, `Changed the domain of ${site.domain} to ${domain} (its history is kept; visits from ${site.domain} no longer count)`);
+    return c.json({ ...result, site: siteView(updated) });
   });
 
   /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */

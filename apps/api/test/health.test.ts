@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader, SiteActivity } from '../src/analytics';
+import type { AnalyticsReader, SiteActivity, WrongHost } from '../src/analytics';
 import { defaultConfig } from '../src/config';
 import { MemoryKv } from '../src/kv';
 import { MemoryMailer } from '../src/mail';
@@ -20,7 +20,7 @@ const COLLECTOR = 'https://collector.test';
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-type Page = 'ok' | 'removed' | 'down';
+type Page = 'ok' | 'removed' | 'down' | `redirect:${string}`;
 
 function setup(over: { ownerEmail?: string } = {}) {
   const store = new MemoryStore();
@@ -30,7 +30,10 @@ function setup(over: { ownerEmail?: string } = {}) {
   /** What ClickHouse "knows" per site; missing = no event in the last 7 days. */
   const activity = new Map<number, SiteActivity>();
   let activityCalls = 0;
+  /** dropped_hits "hostname" per site (decision 29). */
+  const wrongHosts = new Map<number, WrongHost[]>();
   const analytics: AnalyticsReader = {
+    wrongHosts: async (ids) => new Map([...wrongHosts].filter(([id]) => ids.includes(id))),
     recent: async () => ({ events: 0, pageviews: 0, last: null, drops: [] }),
     siteActivity: async (ids) => {
       activityCalls += 1;
@@ -47,6 +50,7 @@ function setup(over: { ownerEmail?: string } = {}) {
     if (!p || url.pathname.endsWith('/tw.js')) return setupFetch(input, init);
     fetches += 1;
     if (p.page === 'down') return new Response('oops', { status: 502, headers: { 'content-type': 'text/html' } });
+    if (p.page.startsWith('redirect:')) return new Response(null, { status: 301, headers: { location: `https://${p.page.slice(9)}/` } });
     const tag = p.page === 'ok' ? snippetsFor(COLLECTOR, p.key).find((x) => x.group === 'script-tag')!.code : '';
     return new Response(`<!doctype html><html><head>${tag}</head><body>shop</body></html>`, { headers: { 'content-type': 'text/html' } });
   }) as typeof fetch;
@@ -100,7 +104,7 @@ function setup(over: { ownerEmail?: string } = {}) {
   const lastEvent = (siteId: number, agoMs: number, gapMinutes = 60) => activity.set(siteId, { lastAt: at(agoMs), maxGapMinutes: gapMinutes });
   const serve = (domain: string, page: Page) => (pages.get(domain)!.page = page);
   const audit = (action: string) => store.audit.filter((e) => e.action === action);
-  return { store, mailer, clock, activity, pages, app, client, cron, account, lastEvent, serve, audit, counts: () => ({ fetches, activityCalls }) };
+  return { store, kv, mailer, clock, activity, wrongHosts, pages, app, client, cron, account, lastEvent, serve, audit, counts: () => ({ fetches, activityCalls }) };
 }
 
 describe('silence threshold', () => {
@@ -254,5 +258,76 @@ describe('site health', { timeout: 30_000 }, () => {
     const night = await s.cron();
     expect(night.body.sites).toBe(1);
     expect((await c.get('/sites')).body.sites.find((x: { id: number }) => x.id === sites[0]!.id).health).toBe('paused');
+  });
+
+  it('silent, but its visits now come from another domain: broken "moved", without opening the site', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 5 * DAY;
+    s.lastEvent(id, 30 * HOUR, 60);
+    s.wrongHosts.set(id, [
+      { host: 'localhost', hits: 50, lastAt: new Date(s.clock.t - HOUR) }, // a developer's machine: never "moved"
+      { host: 'shop-new.test', hits: 40, lastAt: new Date(s.clock.t - HOUR) },
+      { host: 'old.partner.test', hits: 9, lastAt: new Date(s.clock.t - 3 * DAY) }, // before the silence
+    ]);
+    const before = s.counts().fetches;
+    const r = await c.get(`/sites/${id}/health`);
+    expect(r.body.health).toMatchObject({ status: 'broken', failedCheck: 'moved', failedLabel: 'Site moved', movedTo: 'shop-new.test' });
+    expect(r.body.health.reason).toContain('Visits now come from shop-new.test (40 hits');
+    expect(s.counts().fetches).toBe(before);
+  });
+
+  it('the home page redirects to another domain: broken "moved"', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    const id = sites[0]!.id;
+    s.clock.t += 5 * DAY;
+    s.lastEvent(id, 30 * HOUR, 60);
+    s.pages.set('shop-new.test', { page: 'ok', key: sites[0]!.publicKey });
+    s.serve('shop.test', 'redirect:shop-new.test');
+    const r = await c.get(`/sites/${id}/health`);
+    expect(r.body.health).toMatchObject({ status: 'broken', failedCheck: 'moved', movedTo: 'shop-new.test' });
+    expect(r.body.health.reason).toContain('shop.test redirects to shop-new.test');
+  });
+
+  it('change the domain: the new one must pass the check with this site\'s key; history and id stay', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test']);
+    const site = sites[0]!;
+    s.clock.t += 5 * DAY;
+    s.lastEvent(site.id, 30 * HOUR, 60);
+    s.serve('shop.test', 'redirect:shop-new.test');
+    expect((await c.get(`/sites/${site.id}/health`)).body.health.status).toBe('broken');
+
+    // Not installed on the new domain yet: refused with the failing step, nothing changes.
+    s.pages.set('shop-new.test', { page: 'removed', key: site.publicKey });
+    const refused = await c.post(`/sites/${site.id}/domain`, { domain: 'shop-new.test' });
+    expect(refused.status).toBe(200);
+    expect(refused.body.ok).toBe(false);
+    expect(refused.body.site).toBeNull();
+    expect(s.store.sites[0]!.domain).toBe('shop.test');
+
+    expect((await c.post(`/sites/${site.id}/domain`, { domain: 'shop.test' })).body.error).toBe('same_domain');
+    expect((await c.post(`/sites/${site.id}/domain`, { domain: 'not a domain' })).status).toBe(400);
+
+    s.pages.set('shop-new.test', { page: 'ok', key: site.publicKey });
+    const moved = await c.post(`/sites/${site.id}/domain`, { domain: 'https://www.Shop-New.test/' });
+    expect(moved.status).toBe(200);
+    expect(moved.body.ok).toBe(true);
+    expect(moved.body.site).toMatchObject({ id: site.id, domain: 'shop-new.test', allowedHosts: ['shop-new.test', '*.shop-new.test'], publicKey: site.publicKey });
+    const entry = JSON.parse(s.kv.entries.get(`site:${site.publicKey}`)!);
+    expect(entry.allowedHosts).toEqual(['shop-new.test', '*.shop-new.test']);
+    expect(s.audit('site.domain_changed')[0]!.summary).toContain('Changed the domain of shop.test to shop-new.test');
+    // The old "broken" belongs to the old domain: the banner goes at once.
+    expect((await c.get(`/sites/${site.id}/health`)).body.health.status).toBe('healthy');
+  });
+
+  it('change the domain: a domain that is already a site is refused', async () => {
+    const s = setup();
+    const { c, sites } = await s.account(['shop.test', 'blog.test']);
+    const r = await c.post(`/sites/${sites[0]!.id}/domain`, { domain: 'blog.test' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('domain_taken');
   });
 });

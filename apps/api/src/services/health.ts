@@ -1,4 +1,4 @@
-import type { SiteActivity } from '../analytics';
+import type { SiteActivity, WrongHost } from '../analytics';
 import { errorText, logError, logInfo } from '../http/errors';
 import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail } from '../mail';
 import type { SiteDoc, SiteHealthDoc } from '../store/types';
@@ -28,6 +28,17 @@ export const NEW_SITE_DAYS = 2;
 export const NEW_SITE_SILENT_HOURS = 24;
 export const MIN_SILENT_HOURS = 6;
 export const MAX_SILENT_HOURS = 72;
+/** Decision 29: this many hits from one other host while the site is silent = the site moved there. */
+export const MOVED_MIN_HITS = 3;
+/** Never "moved" to a developer's own machine. */
+const LOCAL_HOST = /^(localhost|.*\.localhost|.*\.local|\d{1,3}(\.\d{1,3}){3}|\[.*\])$/i;
+
+/** The other host the site's visits come from since it went silent, if any (most hits first). */
+export function movedHost(site: Pick<SiteDoc, 'verifiedAt' | 'createdAt'>, activity: SiteActivity | undefined, wrong: WrongHost[] | undefined): WrongHost | null {
+  const since = lastSignal(site, activity).getTime();
+  return (wrong ?? []).find((w) => w.lastAt.getTime() > since && w.hits >= MOVED_MIN_HITS && !LOCAL_HOST.test(w.host)) ?? null;
+}
+
 /** The dashboard re-checks a site only when the stored result is older than this. */
 export const RECHECK_MINUTES = 60;
 /** "Most sites at once": more than half of them, and at least this many. */
@@ -75,7 +86,7 @@ export const current = (site: SiteDoc, h: SiteHealthDoc | undefined | null) =>
   h && site.verifiedAt && h.checkedAt.getTime() >= site.verifiedAt.getTime() ? h : null;
 
 export function healthView(site: SiteDoc, h: SiteHealthDoc | null) {
-  const none = { reason: null, failedCheck: null, failedLabel: null, since: null, checkedAt: null, lastEventAt: null, silentForHours: null, silentHours: null };
+  const none = { reason: null, failedCheck: null, failedLabel: null, movedTo: null, since: null, checkedAt: null, lastEventAt: null, silentForHours: null, silentHours: null };
   if (site.status === 'paused') return { status: 'paused' as const, ...none };
   if (!h) return { status: 'unknown' as const, ...none };
   const last = lastSignal(site, h.lastEventAt ? { lastAt: h.lastEventAt, maxGapMinutes: 0 } : undefined);
@@ -83,7 +94,8 @@ export function healthView(site: SiteDoc, h: SiteHealthDoc | null) {
     status: h.status,
     reason: h.reason,
     failedCheck: h.failedCheck,
-    failedLabel: h.failedCheck ? (LABELS[h.failedCheck as CheckId] ?? null) : null,
+    failedLabel: h.failedCheck === 'moved' ? 'Site moved' : h.failedCheck ? (LABELS[h.failedCheck as CheckId] ?? null) : null,
+    movedTo: h.movedTo ?? null,
     since: h.since.toISOString(),
     checkedAt: h.checkedAt.toISOString(),
     lastEventAt: h.lastEventAt?.toISOString() ?? null,
@@ -128,22 +140,39 @@ export function createHealthService(s: Services) {
    * Works out the site's state now, saves it, and does what a change calls for (activity line, e-mail).
    * `mayAlert`: the "stopped sending" e-mail may go out (nightly, unless the pipeline itself looks down).
    */
-  async function evaluate(site: SiteDoc, activity: SiteActivity | undefined, prevRaw: SiteHealthDoc | null, mayAlert: boolean): Promise<SiteHealthDoc> {
+  async function evaluate(
+    site: SiteDoc,
+    activity: SiteActivity | undefined,
+    wrong: WrongHost[] | undefined,
+    prevRaw: SiteHealthDoc | null,
+    mayAlert: boolean,
+  ): Promise<SiteHealthDoc> {
     const at = now();
     const prev = current(site, prevRaw);
     const silentHours = silentHoursFor(site, activity, at);
     let status: SiteHealthDoc['status'] = 'healthy';
     let reason: string | null = null;
     let failedCheck: string | null = null;
+    let movedTo: string | null = null;
 
     if (isSilent(site, activity, at)) {
-      const result = await runActiveCheck(site, undefined, verifierOptions);
-      const failed = result.checks.find((c) => c.status === 'fail');
-      if (result.ok || !failed) status = 'quiet';
-      else {
+      // Decision 29: visits still come, but from another website (the site moved): no need to open it.
+      const moved = movedHost(site, activity, wrong);
+      if (moved) {
         status = 'broken';
-        failedCheck = failed.id;
-        reason = `${failed.label}: ${failed.message}`.slice(0, 500);
+        failedCheck = 'moved';
+        movedTo = moved.host;
+        reason = `Visits now come from ${moved.host} (${moved.hits.toLocaleString('en-US')} hits since ${site.domain} went quiet), which is not this site's domain.`;
+      } else {
+        const result = await runActiveCheck(site, undefined, verifierOptions);
+        const failed = result.checks.find((c) => c.status === 'fail');
+        if (result.ok || !failed) status = 'quiet';
+        else {
+          status = 'broken';
+          failedCheck = result.movedTo ? 'moved' : failed.id;
+          movedTo = result.movedTo ?? null;
+          reason = (result.movedTo ? failed.message : `${failed.label}: ${failed.message}`).slice(0, 500);
+        }
       }
     }
 
@@ -153,6 +182,7 @@ export function createHealthService(s: Services) {
       status,
       reason,
       failedCheck,
+      movedTo,
       since: prev && prev.status === status ? prev.since : at,
       checkedAt: at,
       lastEventAt: activity?.lastAt ?? prev?.lastEventAt ?? null,
@@ -185,6 +215,17 @@ export function createHealthService(s: Services) {
     return next;
   }
 
+  /** Other hosts the sites' keys were used on; a failure only means "moved" cannot be told apart. */
+  const wrongHostsOf = async (ids: number[]): Promise<Map<number, WrongHost[]>> => {
+    if (!reader.wrongHosts || !ids.length) return new Map();
+    try {
+      return await reader.wrongHosts(ids, HEALTH_WINDOW_DAYS);
+    } catch (error) {
+      logError('health_wrong_hosts_failed', { message: errorText(error) });
+      return new Map();
+    }
+  };
+
   return {
     /** ClickHouse can tell when data last arrived (without it there is nothing to judge). */
     get configured() {
@@ -199,7 +240,8 @@ export function createHealthService(s: Services) {
     async checkOne(site: SiteDoc): Promise<SiteHealthDoc | null> {
       if (!watched(site) || !reader.siteActivity) return null;
       const [activity, [prev]] = await Promise.all([reader.siteActivity([site._id], HEALTH_WINDOW_DAYS), store.healthOf([site._id])]);
-      return evaluate(site, activity.get(site._id), prev ?? null, false);
+      const wrong = isSilent(site, activity.get(site._id), now()) ? await wrongHostsOf([site._id]) : new Map<number, WrongHost[]>();
+      return evaluate(site, activity.get(site._id), wrong.get(site._id), prev ?? null, false);
     },
 
     /** Stored result is missing or older than RECHECK_MINUTES. */
@@ -224,6 +266,7 @@ export function createHealthService(s: Services) {
       const silent = sites.filter((x) => isSilent(x, activity.get(x._id), at));
       result.silent = silent.length;
       result.pipelineSuspect = silent.length >= PIPELINE_MIN_SILENT && silent.length * 2 > sites.length;
+      const wrong = await wrongHostsOf(silent.map((x) => x._id));
 
       if (result.pipelineSuspect) {
         logError('health_pipeline_silent', { silent: silent.length, sites: sites.length });
@@ -237,7 +280,7 @@ export function createHealthService(s: Services) {
       const tally = (h: SiteHealthDoc) => (result[h.status] += 1);
       const run = async (site: SiteDoc) => {
         try {
-          tally(await evaluate(site, activity.get(site._id), prevOf.get(site._id) ?? null, !result.pipelineSuspect));
+          tally(await evaluate(site, activity.get(site._id), wrong.get(site._id), prevOf.get(site._id) ?? null, !result.pipelineSuspect));
         } catch (error) {
           result.failed += 1;
           logError('health_check_failed', { site: site._id, message: errorText(error) });
