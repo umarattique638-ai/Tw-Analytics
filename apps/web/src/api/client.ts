@@ -143,6 +143,8 @@ export const api = {
 export type RangeKey = 'today' | '7d' | '30d';
 export interface Range { key: RangeKey; tz: string; from: string; to: string; days: number; hourly: boolean; prev: { from: string; to: string } }
 export interface Bar { label: string; value: number }
+export type FilterKey = 'page' | 'country' | 'source' | 'device' | 'browser';
+export type OverviewFilters = Partial<Record<FilterKey, string>>;
 export interface Overview {
   range: Range;
   kpis: {
@@ -214,7 +216,12 @@ export function startDownload(url: string, filename: string) {
 }
 
 export const stats = {
-  overview: (id: number, range: RangeKey) => call<Overview>('GET', `/sites/${id}/stats/overview?range=${range}`),
+  /** `filters` (decision 30): narrow the overview to a page, country, referrer, device or browser. */
+  overview: (id: number, range: RangeKey, filters: OverviewFilters = {}) => {
+    const q = new URLSearchParams({ range });
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    return call<Overview>('GET', `/sites/${id}/stats/overview?${q}`);
+  },
   live: (id: number) => call<Live>('GET', `/sites/${id}/stats/live`),
   events: (id: number, range: RangeKey) => call<EventsReport>('GET', `/sites/${id}/stats/events?range=${range}`),
   drops: (id: number, range: RangeKey) => call<DropsReport>('GET', `/sites/${id}/stats/drops?range=${range}`),

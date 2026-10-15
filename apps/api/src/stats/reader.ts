@@ -1,8 +1,8 @@
 import { AUTOMATIC_EVENTS } from '@tailwatch/contract';
 import type { ClickHouseClient } from '../analytics';
 import { channelOf } from './channels';
-import { QUERIES } from './queries';
-import type { QueryName } from './queries';
+import { QUERIES, activeFilters, filtered } from './queries';
+import type { Filters, QueryName } from './queries';
 import { bounds, chartBuckets } from './range';
 import type { Range } from './range';
 import type { DropsReport, EventsReport, Live, Overview, SiteExport } from './types';
@@ -14,15 +14,17 @@ const n = (v: unknown) => Number(v ?? 0) || 0;
 export class StatsReader {
   constructor(private readonly ch: ClickHouseClient) {}
 
-  private run<T>(name: QueryName, params: Record<string, string | number>): Promise<T[]> {
-    return this.ch.query<T>(QUERIES[name].replaceAll('{db}', this.ch.database), params);
+  private run<T>(name: QueryName, params: Record<string, string | number>, filters?: Filters): Promise<T[]> {
+    if (!filters) return this.ch.query<T>(QUERIES[name].replaceAll('{db}', this.ch.database), params);
+    const q = filtered(name, filters);
+    return this.ch.query<T>(q.sql.replaceAll('{db}', this.ch.database), { ...params, ...q.params });
   }
 
-  private async totals(site: number, tz: string, from: string, to: string) {
+  private async totals(site: number, tz: string, from: string, to: string, filters?: Filters) {
     const p = bounds(site, tz, from, to);
     const [[ev], [se]] = await Promise.all([
-      this.run<{ visitors: string; pageviews: string }>('visitors_pageviews', p),
-      this.run<{ sessions: string; engaged_sessions: string; engagement_ms: string }>('sessions_bounce', p),
+      this.run<{ visitors: string; pageviews: string }>('visitors_pageviews', p, filters),
+      this.run<{ sessions: string; engaged_sessions: string; engagement_ms: string }>('sessions_bounce', p, filters),
     ]);
     const sessions = n(se?.sessions);
     return {
@@ -35,18 +37,20 @@ export class StatsReader {
     };
   }
 
-  async overview(site: number, range: Range): Promise<Overview> {
+  /** `filters` (decision 30): narrow everything except the capture rate and the warnings to a page, country, ... */
+  async overview(site: number, range: Range, filters?: Filters): Promise<Overview> {
     const p = bounds(site, range.tz, range.from, range.to);
+    const f = filters && activeFilters(filters).length ? filters : undefined;
     const [cur, prev, s1, s2, pages, sources, countries, devices, browsers, capture, drops] = await Promise.all([
-      this.totals(site, range.tz, range.from, range.to),
-      this.totals(site, range.tz, range.prev.from, range.prev.to),
-      this.run<{ bucket: string; visitors: string; pageviews: string }>(range.hourly ? 'series_hourly' : 'series_daily', p),
-      this.run<{ bucket: string; sessions: string }>(range.hourly ? 'series_hourly_sessions' : 'series_daily_sessions', p),
-      this.run<{ pathname: string; pageviews: string }>('top_pages', p),
-      this.run<{ source: string; sessions: string }>('sources', p),
-      this.run<{ label: string; visitors: string }>('countries', p),
-      this.run<{ label: string; visitors: string }>('devices', p),
-      this.run<{ label: string; visitors: string }>('browsers', p),
+      this.totals(site, range.tz, range.from, range.to, f),
+      this.totals(site, range.tz, range.prev.from, range.prev.to, f),
+      this.run<{ bucket: string; visitors: string; pageviews: string }>(range.hourly ? 'series_hourly' : 'series_daily', p, f),
+      this.run<{ bucket: string; sessions: string }>(range.hourly ? 'series_hourly_sessions' : 'series_daily_sessions', p, f),
+      this.run<{ pathname: string; pageviews: string }>(f ? 'top_pages_filtered' : 'top_pages', p, f),
+      this.run<{ source: string; sessions: string }>('sources', p, f),
+      this.run<{ label: string; visitors: string }>('countries', p, f),
+      this.run<{ label: string; visitors: string }>('devices', p, f),
+      this.run<{ label: string; visitors: string }>('browsers', p, f),
       this.run<{ received: string; expected: string }>('capture_rate', p),
       this.run<{ reason: string; hits: string; detail: string; last: string }>('drops_by_reason', p),
     ]);

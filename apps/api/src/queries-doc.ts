@@ -1,4 +1,4 @@
-import { QUERIES } from './stats';
+import { EVENT_FILTERS, FILTERABLE, FILTER_KEYS, QUERIES, SESSION_FILTERS } from './stats';
 import type { QueryName } from './stats';
 
 /** Where each documented query shows up in the dashboard (BUILD-ORDER Stage 6: every number reproducible). */
@@ -10,6 +10,7 @@ const USED_BY: Record<QueryName, string> = {
   series_hourly: 'Visitors over time (Today): visitors and page views per local hour',
   series_hourly_sessions: 'Visitors over time (Today): sessions per local hour',
   top_pages: 'Top pages (from the 15-minute rollup)',
+  top_pages_filtered: 'Top pages while the overview is filtered (raw events: the rollup has no country, device, ...)',
   pages_all: 'Account export (Settings > Download your data): every page of a site over its stored history',
   sources: 'Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/stats/channels.ts channelOf) and Top referrers',
   countries: 'Top locations',
@@ -47,5 +48,17 @@ export function queriesMarkdown(): string {
   for (const [name, sql] of Object.entries(QUERIES) as [QueryName, string][]) {
     parts.push(`## ${name}`, '', USED_BY[name], '', '```sql', sql, '```', '');
   }
+  parts.push(
+    '## Filters',
+    '',
+    'A click on a page, country, referrer, device or browser filters the overview (decision 30). Each filter adds',
+    'one condition right after the range condition of these queries; set its parameter too, e.g.',
+    "`SET param_f_page = '/pricing'`. Capture rate and the warnings feed are never filtered.",
+    '',
+    `Event queries: ${Object.entries(FILTERABLE).filter(([, t]) => t === 'events').map(([q]) => q).join(', ')}.`,
+    `Session queries: ${Object.entries(FILTERABLE).filter(([, t]) => t === 'sessions').map(([q]) => q).join(', ')}.`,
+    '',
+  );
+  for (const k of FILTER_KEYS) parts.push(`### ${k}`, '', '```sql', `-- events:   AND ${EVENT_FILTERS[k]}`, `-- sessions: AND ${SESSION_FILTERS[k]}`, '```', '');
   return parts.join('\n');
 }

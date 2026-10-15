@@ -1,6 +1,18 @@
 import { attachment } from '../http/request';
-import type { Api } from '../http/types';
+import type { Api, Ctx } from '../http/types';
+import { FILTER_KEYS } from '../stats';
+import type { Filters } from '../stats';
 import type { Services } from '../services';
+
+/** Overview filters from the query string (?page=/pricing&country=PK): plain values, length-capped. */
+const filtersOf = (c: Ctx): Filters => {
+  const out: Filters = {};
+  for (const k of FILTER_KEYS) {
+    const v = c.req.query(k);
+    if (typeof v === 'string' && v.trim() && v.length <= 500) out[k] = v;
+  }
+  return out;
+};
 
 /** Stage 6 Query API: the numbers behind the dashboard pages (docs/QUERIES.md). */
 export function statsRoutes(app: Api, { sites, reports, now }: Services) {
@@ -9,7 +21,7 @@ export function statsRoutes(app: Api, { sites, reports, now }: Services) {
   app.get('/sites/:id/stats/overview', async (c) => {
     const site = await sites.load(c);
     const range = rangeOf(c, site);
-    return c.json(await reading(() => reader().overview(site._id, range)));
+    return c.json(await reading(() => reader().overview(site._id, range, filtersOf(c))));
   });
 
   app.get('/sites/:id/stats/live', async (c) => {

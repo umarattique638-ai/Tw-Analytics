@@ -105,16 +105,29 @@ export function LiveChart({ data }: { data: { time: string; count: number }[] })
 }
 
 /* ---------- Generic bar list (devices, pages, locations, browsers) ---------- */
-export function BarList({ rows, icon: Icon, empty = 'No data yet.' }: { rows: Row[]; icon?: LucideIcon; empty?: string }) {
+/** `onSelect`: rows with a `key` become buttons that filter the overview by that value (decision 30). */
+export function BarList({ rows, icon: Icon, empty = 'No data yet.', onSelect }: { rows: Row[]; icon?: LucideIcon; empty?: string; onSelect?: (row: Row) => void }) {
   if (rows.length === 0) return <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">{empty}</p>;
   return (
     <ul className="grid gap-3.5">
       {rows.map((r) => (
-        <li key={r.label}>
+        // A clickable row: the label is the button, stretched over the whole row (bar included).
+        <li key={r.label} className={onSelect && r.key ? 'group relative -mx-2 rounded-lg px-2 py-1 transition hover:bg-teal-50/70 dark:hover:bg-teal-400/5' : undefined}>
           <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2 text-slate-700 dark:text-slate-200">
               {Icon && <Icon className="size-4 flex-none text-slate-400" />}
-              <span className="truncate">{r.label}</span>
+              {onSelect && r.key ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(r)}
+                  title={`Show only ${r.label}`}
+                  className="truncate rounded text-left underline-offset-2 group-hover:text-teal-700 group-hover:underline after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-teal-500/40 dark:group-hover:text-teal-300"
+                >
+                  {r.label}
+                </button>
+              ) : (
+                <span className="truncate">{r.label}</span>
+              )}
             </span>
             <span className="flex-none tabular-nums text-slate-500 dark:text-slate-400">
               {r.value.toLocaleString()} <span className="ml-1 text-xs text-slate-400">{r.pct}%</span>

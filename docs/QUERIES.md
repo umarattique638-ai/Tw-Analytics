@@ -90,6 +90,19 @@ ORDER BY pageviews DESC, pathname
 LIMIT 10
 ```
 
+## top_pages_filtered
+
+Top pages while the overview is filtered (raw events: the rollup has no country, device, ...)
+
+```sql
+SELECT pathname, count() AS pageviews, uniqExact(visitor_hash) AS visitors
+FROM {db}.events
+WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview'
+GROUP BY pathname
+ORDER BY pageviews DESC, pathname
+LIMIT 10
+```
+
 ## pages_all
 
 Account export (Settings > Download your data): every page of a site over its stored history
@@ -271,4 +284,48 @@ FROM {db}.events
 WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 1 DAY AND received_at <= {now:DateTime64(3, 'UTC')}
 ORDER BY received_at DESC
 LIMIT 20
+```
+
+## Filters
+
+A click on a page, country, referrer, device or browser filters the overview (decision 30). Each filter adds
+one condition right after the range condition of these queries; set its parameter too, e.g.
+`SET param_f_page = '/pricing'`. Capture rate and the warnings feed are never filtered.
+
+Event queries: visitors_pageviews, series_daily, series_hourly, top_pages_filtered, countries, devices, browsers.
+Session queries: sessions_bounce, series_daily_sessions, series_hourly_sessions, sources.
+
+### page
+
+```sql
+-- events:   AND pathname = {f_page:String}
+-- sessions: AND session_id IN (SELECT session_id FROM {db}.events WHERE site_id = {site:UInt64} AND timestamp >= toDateTime64({from:String}, 3, {tz:String}) AND timestamp < toDateTime64({until:String}, 3, {tz:String}) AND name = 'pageview' AND pathname = {f_page:String})
+```
+
+### country
+
+```sql
+-- events:   AND country_code = {f_country:String}
+-- sessions: AND country_code = {f_country:String}
+```
+
+### source
+
+```sql
+-- events:   AND session_id IN (SELECT session_id FROM {db}.sessions WHERE site_id = {site:UInt64} AND start >= toDateTime64({from:String}, 3, {tz:String}) AND start < toDateTime64({until:String}, 3, {tz:String}) AND referrer_source = {f_source:String})
+-- sessions: AND referrer_source = {f_source:String}
+```
+
+### device
+
+```sql
+-- events:   AND device = {f_device:String}
+-- sessions: AND device = {f_device:String}
+```
+
+### browser
+
+```sql
+-- events:   AND browser = {f_browser:String}
+-- sessions: AND browser = {f_browser:String}
 ```

@@ -11,8 +11,9 @@ import { addSite, fakeVerifier } from './helpers/install';
 const NOW = new Date('2026-10-08T10:00:00Z');
 
 function fakeStats(calls: string[]): StatsReader {
-  const overview = async (site: number, range: ReturnType<typeof resolveRange>): Promise<Overview> => {
-    calls.push(`overview ${site} ${range.key} ${range.tz} ${range.from}..${range.to}`);
+  const overview = async (site: number, range: ReturnType<typeof resolveRange>, filters?: Record<string, string>): Promise<Overview> => {
+    const f = filters && Object.keys(filters).length ? ` ${JSON.stringify(filters)}` : '';
+    calls.push(`overview ${site} ${range.key} ${range.tz} ${range.from}..${range.to}${f}`);
     return {
       range,
       kpis: { visitors: 4, visitorsEstimated: false, sessions: 4, pageviews: 6, bounceRate: 0.5, previous: { visitors: 1, sessions: 0, pageviews: 1, bounceRate: null } },
@@ -73,6 +74,13 @@ describe('Query API (Stage 6) over HTTP', () => {
     expect((await a('GET', `/sites/${site.id}/stats/overview?range=7d`)).status).toBe(200);
     expect(calls).toEqual([`overview ${site.id} 7d Asia/Karachi 2026-10-02..2026-10-08`]);
     expect((await a('GET', `/sites/${site.id}/stats/overview?range=forever`)).status).toBe(400);
+  });
+
+  it('overview filters (decision 30) reach the reader; unknown or empty ones are ignored', async () => {
+    const { a, site, calls } = await setup();
+    const q = new URLSearchParams({ range: 'today', page: '/pricing', country: 'PK', device: '', colour: 'red' });
+    expect((await a('GET', `/sites/${site.id}/stats/overview?${q}`)).status).toBe(200);
+    expect(calls).toEqual([`overview ${site.id} today Asia/Karachi 2026-10-08..2026-10-08 {"page":"/pricing","country":"PK"}`]);
   });
 
   it('another tenant cannot read the stats', async () => {

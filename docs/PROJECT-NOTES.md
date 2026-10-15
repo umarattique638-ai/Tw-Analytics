@@ -587,6 +587,20 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - MongoDB: site_health.movedTo and the audit action site.domain_changed: run `pnpm db:mongo` BEFORE
      deploying.
 
+30. DECIDED 2026-10-15 (owner): the dashboard overview, clearer numbers and click-to-filter.
+   - Bounce rate shows "—" and "Too few visits yet" below 10 visits in the period, and its change only
+     when both periods have 10+ (display only; the API value is unchanged).
+   - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
+     change vs the previous period.
+   - A click on a page, referrer, country, device or browser filters the whole overview (several = all).
+     The filters live in the address (?page=/pricing&country=PK), are cleared when another site is
+     chosen, and show as removable chips. API: GET /sites/:id/stats/overview?range=..&page=..&country=..
+     &source=..&device=..&browser=.. Each filter adds one parameterised condition after a query's range
+     condition (stats/queries.ts filtered(); docs/QUERIES.md "Filters"); "page" = the hits on that page for
+     event queries and the visits that viewed it for session queries. Filtered top pages come from raw
+     events (top_pages_filtered: the rollup has no country or device). Never filtered: Active now, Live
+     visitors, Latest hits, capture rate, warnings, and Export CSV.
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

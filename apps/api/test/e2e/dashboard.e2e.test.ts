@@ -37,8 +37,13 @@ const overview = (range: Range): Overview => ({
   capture: { received: 987, expected: 1000, rate: 0.987 },
   drops: [{ reason: 'hostname', hits: 17, detail: 'staging.realshop.test', last: NOW - 60_000 }],
 });
+/** Every filter set the dashboard asked the overview for (decision 30). */
+const filterCalls: Record<string, string>[] = [];
 const stats = {
-  overview: async (_site: number, range: Range) => overview(range),
+  overview: async (_site: number, range: Range, filters?: Record<string, string>) => {
+    filterCalls.push(filters ?? {});
+    return overview(range);
+  },
   live: async (): Promise<Live> => ({
     now: NOW,
     active: 7,
@@ -130,6 +135,29 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     if (process.env.TW_SCREENSHOTS) await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/6-dashboard.png`, fullPage: true });
     // None of the old sample values survived anywhere.
     for (const old of ['John', '6,474', '5,140', '41.2%', '/blog/privacy-analytics', 'United States', 'Sample data']) expect(t, old).not.toContain(old);
+
+    // Decision 30: a click on a page, then a country, narrows the overview; the address keeps it; X removes it.
+    await page.getByRole('button', { name: '/only-real-page' }).click();
+    await page.getByTestId('filter-bar').waitFor();
+    await page.getByRole('button', { name: 'Pakistan' }).click();
+    await expect.poll(() => filterCalls.some((f) => f.page === '/only-real-page' && f.country === 'PK')).toBe(true);
+    expect(new URL(page.url()).searchParams.get('page')).toBe('/only-real-page');
+    const bar = (await page.getByTestId('filter-bar').innerText()).replace(/\s+/g, ' ');
+    for (const want of ['Showing only', 'Page', '/only-real-page', 'Country', 'Pakistan', 'Clear all']) expect(bar, want).toContain(want);
+    await expect.poll(() => page.evaluate(() => document.querySelector('main')!.scrollTop)).toBe(0); // back at the top, where the filter is
+    if (process.env.TW_SCREENSHOTS) await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/6b-dashboard-filtered.png` });
+    await page.getByRole('button', { name: 'Remove the page filter' }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('page')).toBeNull();
+    await page.getByRole('button', { name: 'Remove the country filter' }).click();
+    await page.getByTestId('filter-bar').waitFor({ state: 'detached' });
+    // The whole row is clickable, not only its name: a click on the bar itself filters too.
+    const row = page.locator('li', { has: page.getByRole('button', { name: '/only-real-page' }) });
+    await row.scrollIntoViewIfNeeded();
+    const box = (await row.boundingBox())!;
+    await page.mouse.click(box.x + box.width - 12, box.y + box.height - 4);
+    await page.getByTestId('filter-bar').waitFor();
+    await page.getByRole('button', { name: 'Remove the page filter' }).click();
+    await page.getByTestId('filter-bar').waitFor({ state: 'detached' });
 
     await page.getByRole('link', { name: 'Events' }).click();
     await page.locator('[data-event="trial_started"]').waitFor();

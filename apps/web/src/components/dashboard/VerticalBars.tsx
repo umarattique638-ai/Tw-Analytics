@@ -4,9 +4,11 @@ import type { Row } from './types';
 type Props = {
   rows: Row[];
   iconFor?: (label: string) => LucideIcon;
+  /** Rows with a `key` become buttons that filter the overview (decision 30). */
+  onSelect?: (row: Row) => void;
 };
 
-export default function VerticalBars({ rows, iconFor }: Props) {
+export default function VerticalBars({ rows, iconFor, onSelect }: Props) {
   const max = Math.max(...rows.map((r) => r.value), 1);
 
   return (
@@ -15,7 +17,7 @@ export default function VerticalBars({ rows, iconFor }: Props) {
         const Icon = iconFor?.(r.label);
         const height = Math.max((r.value / max) * 100, 4);
         return (
-          <div key={r.label} className="group flex min-w-0 flex-1 flex-col items-center">
+          <div key={r.label} className={`group flex min-w-0 flex-1 flex-col items-center ${onSelect && r.key ? 'relative cursor-pointer rounded-xl transition hover:bg-teal-50/60 dark:hover:bg-teal-400/5' : ''}`}>
             {/* chart area: fixed height, bar neeche se upar barhta hai */}
             <div className="flex h-56 w-full flex-col items-center justify-end border-b border-slate-200 dark:border-slate-800">
               <div className="mb-2 text-center">
@@ -31,7 +33,18 @@ export default function VerticalBars({ rows, iconFor }: Props) {
             {/* label */}
             <div className="mt-3 flex max-w-full items-center justify-center gap-1.5 text-[13px] font-medium text-slate-600 dark:text-slate-300">
               {Icon && <Icon className="size-3.5 flex-none text-slate-400" />}
-              <span className="truncate">{r.label}</span>
+              {onSelect && r.key ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(r)}
+                  title={`Show only ${r.label}`}
+                  className="truncate rounded underline-offset-2 group-hover:text-teal-700 group-hover:underline after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-teal-500/40 dark:group-hover:text-teal-300"
+                >
+                  {r.label}
+                </button>
+              ) : (
+                <span className="truncate">{r.label}</span>
+              )}
             </div>
           </div>
         );

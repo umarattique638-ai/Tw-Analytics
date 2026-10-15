@@ -1,4 +1,5 @@
 import { Activity, Download, Eye, Globe, MapPin, Monitor, Smartphone, Tablet, Timer, Users, Zap } from 'lucide-react';
+import FilterBar from '../components/dashboard/FilterBar';
 import FinishSetup from '../components/dashboard/FinishSetup';
 import GettingStarted from '../components/dashboard/GettingStarted';
 import HealthBanner from '../components/dashboard/HealthBanner';
@@ -17,6 +18,7 @@ import type { Site, User } from '../api/client';
 import { capital, change, countryName, duration, num, percent, share } from '../lib/format';
 import { greeting, useCsvExport, useLive, useOverview } from '../hooks/useDashboard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useOverviewFilters } from '../hooks/useOverviewFilters';
 import { useRange } from '../hooks/useRange';
 import { useSession } from '../hooks/useSession';
 
@@ -39,7 +41,8 @@ export default function DashboardPage() {
 
 function Overview({ site, name }: { site: Site; name: string }) {
   const [range, setRange] = useRange();
-  const overview = useOverview(site.id, range);
+  const filter = useOverviewFilters(site.id);
+  const overview = useOverview(site.id, range, filter.filters);
   const live = useLive(site.id);
   const csv = useCsvExport(site.id, range);
   const o = overview.data;
@@ -77,6 +80,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
       />
 
       <HealthBanner site={site} />
+      <FilterBar filters={filter.filters} active={filter.active} onRemove={filter.remove} onClear={filter.clear} />
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -139,27 +143,44 @@ function Overview({ site, name }: { site: Site; name: string }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Top pages" subtitle="Page views in this period">
-          <BarList rows={share(o?.pages ?? [])} />
+          <BarList rows={share((o?.pages ?? []).map((r) => ({ ...r, key: r.label })))} onSelect={(r) => filter.set('page', r.key!)} />
         </Panel>
         <Panel title="Top referrers" subtitle="Sessions by referring site">
-          <BarList rows={share(o?.referrers ?? [])} icon={Globe} empty="No referrers yet: all direct traffic." />
+          <BarList
+            rows={share((o?.referrers ?? []).map((r) => ({ ...r, key: r.label })))}
+            icon={Globe}
+            empty="No referrers yet: all direct traffic."
+            onSelect={(r) => filter.set('source', r.key!)}
+          />
         </Panel>
         <Panel title="Top locations" subtitle="Visitors by country">
-          <BarList rows={share((o?.countries ?? []).map((r) => ({ ...r, label: countryName(r.label) })))} icon={MapPin} />
+          <BarList
+            rows={share((o?.countries ?? []).map((r) => ({ ...r, label: countryName(r.label), key: r.label || undefined })))}
+            icon={MapPin}
+            onSelect={(r) => filter.set('country', r.key!)}
+          />
         </Panel>
         <WarningsFeed items={o?.drops ?? []} />
         <Panel title="Devices" subtitle="Visitors by device">
           {o && o.devices.length === 0 ? (
             <EmptyState compact title="No data yet" />
           ) : (
-            <VerticalBars rows={share((o?.devices ?? []).map((r) => ({ ...r, label: capital(r.label) })))} iconFor={deviceIcon} />
+            <VerticalBars
+              rows={share((o?.devices ?? []).map((r) => ({ ...r, label: capital(r.label), key: r.label || undefined })))}
+              iconFor={deviceIcon}
+              onSelect={(r) => filter.set('device', r.key!)}
+            />
           )}
         </Panel>
         <Panel title="Browsers" subtitle="Visitors by browser">
           {o && o.browsers.length === 0 ? (
             <EmptyState compact title="No data yet" />
           ) : (
-            <VerticalBars rows={share((o?.browsers ?? []).map((r) => ({ ...r, label: r.label || 'Other' })))} iconFor={() => Globe} />
+            <VerticalBars
+              rows={share((o?.browsers ?? []).map((r) => ({ ...r, label: r.label || 'Other', key: r.label || undefined })))}
+              iconFor={() => Globe}
+              onSelect={(r) => filter.set('browser', r.key!)}
+            />
           )}
         </Panel>
       </div>
