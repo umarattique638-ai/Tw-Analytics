@@ -5,9 +5,9 @@ import { attachment, body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
 import { parseRangeKey } from '../services/reports';
-import { resolveRange } from '../models/stats';
-import type { ExportDoc } from '../models/types';
+import { resolveRange } from '../repositories/stats';
 import { exportView } from '../views/json';
+import type { ExportDoc } from '../models/export.model';
 
 /** `:exportId` of the URL; anything that is not an id is simply "no such report". */
 const exportId = (c: Ctx) => {

@@ -1,7 +1,7 @@
 import { attachment } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { FILTER_KEYS } from '../models/stats';
-import type { FilterKey, Filters } from '../models/stats';
+import { FILTER_KEYS } from '../repositories/stats';
+import type { FilterKey, Filters } from '../repositories/stats';
 import { HttpError } from '../http/errors';
 import type { Services } from '../services';
 

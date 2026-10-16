@@ -3,7 +3,8 @@ import type { ApiConfig } from '../config';
 import { SESSION_COOKIE } from '../lib/constants';
 import type { Ctx } from '../http/types';
 import { newSessionToken, sha256Hex } from '../lib/secrets';
-import type { ControlStore, UserDoc } from '../models/types';
+import type { ControlStore } from '../repositories/control-store';
+import type { UserDoc } from '../models/user.model';
 
 /** Signing in: a random token, stored only as its SHA-256, sent as an httpOnly cookie (and as a Bearer token on request). */
 export function createSessionService(store: ControlStore, config: ApiConfig, now: () => Date) {

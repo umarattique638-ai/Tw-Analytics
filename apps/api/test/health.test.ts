@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader, SiteActivity, SpikeDetails, WrongHost } from '../src/models/clickhouse';
+import type { AnalyticsReader } from '../src/repositories/clickhouse';
 import { defaultConfig } from '../src/config';
-import { MemoryKv } from '../src/models/kv';
+import { MemoryKv } from '../src/repositories/kv';
 import { MemoryMailer } from '../src/services/mail';
 import { isSilent, silentHoursFor } from '../src/services/health';
 import { median, spikeOf } from '../src/services/spikes';
 import { snippetsFor } from '../src/views/snippets';
-import { MemoryStore } from '../src/models/memory-store';
+import { MemoryStore } from '../src/repositories/memory-store';
 import { addSite, fakeSiteFetch } from './helpers/install';
+import type { SiteActivity, SpikeDetails, WrongHost } from '../src/models/analytics.model';
 
 /**
  * Decision 28: is each site still sending data? Silent for longer than its habit -> the install check runs:

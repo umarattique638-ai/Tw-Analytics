@@ -11,9 +11,9 @@ import type { Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { defaultConfig } from '../../src/config';
-import { MemoryKv } from '../../src/models/kv';
+import { MemoryKv } from '../../src/repositories/kv';
 import { MemoryMailer } from '../../src/services/mail';
-import { MemoryStore } from '../../src/models/memory-store';
+import { MemoryStore } from '../../src/repositories/memory-store';
 
 /**
  * Decision 27 in the browser: a new account confirms its e-mail before it can log in, and "Forgot

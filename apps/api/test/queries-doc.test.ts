@@ -6,7 +6,7 @@ import { queriesMarkdown } from '../src/queries-doc';
 const file = new URL('../../../docs/QUERIES.md', import.meta.url);
 
 describe('docs/QUERIES.md', () => {
-  it('is identical to the queries in apps/api/src/models/stats/queries.ts', () => {
+  it('is identical to the queries in apps/api/src/repositories/stats/queries.ts', () => {
     const want = queriesMarkdown();
     if (process.env.TW_UPDATE_DOCS === '1' || !existsSync(file)) writeFileSync(file, want);
     expect(readFileSync(file, 'utf8')).toBe(want);

@@ -5,13 +5,14 @@ import { RESET_MINUTES, SESSION_COOKIE, VERIFY_EMAIL_HOURS } from '../lib/consta
 import { HttpError, errorText, logError } from '../http/errors';
 import { EMAIL_RE, body, clientIp, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { resetPasswordMail, verifyEmailMail } from '../services/mail';
 import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from '../lib/passwords';
 import { newSessionToken, sha256Hex } from '../lib/secrets';
 import type { Services } from '../services';
-import { DuplicateError } from '../models/types';
-import type { TenantDoc, UserDoc } from '../models/types';
 import { userView } from '../views/json';
+import { resetPasswordMail, verifyEmailMail } from '../views/emails';
+import { DuplicateError } from '../repositories/control-store';
+import type { TenantDoc } from '../models/tenant.model';
+import type { UserDoc } from '../models/user.model';
 
 const invalidPassword = () => new HttpError(400, 'invalid_password', `Use at least ${PASSWORD_MIN} characters.`);
 const validPassword = (p: string) => p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;

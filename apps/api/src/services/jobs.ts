@@ -1,10 +1,12 @@
-import type { AnalyticsEraser, DataTable } from '../models/eraser';
-import { DATA_TABLES, tablesWithRows, totalOf } from '../models/eraser';
-import { deleteKeys } from '../models/kv';
-import type { SiteConfigSink } from '../models/kv';
-import { erasureDoneMail } from './mail';
+import type { AnalyticsEraser, DataTable } from '../repositories/eraser';
+import { DATA_TABLES, tablesWithRows, totalOf } from '../repositories/eraser';
+import { deleteKeys } from '../repositories/kv';
+import type { SiteConfigSink } from '../repositories/kv';
 import type { Mailer } from './mail';
-import type { ControlStore, ErasureDoc, ErasurePatch, SiteDoc } from '../models/types';
+import { erasureDoneMail } from '../views/emails';
+import type { ControlStore } from '../repositories/control-store';
+import type { ErasureDoc, ErasurePatch } from '../models/erasure.model';
+import type { SiteDoc } from '../models/site.model';
 
 /**
  * The two nightly jobs of Phase 3 (PLAN 9.2: "retention policy enforcement + pruning job", "account

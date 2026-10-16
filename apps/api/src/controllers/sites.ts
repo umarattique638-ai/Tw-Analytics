@@ -8,11 +8,12 @@ import { body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
 import { snippetsFor } from '../views/snippets';
-import { DuplicateError } from '../models/types';
-import type { KeyDoc, SiteDoc, SitePatch } from '../models/types';
 import { siteView } from '../views/json';
 import { VerifyInputError, probeDomain, runActiveCheck } from '../services/verifier';
-import { current, healthView, watched } from '../services/health';
+import { current, watched } from '../services/health';
+import { DuplicateError } from '../repositories/control-store';
+import type { KeyDoc, SiteDoc, SitePatch } from '../models/site.model';
+import { healthView } from '../views/site-health';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
 const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a timezone from the list.');

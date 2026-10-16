@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono';
-import type { TenantDoc, UserDoc } from '../models/types';
+import type { TenantDoc } from '../models/tenant.model';
+import type { UserDoc } from '../models/user.model';
 
 /** What the session middleware puts on a signed-in request. */
 export type Vars = { user: UserDoc; tenant: TenantDoc; token: string };

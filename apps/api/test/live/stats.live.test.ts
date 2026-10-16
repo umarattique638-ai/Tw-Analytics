@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ClickHouseClient } from '../../src/models/clickhouse';
-import { StatsReader, resolveRange } from '../../src/models/stats';
+import { ClickHouseClient } from '../../src/repositories/clickhouse';
+import { StatsReader, resolveRange } from '../../src/repositories/stats';
 
 /**
  * Stage 6 on a REAL ClickHouse (the owner's ClickHouse Cloud, or a local server in CI): known rows go

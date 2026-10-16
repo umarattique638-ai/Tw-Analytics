@@ -7,10 +7,10 @@ import type { Services } from '../services';
 import { SETUP_TTL_DAYS } from '../services/setup';
 import type { Setup } from '../services/setup';
 import { snippetsFor } from '../views/snippets';
-import { DuplicateError } from '../models/types';
-import type { KeyDoc, SiteDoc, SitePatch } from '../models/types';
 import { VerifyInputError, probeDomain, runActiveCheck } from '../services/verifier';
 import { siteView } from '../views/json';
+import { DuplicateError } from '../repositories/control-store';
+import type { KeyDoc, SiteDoc, SitePatch } from '../models/site.model';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
 const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a timezone from the list.');

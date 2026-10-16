@@ -2,7 +2,10 @@ import { ObjectId } from 'mongodb';
 import { AUDIT_KEEP_DAYS } from '../lib/constants';
 import { errorText, logError } from '../http/errors';
 import type { Ctx } from '../http/types';
-import type { AuditAction, ControlStore, SiteDoc, UserDoc } from '../models/types';
+import type { AuditAction } from '../models/audit.model';
+import type { ControlStore } from '../repositories/control-store';
+import type { SiteDoc } from '../models/site.model';
+import type { UserDoc } from '../models/user.model';
 
 /**
  * Activity log (Phase 3). Written after the change succeeded; a failure to write it is logged and never

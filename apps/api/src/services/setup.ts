@@ -2,8 +2,8 @@ import type { ObjectId } from 'mongodb';
 import type { SiteConfig } from '@tailwatch/contract';
 import { allowedHostsFor } from '../lib/domain';
 import { HttpError, errorText, logError } from '../http/errors';
-import { kvName, kvProblem } from '../models/kv';
-import type { SiteConfigSink } from '../models/kv';
+import { kvName, kvProblem } from '../repositories/kv';
+import type { SiteConfigSink } from '../repositories/kv';
 import type { ApiConfig } from '../config';
 
 /**

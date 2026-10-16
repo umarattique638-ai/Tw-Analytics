@@ -1,7 +1,6 @@
 /**
  * Outgoing e-mail.
  *   providers.ts  how mail is sent (Brevo, Resend, console, none) and which one the environment picks
- *   templates.ts  what is sent (e-mail verification, password reset, account deleted, erasure finished)
+ * What is sent (the e-mails themselves) is a view: views/emails.ts.
  */
 export * from './providers';
-export * from '../../views/emails';

@@ -1,11 +1,10 @@
-import type { AnalyticsReader } from '../models/clickhouse';
+import type { AnalyticsReader } from '../repositories/clickhouse';
 import type { ApiConfig } from '../config';
-import type { AnalyticsEraser } from '../models/eraser';
+import type { AnalyticsEraser } from '../repositories/eraser';
 import type { Limiters } from '../http/limiter';
-import type { SiteConfigSink } from '../models/kv';
+import type { SiteConfigSink } from '../repositories/kv';
 import type { Mailer } from './mail';
-import type { StatsReader } from '../models/stats';
-import type { ControlStore } from '../models/types';
+import type { StatsReader } from '../repositories/stats';
 import type { VerifierOptions } from './verifier';
 import type { AuditLog } from './audit';
 import type { ReportsService } from './reports';
@@ -14,6 +13,7 @@ import type { SiteService } from './sites';
 import type { KvSyncService } from './kv-sync';
 import type { SetupService } from './setup';
 import type { HealthService } from './health';
+import type { ControlStore } from '../repositories/control-store';
 
 /** What createApp needs from the outside world (real services in production, fakes in tests). */
 export interface Deps {

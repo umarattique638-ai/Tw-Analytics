@@ -1,4 +1,4 @@
-import type { Range } from './range';
+import type { Range } from '../repositories/stats/range';
 
 /** What the Query API answers (the dashboard's api/client.ts mirrors these). */
 export interface Bar {

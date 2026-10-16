@@ -2,16 +2,16 @@ import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { ObjectId } from 'mongodb';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader } from '../src/models/clickhouse';
+import type { AnalyticsReader } from '../src/repositories/clickhouse';
 import { defaultConfig } from '../src/config';
-import { MemoryEraser } from '../src/models/eraser';
-import type { DataTable } from '../src/models/eraser';
+import { MemoryEraser } from '../src/repositories/eraser';
+import type { DataTable } from '../src/repositories/eraser';
 import { ERASURE_SETTLE_DAYS, retentionCutoff } from '../src/services/jobs';
-import { MemoryKv, kvName } from '../src/models/kv';
-import type { SiteConfigSink } from '../src/models/kv';
+import { MemoryKv, kvName } from '../src/repositories/kv';
+import type { SiteConfigSink } from '../src/repositories/kv';
 import { MemoryMailer } from '../src/services/mail';
-import type { StatsReader } from '../src/models/stats';
-import { MemoryStore } from '../src/models/memory-store';
+import type { StatsReader } from '../src/repositories/stats';
+import { MemoryStore } from '../src/repositories/memory-store';
 import { addSite, fakeVerifier } from './helpers/install';
 
 /**

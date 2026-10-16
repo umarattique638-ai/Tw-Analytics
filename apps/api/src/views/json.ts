@@ -3,7 +3,10 @@
  * private (identity secrets, password hashes, CSV bodies) is ever sent.
  */
 import { ObjectId } from 'mongodb';
-import type { AuditDoc, ExportDoc, SiteDoc, UserDoc } from '../models/types';
+import type { AuditDoc } from '../models/audit.model';
+import type { ExportDoc } from '../models/export.model';
+import type { SiteDoc } from '../models/site.model';
+import type { UserDoc } from '../models/user.model';
 
 /** A site. Never the identity secret. */
 export function siteView(site: SiteDoc) {

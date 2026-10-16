@@ -4,20 +4,20 @@
  *   - vercel.ts   the Vercel serverless function (free, no card)
  * So the rules (allow-list on a public server, secure cookies on https, ...) cannot drift apart.
  */
-import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './models/clickhouse';
-import type { AnalyticsReader } from './models/clickhouse';
+import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './repositories/clickhouse';
+import type { AnalyticsReader } from './repositories/clickhouse';
 import type { Deps } from './app';
 import { defaultConfig, parseAllowlist } from './config';
 import type { ApiConfig } from './config';
-import { ClickHouseEraser } from './models/eraser';
-import type { AnalyticsEraser } from './models/eraser';
-import { CloudflareKv, UnconfiguredKv } from './models/kv';
-import type { SiteConfigSink } from './models/kv';
+import { ClickHouseEraser } from './repositories/eraser';
+import type { AnalyticsEraser } from './repositories/eraser';
+import { CloudflareKv, UnconfiguredKv } from './repositories/kv';
+import type { SiteConfigSink } from './repositories/kv';
 import { mailerFromEnv } from './services/mail';
 import type { Mailer } from './services/mail';
-import { StatsReader } from './models/stats';
-import { MongoStore } from './models/mongo-store';
-import type { ControlStore } from './models/types';
+import { StatsReader } from './repositories/stats';
+import { MongoStore } from './repositories/mongo-store';
+import type { ControlStore } from './repositories/control-store';
 
 type Env = Record<string, string | undefined>;
 
@@ -59,7 +59,7 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
 export async function storeFromEnv(env: Env, hosted: boolean): Promise<ControlStore & { close?(): Promise<void> }> {
   // Local smoke tests of a built bundle only. Never on a host: data would vanish on every restart.
   // Loaded only when asked for: it reads infra/mongodb at load time, which a host does not have.
-  if (env.TW_STORE === 'memory' && !hosted) return new (await import('./models/memory-store')).MemoryStore();
+  if (env.TW_STORE === 'memory' && !hosted) return new (await import('./repositories/memory-store')).MemoryStore();
   const url = env.TW_MONGO_URL;
   if (!url) throw new SetupError(['Missing TW_MONGO_URL (MongoDB connection string).']);
   try {

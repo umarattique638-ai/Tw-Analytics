@@ -3,13 +3,14 @@ import { SITE_KEY_RE, validate } from '@tailwatch/contract';
 import type { SiteConfig } from '@tailwatch/contract';
 import { BROWSER_UA } from '../../../packages/contract/fixtures/payloads';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader, RecentActivity } from '../src/models/clickhouse';
+import type { AnalyticsReader } from '../src/repositories/clickhouse';
 import { defaultConfig, parseAllowlist } from '../src/config';
 import { configFromEnv } from '../src/runtime';
-import { MemoryKv } from '../src/models/kv';
-import type { PutOptions, SiteConfigSink } from '../src/models/kv';
-import { MemoryStore } from '../src/models/memory-store';
+import { MemoryKv } from '../src/repositories/kv';
+import type { PutOptions, SiteConfigSink } from '../src/repositories/kv';
+import { MemoryStore } from '../src/repositories/memory-store';
 import { addSite, fakeVerifier } from './helpers/install';
+import type { RecentActivity } from '../src/models/analytics.model';
 
 /** Cheap scrypt for tests; production uses N = 2^17 (lib/passwords.ts). */
 const FAST = { N: 1024, r: 8, p: 1 };

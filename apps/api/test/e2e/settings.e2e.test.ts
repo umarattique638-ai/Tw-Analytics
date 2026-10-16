@@ -11,11 +11,11 @@ import type { Browser, Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { defaultConfig } from '../../src/config';
-import { MemoryEraser } from '../../src/models/eraser';
-import { MemoryKv } from '../../src/models/kv';
+import { MemoryEraser } from '../../src/repositories/eraser';
+import { MemoryKv } from '../../src/repositories/kv';
 import { MemoryMailer } from '../../src/services/mail';
-import type { StatsReader } from '../../src/models/stats';
-import { MemoryStore } from '../../src/models/memory-store';
+import type { StatsReader } from '../../src/repositories/stats';
+import { MemoryStore } from '../../src/repositories/memory-store';
 import { fakeVerifier } from '../helpers/install';
 
 /**

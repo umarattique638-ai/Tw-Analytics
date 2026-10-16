@@ -1,5 +1,5 @@
 import type { SiteConfig } from '@tailwatch/contract';
-import type { SiteDoc } from './types';
+import type { SiteDoc } from '../models/site.model';
 
 /**
  * "KV sync on write" (BUILD-ORDER Stage 5). The collector never touches a database (invariant 1): it

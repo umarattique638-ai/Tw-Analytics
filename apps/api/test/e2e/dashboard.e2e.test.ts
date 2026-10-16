@@ -11,9 +11,9 @@ import type { Browser } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { defaultConfig } from '../../src/config';
-import { MemoryKv } from '../../src/models/kv';
-import type { DropsReport, EventsReport, Live, Overview, Range, StatsReader } from '../../src/models/stats';
-import { MemoryStore } from '../../src/models/memory-store';
+import { MemoryKv } from '../../src/repositories/kv';
+import type { DropsReport, EventsReport, Live, Overview, Range, StatsReader } from '../../src/repositories/stats';
+import { MemoryStore } from '../../src/repositories/memory-store';
 import { fakeVerifier } from '../helpers/install';
 
 /**

@@ -1,7 +1,17 @@
 import { Long, MongoClient, MongoServerError } from 'mongodb';
 import type { Collection, Db, ObjectId } from 'mongodb';
-import { DuplicateError } from './types';
-import type { AuditDoc, ControlStore, EmailVerificationDoc, ErasureDoc, ErasurePatch, ExportDoc, KvIssueDoc, MembershipDoc, SiteHealthDoc, PasswordResetDoc, SessionDoc, SiteDoc, SitePatch, TenantDoc, UserDoc } from './types';
+import { DuplicateError } from './control-store';
+import type { AuditDoc } from '../models/audit.model';
+import type { ControlStore } from './control-store';
+import type { EmailVerificationDoc, PasswordResetDoc } from '../models/auth-token.model';
+import type { ErasureDoc, ErasurePatch } from '../models/erasure.model';
+import type { ExportDoc } from '../models/export.model';
+import type { KvIssueDoc } from '../models/kv-issue.model';
+import type { MembershipDoc, TenantDoc } from '../models/tenant.model';
+import type { SiteHealthDoc } from '../models/site-health.model';
+import type { SessionDoc } from '../models/session.model';
+import type { SiteDoc, SitePatch } from '../models/site.model';
+import type { UserDoc } from '../models/user.model';
 
 /** Maps a duplicate-key error (11000) to the rule it broke. */
 function duplicate(error: unknown): never {

@@ -19,24 +19,31 @@ tw.js (packages/browser, packages/core)
 
 ## apps/api (Vercel serverless, Hono), MVC
 
-Owner, 2026-10-16: the API follows MVC (models, views, controllers) with a service layer. Only files moved
-and route functions were renamed (`siteRoutes` -> `siteController`); no logic changed.
+Owner, 2026-10-16: the API follows MVC (models, views, controllers) with a service layer and repositories.
+Only code moved (files, and declarations between files) and route functions were renamed
+(`siteRoutes` -> `siteController`); no logic changed.
 
 | Path | What it is |
 |---|---|
 | `app.ts` | Builds the app: error handling, CSRF guard, then `registerRoutes`. Nothing else. |
 | `routes.ts` | Which URL goes to which controller, in order; the signed-in paths. |
 | **`controllers/`** | One per area: `public`, `auth`, `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal`. Read the request, check it, call services and models, answer with a view. |
-| **`models/`** | Data and data access. |
-| `models/types.ts` | MongoDB document types (users, sites, keys, site_health, ...) and the `ControlStore` interface. |
-| `models/mongo-store.ts`, `models/memory-store.ts` | The MongoDB store; the in-memory one for tests. |
-| `models/validate.ts` | Checks documents against infra/mongodb/control-plane.schema.json (in-memory store). |
-| `models/clickhouse.ts` | ClickHouse HTTP client and readers (recent activity, site health, spikes). |
-| `models/stats/` | Query API: `range`, `queries` (the SQL of docs/QUERIES.md), `types`, `channels`, `reader`. |
-| `models/eraser.ts` | Deleting ClickHouse rows (retention, erasure). |
-| `models/kv.ts` | Cloudflare KV: the collector's copy of each site. |
+| **`models/`** | What the data looks like, nothing else: one file per model, `index.ts` lists them. |
+| `models/user.model.ts`, `tenant.model.ts`, `session.model.ts`, `auth-token.model.ts` | Users, workspaces and memberships, login sessions, reset and verification links. |
+| `models/site.model.ts`, `site-health.model.ts`, `kv-issue.model.ts` | Sites and keys, site health, sites whose KV copy may be out of date. |
+| `models/export.model.ts`, `audit.model.ts`, `erasure.model.ts` | Saved reports, the activity log (and every action it can record), data being erased. |
+| `models/analytics.model.ts`, `stats.model.ts` | Shapes read from ClickHouse: health check inputs; the Query API answers. |
+| **`repositories/`** | Reading and writing the data. |
+| `repositories/control-store.ts` | The `ControlStore` interface (every MongoDB operation) and `DuplicateError`. |
+| `repositories/mongo-store.ts`, `memory-store.ts` | The MongoDB store; the in-memory one for tests. |
+| `repositories/validate.ts` | Checks documents against infra/mongodb/control-plane.schema.json (in-memory store). |
+| `repositories/clickhouse.ts` | ClickHouse HTTP client and readers (recent activity, site health, spikes). |
+| `repositories/stats/` | Query API: `range`, `queries` (the SQL of docs/QUERIES.md), `channels`, `reader`. |
+| `repositories/eraser.ts` | Deleting ClickHouse rows (retention, erasure). |
+| `repositories/kv.ts` | Cloudflare KV: the collector's copy of each site. |
 | **`views/`** | What clients and people see. |
 | `views/json.ts` | JSON views of stored documents (never identity secrets, hashes or CSV bodies). |
+| `views/site-health.ts` | `healthView`: the site-health banner's JSON. |
 | `views/emails.ts` | Every e-mail (verification, reset, account deleted, site health, unusual traffic). |
 | `views/snippets.ts` | The install snippet and the custom-event code. |
 | **`services/`** | Business logic. |
@@ -51,12 +58,12 @@ and route functions were renamed (`siteRoutes` -> `siteController`); no logic ch
 | `services/maintenance.ts` | Nightly jobs: erasures, retention, KV reconcile. |
 | `services/health.ts`, `services/spikes.ts` | Is each site still sending data (decision 28, 29); unusual traffic (decision 31). |
 | `services/jobs.ts` | Erasure steps and retention pruning. |
-| `services/mail/` | Sending e-mail (Brevo, Resend, console); `index.ts` also re-exports `views/emails`. |
+| `services/mail/` | Sending e-mail (Brevo, Resend, console). What is sent is `views/emails.ts`. |
 | `services/verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`, `probe` (does the domain answer). |
 | `http/` | `errors`, `limiter` (rate limits), `request` helpers, `middleware` (errors, CSRF, `requireSession`, `requireCron`), `types`. |
 | `lib/` | `constants`, `domain`, `secrets`, `passwords`, `netguard`: small helpers without state. |
 | `server.ts`, `vercel.ts`, `runtime.ts`, `config.ts` | Entry points and configuration from the environment. |
-| `queries-doc.ts` | Writes docs/QUERIES.md from `models/stats/queries.ts`. |
+| `queries-doc.ts` | Writes docs/QUERIES.md from `repositories/stats/queries.ts`. |
 
 ## apps/collector (Cloudflare Worker)
 

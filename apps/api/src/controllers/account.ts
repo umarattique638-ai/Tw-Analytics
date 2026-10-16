@@ -6,13 +6,13 @@ import { HttpError, errorText, logError, logInfo } from '../http/errors';
 import { body, str } from '../http/request';
 import type { Api } from '../http/types';
 import { ERASURE_SETTLE_DAYS, advanceErasure } from '../services/jobs';
-import { accountDeletedMail } from '../services/mail';
 import { verifyPassword } from '../lib/passwords';
 import type { Services } from '../services';
 import { buildAccountExport } from '../services/account-export';
-import { localDate } from '../models/stats';
-import type { ErasureDoc } from '../models/types';
+import { localDate } from '../repositories/stats';
 import { count, userView } from '../views/json';
+import { accountDeletedMail } from '../views/emails';
+import type { ErasureDoc } from '../models/erasure.model';
 
 /** A fresh erasure record; the store fills in siteIds and publicKeys from what its transaction deletes. */
 const newErasure = (tenantId: ErasureDoc['_id'], email: string, name: string | null, at: Date): Omit<ErasureDoc, 'siteIds' | 'publicKeys'> => ({

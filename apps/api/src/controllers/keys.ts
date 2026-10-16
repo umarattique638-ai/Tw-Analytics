@@ -3,8 +3,8 @@ import { HttpError } from '../http/errors';
 import type { Api } from '../http/types';
 import { newKeyId, newPublicKey } from '../lib/secrets';
 import type { Services } from '../services';
-import type { KeyDoc, SiteDoc } from '../models/types';
 import { shortKey, siteView } from '../views/json';
+import type { KeyDoc, SiteDoc } from '../models/site.model';
 
 /** Site keys: rotation is "add a new key, swap the snippet, revoke the old one". */
 export function keyController(app: Api, { sites, kvSync, audit, now }: Services) {

@@ -12,9 +12,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BROWSER_UA, startStack, wait } from '../../../collector/test/e2e/harness';
 import type { Stack } from '../../../collector/test/e2e/harness';
 import { createApp } from '../../src/app';
-import type { AnalyticsReader } from '../../src/models/clickhouse';
+import type { AnalyticsReader } from '../../src/repositories/clickhouse';
 import { defaultConfig } from '../../src/config';
-import { MemoryStore } from '../../src/models/memory-store';
+import { MemoryStore } from '../../src/repositories/memory-store';
 
 /**
  * Stage 5 done-when (BUILD-ORDER): "a brand-new user can sign up, add a site, copy a snippet, install

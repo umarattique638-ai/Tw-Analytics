@@ -2,10 +2,10 @@ import type { ErrorHandler, MiddlewareHandler, NotFoundHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { SESSION_COOKIE } from '../lib/constants';
 import { sha256Hex } from '../lib/secrets';
-import type { ControlStore } from '../models/types';
 import { HttpError, logError } from './errors';
 import { sameSecret } from './request';
 import type { Env } from './types';
+import type { ControlStore } from '../repositories/control-store';
 
 /** HttpError -> its JSON; anything else is logged and answered with a generic 500. */
 export const onError: ErrorHandler<Env> = (err, c) => {

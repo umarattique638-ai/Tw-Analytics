@@ -1,6 +1,6 @@
 # Dashboard queries
 
-Generated from `apps/api/src/models/stats/queries.ts` (a test fails if this file and the code differ).
+Generated from `apps/api/src/repositories/stats/queries.ts` (a test fails if this file and the code differ).
 Every number on the dashboard comes from exactly one of these queries, so any of them can be
 re-run by hand in the ClickHouse SQL console. Replace `{db}` with `tailwatch` and set the parameters first, e.g.:
 
@@ -184,7 +184,7 @@ LIMIT 1000
 
 ## sources
 
-Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/models/stats/channels.ts channelOf) and Top referrers
+Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/repositories/stats/channels.ts channelOf) and Top referrers
 
 ```sql
 SELECT referrer_source AS source, sum(sign) AS sessions

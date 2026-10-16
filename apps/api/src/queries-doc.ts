@@ -1,5 +1,5 @@
-import { EVENT_FILTERS, FILTERABLE, FILTER_KEYS, QUERIES, SESSION_FILTERS } from './models/stats';
-import type { QueryName } from './models/stats';
+import { EVENT_FILTERS, FILTERABLE, FILTER_KEYS, QUERIES, SESSION_FILTERS } from './repositories/stats';
+import type { QueryName } from './repositories/stats';
 
 /** Where each documented query shows up in the dashboard (BUILD-ORDER Stage 6: every number reproducible). */
 const USED_BY: Record<QueryName, string> = {
@@ -17,7 +17,7 @@ const USED_BY: Record<QueryName, string> = {
   filter_values_device: 'Filter menu: devices of the period',
   filter_values_browser: 'Filter menu: browsers of the period',
   pages_all: 'Account export (Settings > Download your data): every page of a site over its stored history',
-  sources: 'Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/models/stats/channels.ts channelOf) and Top referrers',
+  sources: 'Traffic sources (grouped into Direct / Search / Social / Referral by apps/api/src/repositories/stats/channels.ts channelOf) and Top referrers',
   countries: 'Top locations',
   devices: 'Device breakdown',
   browsers: 'Browser breakdown',
@@ -36,7 +36,7 @@ export function queriesMarkdown(): string {
   const parts = [
     '# Dashboard queries',
     '',
-    'Generated from `apps/api/src/models/stats/queries.ts` (a test fails if this file and the code differ).',
+    'Generated from `apps/api/src/repositories/stats/queries.ts` (a test fails if this file and the code differ).',
     'Every number on the dashboard comes from exactly one of these queries, so any of them can be',
     're-run by hand in the ClickHouse SQL console. Replace `{db}` with `tailwatch` and set the parameters first, e.g.:',
     '',

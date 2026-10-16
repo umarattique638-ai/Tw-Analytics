@@ -10,4 +10,4 @@ export * from './channels';
 export * from './queries';
 export * from './range';
 export * from './reader';
-export * from './types';
+export * from '../../models/stats.model';

@@ -5,7 +5,7 @@ import { QUERIES, activeFilters, filtered } from './queries';
 import type { FilterKey, Filters, QueryName } from './queries';
 import { bounds, chartBuckets } from './range';
 import type { Range } from './range';
-import type { DropsReport, EventsReport, Live, Overview, SiteExport } from './types';
+import type { DropsReport, EventsReport, Live, Overview, SiteExport } from '../../models/stats.model';
 
 /** ClickHouse answers numbers as strings (UInt64); missing or odd values count as 0. */
 const n = (v: unknown) => Number(v ?? 0) || 0;

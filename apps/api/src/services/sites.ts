@@ -1,6 +1,8 @@
 import { HttpError } from '../http/errors';
 import type { Ctx } from '../http/types';
-import type { ControlStore, MembershipDoc, SiteDoc, SitePatch } from '../models/types';
+import type { ControlStore } from '../repositories/control-store';
+import type { MembershipDoc } from '../models/tenant.model';
+import type { SiteDoc, SitePatch } from '../models/site.model';
 
 /** Reading and changing one of the signed-in workspace's sites. */
 export function createSiteService(store: ControlStore, now: () => Date) {

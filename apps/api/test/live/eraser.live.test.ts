@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ClickHouseClient } from '../../src/models/clickhouse';
-import { ClickHouseEraser, totalOf } from '../../src/models/eraser';
-import type { RowCounts } from '../../src/models/eraser';
+import { ClickHouseClient } from '../../src/repositories/clickhouse';
+import { ClickHouseEraser, totalOf } from '../../src/repositories/eraser';
+import type { RowCounts } from '../../src/repositories/eraser';
 import { retentionCutoff } from '../../src/services/jobs';
-import { StatsReader } from '../../src/models/stats';
+import { StatsReader } from '../../src/repositories/stats';
 
 /**
  * Phase 3 on a REAL ClickHouse: retention pruning and account erasure delete exactly the right rows, with

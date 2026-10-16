@@ -1,11 +1,11 @@
-import type { SiteActivity, WrongHost } from '../models/clickhouse';
 import { errorText, logError, logInfo } from '../http/errors';
-import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail, siteSpikeMail } from './mail';
 import { SPIKE_BASELINE_DAYS, SPIKE_MIN_AGE_DAYS, SPIKE_REPEAT_HOURS, spikeOf } from './spikes';
-import type { SiteDoc, SiteHealthDoc } from '../models/types';
-import { LABELS, runActiveCheck } from './verifier';
-import type { CheckId } from './verifier';
+import { runActiveCheck } from './verifier';
 import type { Services } from './types';
+import type { SiteActivity, WrongHost } from '../models/analytics.model';
+import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail, siteSpikeMail } from '../views/emails';
+import type { SiteDoc } from '../models/site.model';
+import type { SiteHealthDoc } from '../models/site-health.model';
 
 /**
  * Is each site still sending data? (decision 28)
@@ -85,26 +85,6 @@ export const watched = (site: SiteDoc) => site.status === 'active' && !!site.ver
 /** A stored result that belongs to an earlier life of the site (deleted, then added again) is ignored. */
 export const current = (site: SiteDoc, h: SiteHealthDoc | undefined | null) =>
   h && site.verifiedAt && h.checkedAt.getTime() >= site.verifiedAt.getTime() ? h : null;
-
-export function healthView(site: SiteDoc, h: SiteHealthDoc | null) {
-  const none = { reason: null, failedCheck: null, failedLabel: null, movedTo: null, since: null, checkedAt: null, lastEventAt: null, silentForHours: null, silentHours: null };
-  if (site.status === 'paused') return { status: 'paused' as const, ...none };
-  if (!h) return { status: 'unknown' as const, ...none };
-  const last = lastSignal(site, h.lastEventAt ? { lastAt: h.lastEventAt, maxGapMinutes: 0 } : undefined);
-  return {
-    status: h.status,
-    reason: h.reason,
-    failedCheck: h.failedCheck,
-    failedLabel: h.failedCheck === 'moved' ? 'Site moved' : h.failedCheck ? (LABELS[h.failedCheck as CheckId] ?? null) : null,
-    movedTo: h.movedTo ?? null,
-    since: h.since.toISOString(),
-    checkedAt: h.checkedAt.toISOString(),
-    lastEventAt: h.lastEventAt?.toISOString() ?? null,
-    /** Hours without data when it was checked (the banner says "nothing for 8 hours"). */
-    silentForHours: Math.max(0, Math.floor((h.checkedAt.getTime() - last.getTime()) / HOUR)),
-    silentHours: h.silentHours,
-  };
-}
 
 export function createHealthService(s: Services) {
   const { store, mailer, config, audit, now } = s;

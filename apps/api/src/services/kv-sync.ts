@@ -1,8 +1,10 @@
 import type { ObjectId } from 'mongodb';
 import { HttpError, logError } from '../http/errors';
-import { deleteKeys, kvProblem, putKeys, syncSite } from '../models/kv';
-import type { SiteConfigSink } from '../models/kv';
-import type { ControlStore, KvIssueDoc, SiteDoc } from '../models/types';
+import { deleteKeys, kvProblem, putKeys, syncSite } from '../repositories/kv';
+import type { SiteConfigSink } from '../repositories/kv';
+import type { ControlStore } from '../repositories/control-store';
+import type { KvIssueDoc } from '../models/kv-issue.model';
+import type { SiteDoc } from '../models/site.model';
 
 export type SyncResult = { ok: true } | { ok: false; pending: true; message: string };
 

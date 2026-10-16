@@ -1,7 +1,7 @@
 import { errorText, logError, logInfo } from '../http/errors';
 import { ERASURE_WATCH_DAYS, advanceErasure, pruneRetention } from './jobs';
-import { DATA_TABLES } from '../models/eraser';
-import { deleteKeys, expectedEntries, kvProblem } from '../models/kv';
+import { DATA_TABLES } from '../repositories/eraser';
+import { deleteKeys, expectedEntries, kvProblem } from '../repositories/kv';
 import { count, dayFmt } from '../views/json';
 import type { Services } from './types';
 

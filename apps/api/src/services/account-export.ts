@@ -1,10 +1,14 @@
 import type { ObjectId } from 'mongodb';
 import { EXPORT_MAX } from '../lib/constants';
 import { HttpError } from '../http/errors';
-import { addDays, localDate } from '../models/stats';
-import type { SiteExport } from '../models/stats';
-import type { AuditDoc, ControlStore, SiteDoc, TenantDoc, UserDoc } from '../models/types';
+import { addDays, localDate } from '../repositories/stats';
+import type { SiteExport } from '../repositories/stats';
 import type { Services } from './types';
+import type { AuditDoc } from '../models/audit.model';
+import type { ControlStore } from '../repositories/control-store';
+import type { SiteDoc } from '../models/site.model';
+import type { TenantDoc } from '../models/tenant.model';
+import type { UserDoc } from '../models/user.model';
 
 /** Sites read from ClickHouse at once (5 queries each): enough for speed, gentle on ClickHouse. */
 const SITES_PER_BATCH = 3;
