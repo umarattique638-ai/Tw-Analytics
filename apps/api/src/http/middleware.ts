@@ -1,8 +1,8 @@
 import type { ErrorHandler, MiddlewareHandler, NotFoundHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { SESSION_COOKIE } from '../constants';
-import { sha256Hex } from '../secrets';
-import type { ControlStore } from '../store/types';
+import { SESSION_COOKIE } from '../lib/constants';
+import { sha256Hex } from '../lib/secrets';
+import type { ControlStore } from '../models/types';
 import { HttpError, logError } from './errors';
 import { sameSecret } from './request';
 import type { Env } from './types';

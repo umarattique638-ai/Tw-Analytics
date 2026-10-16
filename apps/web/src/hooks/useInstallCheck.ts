@@ -8,7 +8,7 @@ const STEP_MS = 380;
 /** After the last step turns green: long enough to see it, then the dashboard opens. */
 const DONE_MS = 900;
 
-/** The verifier's steps, in the order the server runs them (apps/api/src/verifier/types.ts CHECK_ORDER). */
+/** The verifier's steps, in the order the server runs them (apps/api/src/services/verifier/types.ts CHECK_ORDER). */
 export const CHECKS: { id: string; label: string }[] = [
   { id: 'reach', label: 'Site reachable' },
   { id: 'present', label: 'Snippet in page source' },

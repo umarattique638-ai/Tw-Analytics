@@ -1,5 +1,5 @@
-import type { ScryptCost } from './passwords';
-import { PRODUCTION_COST } from './passwords';
+import type { ScryptCost } from './lib/passwords';
+import { PRODUCTION_COST } from './lib/passwords';
 
 export interface ApiConfig {
   /** Public base URL of the collector (serves /tw.js and /e). Goes into every snippet. */

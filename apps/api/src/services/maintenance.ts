@@ -1,8 +1,8 @@
 import { errorText, logError, logInfo } from '../http/errors';
-import { ERASURE_WATCH_DAYS, advanceErasure, pruneRetention } from '../jobs';
-import { DATA_TABLES } from '../eraser';
-import { deleteKeys, expectedEntries, kvProblem } from '../kv';
-import { count, dayFmt } from '../views';
+import { ERASURE_WATCH_DAYS, advanceErasure, pruneRetention } from './jobs';
+import { DATA_TABLES } from '../models/eraser';
+import { deleteKeys, expectedEntries, kvProblem } from '../models/kv';
+import { count, dayFmt } from '../views/json';
 import type { Services } from './types';
 
 /** Vercel stops a function at 30 s; each job keeps well inside that. */

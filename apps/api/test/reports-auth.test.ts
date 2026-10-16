@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { EXPORT_KEEP_DAYS, RESET_MINUTES, SESSION_COOKIE, createApp } from '../src/app';
 import { defaultConfig } from '../src/config';
-import { MemoryKv } from '../src/kv';
-import { MemoryMailer, UnconfiguredMailer, parseFrom, resetPasswordMail } from '../src/mail';
-import type { Mailer } from '../src/mail';
-import type { Overview, StatsReader } from '../src/stats';
-import { resolveRange } from '../src/stats';
-import { MemoryStore } from '../src/store/memory';
+import { MemoryKv } from '../src/models/kv';
+import { MemoryMailer, UnconfiguredMailer, parseFrom, resetPasswordMail } from '../src/services/mail';
+import type { Mailer } from '../src/services/mail';
+import type { Overview, StatsReader } from '../src/models/stats';
+import { resolveRange } from '../src/models/stats';
+import { MemoryStore } from '../src/models/memory-store';
 import { addSite, fakeVerifier } from './helpers/install';
 
 /** Reports (saved exports, 90-day expiry) and forgot / reset password, over HTTP. */

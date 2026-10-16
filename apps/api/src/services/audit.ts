@@ -1,8 +1,8 @@
 import { ObjectId } from 'mongodb';
-import { AUDIT_KEEP_DAYS } from '../constants';
+import { AUDIT_KEEP_DAYS } from '../lib/constants';
 import { errorText, logError } from '../http/errors';
 import type { Ctx } from '../http/types';
-import type { AuditAction, ControlStore, SiteDoc, UserDoc } from '../store/types';
+import type { AuditAction, ControlStore, SiteDoc, UserDoc } from '../models/types';
 
 /**
  * Activity log (Phase 3). Written after the change succeeded; a failure to write it is logged and never

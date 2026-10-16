@@ -1,8 +1,8 @@
 import { HttpError, analyticsUnavailable, errorText, logError } from '../http/errors';
 import type { Ctx } from '../http/types';
-import { RANGE_KEYS, resolveRange } from '../stats';
-import type { RangeKey, Range, StatsReader } from '../stats';
-import type { SiteDoc } from '../store/types';
+import { RANGE_KEYS, resolveRange } from '../models/stats';
+import type { RangeKey, Range, StatsReader } from '../models/stats';
+import type { SiteDoc } from '../models/types';
 
 /** A `range` value from the client, checked. */
 export function parseRangeKey(raw: string | undefined, fallback?: RangeKey): RangeKey {

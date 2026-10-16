@@ -2,16 +2,16 @@ import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { ObjectId } from 'mongodb';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader } from '../src/analytics';
+import type { AnalyticsReader } from '../src/models/clickhouse';
 import { defaultConfig } from '../src/config';
-import { MemoryEraser } from '../src/eraser';
-import type { DataTable } from '../src/eraser';
-import { ERASURE_SETTLE_DAYS, retentionCutoff } from '../src/jobs';
-import { MemoryKv, kvName } from '../src/kv';
-import type { SiteConfigSink } from '../src/kv';
-import { MemoryMailer } from '../src/mail';
-import type { StatsReader } from '../src/stats';
-import { MemoryStore } from '../src/store/memory';
+import { MemoryEraser } from '../src/models/eraser';
+import type { DataTable } from '../src/models/eraser';
+import { ERASURE_SETTLE_DAYS, retentionCutoff } from '../src/services/jobs';
+import { MemoryKv, kvName } from '../src/models/kv';
+import type { SiteConfigSink } from '../src/models/kv';
+import { MemoryMailer } from '../src/services/mail';
+import type { StatsReader } from '../src/models/stats';
+import { MemoryStore } from '../src/models/memory-store';
 import { addSite, fakeVerifier } from './helpers/install';
 
 /**

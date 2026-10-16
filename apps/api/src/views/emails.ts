@@ -1,4 +1,4 @@
-import type { MailMessage } from './providers';
+import type { MailMessage } from '../services/mail/providers';
 
 /** The e-mails TailWatch sends, as plain text and simple HTML (every user value is escaped). */
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createApp, SESSION_COOKIE } from '../src/app';
 import { defaultConfig } from '../src/config';
-import { MemoryKv } from '../src/kv';
-import { resolveRange } from '../src/stats';
-import type { Overview, StatsReader } from '../src/stats';
-import { MemoryStore } from '../src/store/memory';
+import { MemoryKv } from '../src/models/kv';
+import { resolveRange } from '../src/models/stats';
+import type { Overview, StatsReader } from '../src/models/stats';
+import { MemoryStore } from '../src/models/memory-store';
 import { addSite, fakeVerifier } from './helpers/install';
 
 /** The Query API's HTTP layer: auth, tenant isolation, ranges in the SITE's timezone, CSV, allow-host. */

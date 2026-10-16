@@ -1,10 +1,10 @@
-import type { SiteActivity, WrongHost } from '../analytics';
+import type { SiteActivity, WrongHost } from '../models/clickhouse';
 import { errorText, logError, logInfo } from '../http/errors';
-import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail, siteSpikeMail } from '../mail';
+import { pipelineSilentMail, siteBrokenMail, siteRecoveredMail, siteSpikeMail } from './mail';
 import { SPIKE_BASELINE_DAYS, SPIKE_MIN_AGE_DAYS, SPIKE_REPEAT_HOURS, spikeOf } from './spikes';
-import type { SiteDoc, SiteHealthDoc } from '../store/types';
-import { LABELS, runActiveCheck } from '../verifier';
-import type { CheckId } from '../verifier';
+import type { SiteDoc, SiteHealthDoc } from '../models/types';
+import { LABELS, runActiveCheck } from './verifier';
+import type { CheckId } from './verifier';
 import type { Services } from './types';
 
 /**

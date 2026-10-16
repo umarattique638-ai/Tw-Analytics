@@ -4,33 +4,24 @@
  * app send the same session as `Authorization: Bearer <token>`. Every rule lives here; clients only
  * display what this returns (snippets included).
  *
- * This file only wires the app together. Where things are:
- *   http/       errors, rate limiters, request helpers, middleware (CSRF, session, cron)
- *   services/   shared logic: sessions, KV sync, activity log, sites, reports, account export, nightly jobs
- *   routes/     one file per area of the API (auth, setup, sites, keys, stats, reports, audit, account, internal)
- *   views.ts    what clients see of stored documents
+ * MVC (owner, 2026-10-16). This file only builds the app; where things are:
+ *   routes.ts      which URL goes to which controller
+ *   controllers/   one per area of the API: read the request, check it, call services/models, answer
+ *   services/      business logic: sessions, setup, site health, KV sync, mail, verifier, nightly jobs
+ *   models/        data and data access: MongoDB documents and stores, ClickHouse readers, Cloudflare KV
+ *   views/         what clients and people see: JSON views of documents, e-mails, install snippets
+ *   http/          framework plumbing: errors, rate limiters, request helpers, middleware
+ *   lib/           small stateless helpers: domains, secrets, passwords, network guard, constants
  */
 import { Hono } from 'hono';
 import { csrfGuard, notFound, onError, requireSession } from './http/middleware';
 import type { Env } from './http/types';
-import { accountRoutes } from './routes/account';
-import { auditRoutes } from './routes/audit';
-import { authRoutes, logoutRoute } from './routes/auth';
-import { internalRoutes } from './routes/internal';
-import { keyRoutes } from './routes/keys';
-import { publicRoutes } from './routes/public';
-import { reportRoutes } from './routes/reports';
-import { setupRoutes } from './routes/setup';
-import { siteRoutes } from './routes/sites';
-import { statsRoutes } from './routes/stats';
+import { registerRoutes } from './routes';
 import { createServices } from './services';
 import type { Deps } from './services';
 
 export type { Deps } from './services';
-export { AUDIT_KEEP_DAYS, DELETE_CONFIRMATION, EXPORT_KEEP_DAYS, EXPORT_MAX, PASSIVE_WINDOW_MINUTES, RESET_MINUTES, SESSION_COOKIE } from './constants';
-
-/** Paths that need a signed-in user (the session middleware runs before their routes). */
-const SIGNED_IN = ['/auth/logout', '/me', '/setup', '/setup/*', '/sites', '/sites/*', '/audit', '/account/*'];
+export { AUDIT_KEEP_DAYS, DELETE_CONFIRMATION, EXPORT_KEEP_DAYS, EXPORT_MAX, PASSIVE_WINDOW_MINUTES, RESET_MINUTES, SESSION_COOKIE } from './lib/constants';
 
 export function createApp(deps: Deps) {
   const services = createServices(deps);
@@ -40,24 +31,7 @@ export function createApp(deps: Deps) {
   app.notFound(notFound);
   app.use('*', csrfGuard);
 
-  // Public
-  publicRoutes(app, services);
-  authRoutes(app, services);
-
-  // Signed in
-  const session = requireSession(deps.store);
-  for (const path of SIGNED_IN) app.use(path, session);
-  logoutRoute(app, services);
-  accountRoutes(app, services);
-  setupRoutes(app, services);
-  siteRoutes(app, services);
-  keyRoutes(app, services);
-  statsRoutes(app, services);
-  reportRoutes(app, services);
-  auditRoutes(app, services);
-
-  // Scheduled (CRON_SECRET)
-  internalRoutes(app, services);
+  registerRoutes(app, services, requireSession(deps.store));
 
   return app;
 }

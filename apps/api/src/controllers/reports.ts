@@ -1,13 +1,13 @@
 import { ObjectId } from 'mongodb';
-import { EXPORT_KEEP_DAYS, EXPORT_MAX } from '../constants';
+import { EXPORT_KEEP_DAYS, EXPORT_MAX } from '../lib/constants';
 import { HttpError } from '../http/errors';
 import { attachment, body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
 import { parseRangeKey } from '../services/reports';
-import { resolveRange } from '../stats';
-import type { ExportDoc } from '../store/types';
-import { exportView } from '../views';
+import { resolveRange } from '../models/stats';
+import type { ExportDoc } from '../models/types';
+import { exportView } from '../views/json';
 
 /** `:exportId` of the URL; anything that is not an id is simply "no such report". */
 const exportId = (c: Ctx) => {
@@ -17,7 +17,7 @@ const exportId = (c: Ctx) => {
 };
 
 /** Reports: saved CSV exports, kept EXPORT_KEEP_DAYS days. */
-export function reportRoutes(app: Api, { store, sites, reports, audit, now }: Services) {
+export function reportController(app: Api, { store, sites, reports, audit, now }: Services) {
   app.get('/sites/:id/exports', async (c) => {
     const site = await sites.load(c);
     const list = await store.exportsOf(c.get('tenant')._id, site._id, now(), EXPORT_MAX);

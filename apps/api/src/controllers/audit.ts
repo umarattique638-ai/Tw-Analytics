@@ -1,11 +1,11 @@
-import { AUDIT_KEEP_DAYS } from '../constants';
+import { AUDIT_KEEP_DAYS } from '../lib/constants';
 import { HttpError } from '../http/errors';
 import type { Api } from '../http/types';
 import type { Services } from '../services';
-import { auditCursor, auditView, parseAuditCursor } from '../views';
+import { auditCursor, auditView, parseAuditCursor } from '../views/json';
 
 /** Phase 3 activity log: newest first, 50 at a time; `before` continues from the last entry shown, `site` filters. */
-export function auditRoutes(app: Api, { store }: Services) {
+export function auditController(app: Api, { store }: Services) {
   app.get('/audit', async (c) => {
     const tenantId = c.get('tenant')._id;
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));

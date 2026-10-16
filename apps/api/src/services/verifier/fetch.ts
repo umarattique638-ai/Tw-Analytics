@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { ALLOWED_PORTS, guardedFetch, isPublicAddress } from '../netguard';
+import { ALLOWED_PORTS, guardedFetch, isPublicAddress } from '../../lib/netguard';
 import { VERIFIER_USER_AGENT } from './types';
 import type { VerifierOptions } from './types';
 

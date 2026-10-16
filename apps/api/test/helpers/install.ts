@@ -1,4 +1,4 @@
-import { snippetsFor } from '../../src/snippets';
+import { snippetsFor } from '../../src/views/snippets';
 
 /**
  * Adding a site is a full install (decision 25): start the setup, the customer's page carries the snippet,

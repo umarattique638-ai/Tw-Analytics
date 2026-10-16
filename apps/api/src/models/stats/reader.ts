@@ -1,5 +1,5 @@
 import { AUTOMATIC_EVENTS } from '@tailwatch/contract';
-import type { ClickHouseClient } from '../analytics';
+import type { ClickHouseClient } from '../clickhouse';
 import { channelOf } from './channels';
 import { QUERIES, activeFilters, filtered } from './queries';
 import type { FilterKey, Filters, QueryName } from './queries';

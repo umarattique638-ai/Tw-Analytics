@@ -1,16 +1,16 @@
-import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../domain';
+import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../lib/domain';
 import { HttpError } from '../http/errors';
 import { body, clientIp, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { newIdentitySecret, newKeyId, newPublicKey } from '../secrets';
+import { newIdentitySecret, newKeyId, newPublicKey } from '../lib/secrets';
 import type { Services } from '../services';
 import { SETUP_TTL_DAYS } from '../services/setup';
 import type { Setup } from '../services/setup';
-import { snippetsFor } from '../snippets';
-import { DuplicateError } from '../store/types';
-import type { KeyDoc, SiteDoc, SitePatch } from '../store/types';
-import { VerifyInputError, probeDomain, runActiveCheck } from '../verifier';
-import { siteView } from '../views';
+import { snippetsFor } from '../views/snippets';
+import { DuplicateError } from '../models/types';
+import type { KeyDoc, SiteDoc, SitePatch } from '../models/types';
+import { VerifyInputError, probeDomain, runActiveCheck } from '../services/verifier';
+import { siteView } from '../views/json';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
 const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a timezone from the list.');
@@ -27,7 +27,7 @@ const noSetup = () => new HttpError(404, 'no_setup', 'No site is being set up. A
  *   POST   /setup/verify   run the checks; all pass -> the site is created, verified
  *   DELETE /setup          cancel: the key stops working, nothing is left
  */
-export function setupRoutes(app: Api, s: Services) {
+export function setupController(app: Api, s: Services) {
   const { store, config, setup, kvSync, audit, limits, now, deps } = s;
 
   const view = async (current: Setup) => ({

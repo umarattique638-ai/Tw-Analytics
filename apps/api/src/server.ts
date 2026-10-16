@@ -12,9 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { UnconfiguredReader } from './analytics';
+import { UnconfiguredReader } from './models/clickhouse';
 import { createApp } from './app';
-import { UnconfiguredKv, syncSite } from './kv';
+import { UnconfiguredKv, syncSite } from './models/kv';
 import { SetupError, configFromEnv, publicUrlOf, servicesFromEnv, storeFromEnv } from './runtime';
 
 const rootEnv = fileURLToPath(new URL('../../../.env', import.meta.url));

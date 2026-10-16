@@ -5,8 +5,8 @@ import { Long, MongoClient } from 'mongodb';
 import type { Db } from 'mongodb';
 import { createApp, SESSION_COOKIE } from '../../src/app';
 import { defaultConfig } from '../../src/config';
-import { MemoryKv } from '../../src/kv';
-import { MongoStore } from '../../src/store/mongo';
+import { MemoryKv } from '../../src/models/kv';
+import { MongoStore } from '../../src/models/mongo-store';
 import { addSite as addSiteVia, fakeVerifier } from '../helpers/install';
 
 /**

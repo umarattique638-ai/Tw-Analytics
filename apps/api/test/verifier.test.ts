@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { edgeBotReason } from '@tailwatch/contract';
-import { CHECK_ORDER, VERIFIER_USER_AGENT, cspAllows, findSnippets, runActiveCheck } from '../src/verifier';
+import { CHECK_ORDER, VERIFIER_USER_AGENT, cspAllows, findSnippets, runActiveCheck } from '../src/services/verifier';
 
 const KEY = 'tw_pub_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const OLD = 'tw_pub_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';

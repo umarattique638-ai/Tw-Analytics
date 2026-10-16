@@ -1,4 +1,4 @@
-import type { ClickHouseClient } from './analytics';
+import type { ClickHouseClient } from './clickhouse';
 
 /**
  * Deleting analytics rows (Phase 3: retention pruning and account erasure).

@@ -1,8 +1,8 @@
 import type { ObjectId } from 'mongodb';
 import { HttpError, logError } from '../http/errors';
-import { deleteKeys, kvProblem, putKeys, syncSite } from '../kv';
-import type { SiteConfigSink } from '../kv';
-import type { ControlStore, KvIssueDoc, SiteDoc } from '../store/types';
+import { deleteKeys, kvProblem, putKeys, syncSite } from '../models/kv';
+import type { SiteConfigSink } from '../models/kv';
+import type { ControlStore, KvIssueDoc, SiteDoc } from '../models/types';
 
 export type SyncResult = { ok: true } | { ok: false; pending: true; message: string };
 

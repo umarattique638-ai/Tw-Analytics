@@ -1,17 +1,17 @@
 import { RETENTION_CHOICES } from '../config';
-import { MAX_ALLOWED_HOSTS } from '../constants';
-import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../domain';
+import { MAX_ALLOWED_HOSTS } from '../lib/constants';
+import { allowedHostsFor, canonicalTimezone, normalizeDomain } from '../lib/domain';
 import { ObjectId } from 'mongodb';
 import { HttpError, errorText, logError } from '../http/errors';
-import { advanceErasure } from '../jobs';
+import { advanceErasure } from '../services/jobs';
 import { body, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
 import type { Services } from '../services';
-import { snippetsFor } from '../snippets';
-import { DuplicateError } from '../store/types';
-import type { KeyDoc, SiteDoc, SitePatch } from '../store/types';
-import { siteView } from '../views';
-import { VerifyInputError, probeDomain, runActiveCheck } from '../verifier';
+import { snippetsFor } from '../views/snippets';
+import { DuplicateError } from '../models/types';
+import type { KeyDoc, SiteDoc, SitePatch } from '../models/types';
+import { siteView } from '../views/json';
+import { VerifyInputError, probeDomain, runActiveCheck } from '../services/verifier';
 import { current, healthView, watched } from '../services/health';
 
 const invalidDomain = () => new HttpError(400, 'invalid_domain', 'Enter a domain like example.com (no IP addresses or localhost).');
@@ -19,10 +19,10 @@ const invalidTimezone = () => new HttpError(400, 'invalid_timezone', 'Choose a t
 const revokeAll = (keys: KeyDoc[], at: Date) => keys.map((k) => ({ ...k, status: 'revoked' as const, revokedAt: k.revokedAt ?? at }));
 
 /**
- * The workspace's sites: list, change, delete. Every stored site is verified: adding one is routes/setup.ts,
+ * The workspace's sites: list, change, delete. Every stored site is verified: adding one is controllers/setup.ts,
  * which saves it only after every install check passed (decision 25).
  */
-export function siteRoutes(app: Api, s: Services) {
+export function siteController(app: Api, s: Services) {
   const { store, config, sites, kvSync, audit, now, health, limits } = s;
 
   app.get('/sites', async (c) => {

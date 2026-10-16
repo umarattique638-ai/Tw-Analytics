@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ClickHouseClient } from '../src/analytics';
-import { StatsReader } from '../src/stats';
-import { resolveRange } from '../src/stats/range';
+import type { ClickHouseClient } from '../src/models/clickhouse';
+import { StatsReader } from '../src/models/stats';
+import { resolveRange } from '../src/models/stats/range';
 
 /**
  * Overview KPIs from the sessions query (no ClickHouse here: each named query gets a canned answer). The SQL

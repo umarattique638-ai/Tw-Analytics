@@ -1,8 +1,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { guardedFetch, isPublicAddress } from '../src/netguard';
-import { runActiveCheck } from '../src/verifier';
+import { guardedFetch, isPublicAddress } from '../src/lib/netguard';
+import { runActiveCheck } from '../src/services/verifier';
 
 /** SSRF guard of the install verifier: every special address form is refused, real sites are not. */
 describe('isPublicAddress', () => {

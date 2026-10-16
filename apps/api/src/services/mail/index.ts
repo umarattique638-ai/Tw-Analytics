@@ -4,4 +4,4 @@
  *   templates.ts  what is sent (e-mail verification, password reset, account deleted, erasure finished)
  */
 export * from './providers';
-export * from './templates';
+export * from '../../views/emails';

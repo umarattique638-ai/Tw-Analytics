@@ -1,5 +1,5 @@
 import { createLimiters } from '../http/limiter';
-import { UnconfiguredMailer } from '../mail';
+import { UnconfiguredMailer } from './mail';
 import { createAuditLog } from './audit';
 import { createHealthService } from './health';
 import { createKvSync } from './kv-sync';

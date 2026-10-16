@@ -1,7 +1,7 @@
 import { attachment } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { FILTER_KEYS } from '../stats';
-import type { FilterKey, Filters } from '../stats';
+import { FILTER_KEYS } from '../models/stats';
+import type { FilterKey, Filters } from '../models/stats';
 import { HttpError } from '../http/errors';
 import type { Services } from '../services';
 
@@ -16,7 +16,7 @@ const filtersOf = (c: Ctx): Filters => {
 };
 
 /** Stage 6 Query API: the numbers behind the dashboard pages (docs/QUERIES.md). */
-export function statsRoutes(app: Api, { sites, reports, now }: Services) {
+export function statsController(app: Api, { sites, reports, now }: Services) {
   const { reader, reading, rangeOf, buildCsv } = reports;
 
   app.get('/sites/:id/stats/overview', async (c) => {
@@ -52,7 +52,7 @@ export function statsRoutes(app: Api, { sites, reports, now }: Services) {
     return c.json(await reading(() => reader().drops(site._id, range)));
   });
 
-  /** Direct download, not saved (API clients). The dashboard saves every export as a report (routes/reports.ts). */
+  /** Direct download, not saved (API clients). The dashboard saves every export as a report (controllers/reports.ts). */
   app.get('/sites/:id/export.csv', async (c) => {
     const site = await sites.load(c);
     const out = await buildCsv(site, rangeOf(c, site));

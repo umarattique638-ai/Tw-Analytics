@@ -1,13 +1,13 @@
-import { MAX_ACTIVE_KEYS } from '../constants';
+import { MAX_ACTIVE_KEYS } from '../lib/constants';
 import { HttpError } from '../http/errors';
 import type { Api } from '../http/types';
-import { newKeyId, newPublicKey } from '../secrets';
+import { newKeyId, newPublicKey } from '../lib/secrets';
 import type { Services } from '../services';
-import type { KeyDoc, SiteDoc } from '../store/types';
-import { shortKey, siteView } from '../views';
+import type { KeyDoc, SiteDoc } from '../models/types';
+import { shortKey, siteView } from '../views/json';
 
 /** Site keys: rotation is "add a new key, swap the snippet, revoke the old one". */
-export function keyRoutes(app: Api, { sites, kvSync, audit, now }: Services) {
+export function keyController(app: Api, { sites, kvSync, audit, now }: Services) {
   app.post('/sites/:id/keys', async (c) => {
     // Rotation, step 1: add a new active key. Both keys work until the old one is revoked (step 2),
     // so nothing is lost while the customer swaps the snippet.

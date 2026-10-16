@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createApp, SESSION_COOKIE } from '../src/app';
-import type { AnalyticsReader, SiteActivity, SpikeDetails, WrongHost } from '../src/analytics';
+import type { AnalyticsReader, SiteActivity, SpikeDetails, WrongHost } from '../src/models/clickhouse';
 import { defaultConfig } from '../src/config';
-import { MemoryKv } from '../src/kv';
-import { MemoryMailer } from '../src/mail';
+import { MemoryKv } from '../src/models/kv';
+import { MemoryMailer } from '../src/services/mail';
 import { isSilent, silentHoursFor } from '../src/services/health';
 import { median, spikeOf } from '../src/services/spikes';
-import { snippetsFor } from '../src/snippets';
-import { MemoryStore } from '../src/store/memory';
+import { snippetsFor } from '../src/views/snippets';
+import { MemoryStore } from '../src/models/memory-store';
 import { addSite, fakeSiteFetch } from './helpers/install';
 
 /**

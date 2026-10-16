@@ -1,5 +1,5 @@
 import type { Context, Hono } from 'hono';
-import type { TenantDoc, UserDoc } from '../store/types';
+import type { TenantDoc, UserDoc } from '../models/types';
 
 /** What the session middleware puts on a signed-in request. */
 export type Vars = { user: UserDoc; tenant: TenantDoc; token: string };

@@ -1,17 +1,17 @@
 import { deleteCookie } from 'hono/cookie';
 import { ObjectId } from 'mongodb';
 import { signupAllowed } from '../config';
-import { RESET_MINUTES, SESSION_COOKIE, VERIFY_EMAIL_HOURS } from '../constants';
+import { RESET_MINUTES, SESSION_COOKIE, VERIFY_EMAIL_HOURS } from '../lib/constants';
 import { HttpError, errorText, logError } from '../http/errors';
 import { EMAIL_RE, body, clientIp, str } from '../http/request';
 import type { Api, Ctx } from '../http/types';
-import { resetPasswordMail, verifyEmailMail } from '../mail';
-import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from '../passwords';
-import { newSessionToken, sha256Hex } from '../secrets';
+import { resetPasswordMail, verifyEmailMail } from '../services/mail';
+import { PASSWORD_MAX, PASSWORD_MIN, decoyHash, hashPassword, verifyPassword } from '../lib/passwords';
+import { newSessionToken, sha256Hex } from '../lib/secrets';
 import type { Services } from '../services';
-import { DuplicateError } from '../store/types';
-import type { TenantDoc, UserDoc } from '../store/types';
-import { userView } from '../views';
+import { DuplicateError } from '../models/types';
+import type { TenantDoc, UserDoc } from '../models/types';
+import { userView } from '../views/json';
 
 const invalidPassword = () => new HttpError(400, 'invalid_password', `Use at least ${PASSWORD_MIN} characters.`);
 const validPassword = (p: string) => p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;
@@ -24,7 +24,7 @@ const validEmail = (e: string) => EMAIL_RE.test(e) && e.length <= 320;
  * opened. It needs a working mailer; without one (or with TW_EMAIL_VERIFICATION=off) accounts are verified
  * at once, so sign-up never breaks. Accounts made before this existed have no emailVerifiedAt: verified.
  */
-export function authRoutes(app: Api, s: Services) {
+export function authController(app: Api, s: Services) {
   const { store, config, limits, mailer, session, audit, now } = s;
   const mustVerify = () => config.requireEmailVerification && mailer.configured;
   const unverified = (u: UserDoc) => u.emailVerifiedAt === null && mustVerify();
@@ -221,7 +221,7 @@ export function authRoutes(app: Api, s: Services) {
 }
 
 /** Log out: registered after the session middleware (signed-in routes). */
-export function logoutRoute(app: Api, { store, config, audit }: Services) {
+export function logoutController(app: Api, { store, config, audit }: Services) {
   app.post('/auth/logout', async (c) => {
     await store.deleteSession(sha256Hex(c.get('token')));
     deleteCookie(c, SESSION_COOKIE, { path: '/', secure: config.secureCookies });

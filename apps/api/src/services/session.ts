@@ -1,9 +1,9 @@
 import { setCookie } from 'hono/cookie';
 import type { ApiConfig } from '../config';
-import { SESSION_COOKIE } from '../constants';
+import { SESSION_COOKIE } from '../lib/constants';
 import type { Ctx } from '../http/types';
-import { newSessionToken, sha256Hex } from '../secrets';
-import type { ControlStore, UserDoc } from '../store/types';
+import { newSessionToken, sha256Hex } from '../lib/secrets';
+import type { ControlStore, UserDoc } from '../models/types';
 
 /** Signing in: a random token, stored only as its SHA-256, sent as an httpOnly cookie (and as a Bearer token on request). */
 export function createSessionService(store: ControlStore, config: ApiConfig, now: () => Date) {

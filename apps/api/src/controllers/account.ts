@@ -1,18 +1,18 @@
 import { gzipSync } from 'node:zlib';
 import { deleteCookie } from 'hono/cookie';
 import { RETENTION_CHOICES } from '../config';
-import { DELETE_CONFIRMATION, SESSION_COOKIE } from '../constants';
+import { DELETE_CONFIRMATION, SESSION_COOKIE } from '../lib/constants';
 import { HttpError, errorText, logError, logInfo } from '../http/errors';
 import { body, str } from '../http/request';
 import type { Api } from '../http/types';
-import { ERASURE_SETTLE_DAYS, advanceErasure } from '../jobs';
-import { accountDeletedMail } from '../mail';
-import { verifyPassword } from '../passwords';
+import { ERASURE_SETTLE_DAYS, advanceErasure } from '../services/jobs';
+import { accountDeletedMail } from '../services/mail';
+import { verifyPassword } from '../lib/passwords';
 import type { Services } from '../services';
 import { buildAccountExport } from '../services/account-export';
-import { localDate } from '../stats';
-import type { ErasureDoc } from '../store/types';
-import { count, userView } from '../views';
+import { localDate } from '../models/stats';
+import type { ErasureDoc } from '../models/types';
+import { count, userView } from '../views/json';
 
 /** A fresh erasure record; the store fills in siteIds and publicKeys from what its transaction deletes. */
 const newErasure = (tenantId: ErasureDoc['_id'], email: string, name: string | null, at: Date): Omit<ErasureDoc, 'siteIds' | 'publicKeys'> => ({
@@ -33,7 +33,7 @@ const newErasure = (tenantId: ErasureDoc['_id'], email: string, name: string | n
   });
 
 /** The signed-in user and workspace: who am I, download everything, delete everything. */
-export function accountRoutes(app: Api, s: Services) {
+export function accountController(app: Api, s: Services) {
   const { store, config, limits, mailer, sites, audit, now } = s;
 
   app.get('/me', async (c) => {

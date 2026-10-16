@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FILTERABLE, QUERIES, filtered } from '../src/stats';
-import type { QueryName } from '../src/stats';
+import { FILTERABLE, QUERIES, filtered } from '../src/models/stats';
+import type { QueryName } from '../src/models/stats';
 
 /** Decision 30: overview filters add conditions as parameters; the SQL itself ran on chDB while building. */
 describe('overview filters', () => {
