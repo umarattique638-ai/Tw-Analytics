@@ -354,7 +354,7 @@ LIMIT 20
 
 ## Filters
 
-A click on a page, country, referrer, device or browser filters the overview (decision 30). Each filter adds
+A page, country, referrer, device or browser picked in the Filter menu filters the overview (decision 30). Each filter adds
 one condition right after the range condition of these queries; set its parameter too, e.g.
 `SET param_f_page = '/pricing'`. Capture rate and the warnings feed are never filtered.
 

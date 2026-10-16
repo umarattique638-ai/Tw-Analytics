@@ -267,9 +267,14 @@ export function siteController(app: Api, s: Services) {
     return c.json({ ...result, site: siteView(updated) });
   });
 
-  /** "Allow" on a hostname drop: that host is added to the site's accepted hosts (KV synced). */
+  /**
+   * Adds a host to the site's accepted hosts (KV synced). API only: the dashboard's "Allow host" button was
+   * removed (decision 29). Owners and admins, like the domain change.
+   */
   app.post('/sites/:id/allowed-hosts', async (c) => {
     const site = await sites.load(c);
+    const role = await sites.roleOf(c);
+    if (role !== 'owner' && role !== 'admin') throw new HttpError(403, 'forbidden', 'Only the owner or an admin can add a host.');
     const b = await body(c);
     const host = str(b.host).trim().toLowerCase().replace(/\.$/, '');
     if (!/^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(host) || host.length > 253) {

@@ -215,8 +215,8 @@ LIMIT 20`,
 export type QueryName = keyof typeof QUERIES;
 
 /**
- * Overview filters (decision 30): a click on a page, country, referrer, device or browser narrows the whole
- * overview to it. Each filter adds one condition after the range condition of a query; the value is always
+ * Overview filters (decision 30): a page, country, referrer, device or browser picked in the dashboard's
+ * Filter menu narrows the whole overview to it. Each filter adds one condition after the range condition of a query; the value is always
  * a ClickHouse parameter ({f_page:String}, ...), never pasted into the SQL. Several filters: all of them.
  *
  * Event queries (visitors, page views, charts, lists) and session queries (sessions, bounce, time on

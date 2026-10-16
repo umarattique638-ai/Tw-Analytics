@@ -24,9 +24,9 @@ export function sameSecret(a: string, b: string): boolean {
 }
 
 /**
- * The client's address for rate limiting only (never stored). Behind a hosting proxy (Render) the real
- * address is the LAST X-Forwarded-For entry: the proxy appends it, and anything before it the client
- * could have written itself.
+ * The client's address for rate limiting only (never stored). Behind a hosting proxy (Vercel, or Render /
+ * a VPS) the real address is the LAST X-Forwarded-For entry: the proxy appends it (Vercel sends only
+ * that one), and anything before it the client could have written itself.
  */
 export function clientIp(c: Context): string {
   const xff = c.req.header('x-forwarded-for');
