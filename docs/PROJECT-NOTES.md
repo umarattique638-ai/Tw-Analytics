@@ -590,6 +590,8 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
 30. DECIDED 2026-10-15 (owner): the dashboard overview, clearer numbers and click-to-filter.
    - Bounce rate shows "—" and "Too few visits yet" below 10 visits in the period, and its change only
      when both periods have 10+ (display only; the API value is unchanged).
+     Owner, 2026-10-19: the real value is always shown (transparent), with "From only N visits" under it
+     below 10 visits; the change vs the previous period still needs 10+ in both.
    - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
      change vs the previous period.
    - A "Filter" menu next to the period filters the whole overview by a page, referrer, country, device or

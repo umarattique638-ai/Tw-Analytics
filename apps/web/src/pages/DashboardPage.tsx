@@ -26,7 +26,10 @@ import { useSession } from '../hooks/useSession';
 const deviceIcon = (label: string) => (/mobile/i.test(label) ? Smartphone : /tablet/i.test(label) ? Tablet : Monitor);
 /** "Umar Attique" -> "Umar"; no name -> the part of the e-mail before @. */
 const firstName = (u: User) => u.name?.trim().split(/\s+/)[0] || u.email.split('@')[0]!;
-/** Below this many visits a bounce rate says little (1 visit = 0% or 100%): it shows "—" instead. */
+/**
+ * Below this many visits a bounce rate says little (1 visit = 0% or 100%): the real value is still shown
+ * (owner, 2026-10-19), with how many visits it comes from, and no change vs the previous period.
+ */
 const MIN_SESSIONS_FOR_RATE = 10;
 
 const todayLabel = () => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -92,11 +95,11 @@ function Overview({ site, name }: { site: Site; name: string }) {
         <KpiCard
           icon={Zap}
           label="Bounce rate"
-          value={k ? (enoughNow ? percent(k.bounceRate) : '—') : null}
+          value={k ? percent(k.bounceRate) : null}
           delta={bounceDelta === null ? undefined : `${Math.abs(bounceDelta).toFixed(1)} pts`}
           up={(bounceDelta ?? 0) >= 0}
           positive={(bounceDelta ?? 0) <= 0}
-          note={k && !enoughNow && k.sessions > 0 ? 'Too few visits yet' : undefined}
+          note={k && !enoughNow && k.sessions > 0 ? `From only ${num(k.sessions)} visit${k.sessions === 1 ? '' : 's'}` : undefined}
         />
         <KpiCard
           icon={Timer}
