@@ -27,7 +27,7 @@ const USED_BY: Record<QueryName, string> = {
   events_by_name: 'Events page: count and last seen per event name. Also the account export (whole stored history)',
   events_first_seen: 'Events page: "New" = a custom event first seen in the last 7 days',
   high_cardinality_props: 'Events page: high-cardinality property warning',
-  live_active: 'Active visitors (last 5 minutes)',
+  live_active: 'Active now: distinct visitors in the last 30 minutes (the same window as the Live visitors chart)',
   live_minutes: 'Live chart: visitors per minute, last 30 minutes',
   live_events: 'Live events list',
 };

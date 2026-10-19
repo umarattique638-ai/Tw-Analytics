@@ -321,12 +321,12 @@ LIMIT 20
 
 ## live_active
 
-Active visitors (last 5 minutes)
+Active now: distinct visitors in the last 30 minutes (the same window as the Live visitors chart)
 
 ```sql
 SELECT uniqExact(visitor_hash) AS visitors
 FROM {db}.events
-WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 5 MINUTE AND received_at <= {now:DateTime64(3, 'UTC')}
+WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 30 MINUTE AND received_at <= {now:DateTime64(3, 'UTC')}
 ```
 
 ## live_minutes

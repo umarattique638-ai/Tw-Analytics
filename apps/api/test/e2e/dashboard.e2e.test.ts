@@ -135,12 +135,11 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '1m 23s', 'Time on site', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
       expect(t, want).toContain(want);
     }
-    // Active now (last 5 minutes) and the per-minute chart say what they count; the chart shades those 5 minutes.
-    for (const want of ['Visitors in the last 5 minutes', 'shaded: the 5 minutes in Active now']) expect(await text(), want).toContain(want);
-    await page.locator('.recharts-reference-area').first().waitFor();
-    await page.locator('svg text', { hasText: 'Active now' }).first().waitFor();
+    // Active now counts the same 30 minutes as the Live visitors chart (owner, 2026-10-19): no shaded part.
+    for (const want of ['Visitors in the last 30 minutes', 'Visitors per minute, last 30 minutes']) expect(await text(), want).toContain(want);
+    expect(await page.locator('.recharts-reference-area').count()).toBe(0);
     if (process.env.TW_SCREENSHOTS) {
-      await page.locator('svg text', { hasText: 'Active now' }).first().scrollIntoViewIfNeeded();
+      await page.getByText('Visitors per minute, last 30 minutes').scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${process.env.TW_SCREENSHOTS}/6d-live.png` });
       await page.evaluate(() => document.querySelector('main')!.scrollTo(0, 0));
     }

@@ -187,9 +187,9 @@ describe.skipIf(!URL_)('Query API on a real ClickHouse', () => {
     expect(o.kpis.pageviews).toBe(4);
   });
 
-  it('live: active visitors in the last 5 minutes, 30 one-minute points, newest events first', async () => {
+  it('live: active visitors in the last 30 minutes, 30 one-minute points, newest events first', async () => {
     const live = await stats.live(KHI, NOW);
-    expect(live.active).toBe(2); // visitors 2 and 3 at 09:58Z and 09:59Z
+    expect(live.active).toBe(2); // visitors 2 and 3 at 09:58Z and 09:59Z (the only ones in the 30 minutes)
     expect(live.minutes).toHaveLength(30);
     expect(live.minutes.reduce((s, m) => s + m.visitors, 0)).toBe(2);
     expect(live.events[0]).toMatchObject({ name: 'pageview', path: '/pricing', country: 'US' });
