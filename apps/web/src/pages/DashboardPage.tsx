@@ -89,7 +89,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
       {overview.error && <Notice tone="error">{overview.error}</Notice>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} note="Visitors in the last 30 minutes" />
+        <KpiCard icon={Users} label="Active now" value={l ? num(l.active) : null} note="Visitors this minute, as on the live chart" />
         <KpiCard icon={Activity} label="Sessions" value={k ? num(k.sessions) : null} delta={sessionsChange?.delta} up={sessionsChange?.up} positive={sessionsChange?.up} />
         <KpiCard icon={Eye} label="Page views" value={k ? num(k.pageviews) : null} delta={pageviewsChange?.delta} up={pageviewsChange?.up} positive={pageviewsChange?.up} />
         <KpiCard

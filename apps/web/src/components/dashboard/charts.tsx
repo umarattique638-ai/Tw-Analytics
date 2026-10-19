@@ -82,7 +82,7 @@ export function SourcesDonut({ sources, total, caption = 'Unique visitors' }: { 
 }
 
 /* ---------- Live sessions ---------- */
-/** Visitors per minute, last 30 minutes: the same visitors "Active now" counts (owner, 2026-10-19). */
+/** Visitors per minute, last 30 minutes. "Active now" is its newest point, this minute (owner, 2026-10-19). */
 export function LiveChart({ data }: { data: { time: string; count: number }[] }) {
   return (
     <div className="h-56">

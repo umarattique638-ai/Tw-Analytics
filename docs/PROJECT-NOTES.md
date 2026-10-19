@@ -347,7 +347,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
     c. Ranges: Today (per local hour), Last 7 days, Last 30 days (per local day). KPIs show the change against the previous period of the same length.
     d. Visitors: uniqExact of daily hashes; over more than one day it is an upper bound, labelled "estimated" (STAGE-1 D6). Sessions and bounce from the sessions table with sum(sign) (VersionedCollapsingMergeTree, correct before and after merges). Bounce = 1 - engaged / sessions (PLAN 5).
     e. Capture rate: per visitor, a page load is a run of rising sequence numbers; received = distinct seqs, expected = highest seq; summed. An upper bound (a lost LAST beacon is invisible); fully blocked scripts are never visible (said on screen).
-    f. Live: active visitors = distinct visitors with a hit in the last 5 minutes (30 since 2026-10-19, see decision 30); chart = per minute, last 30 minutes; latest 20 hits of the last 24 h. Polled every 10 s (overview every 60 s), only while the tab is visible.
+    f. Live: active visitors = distinct visitors with a hit in the last 5 minutes (the current minute since 2026-10-19, see decision 30); chart = per minute, last 30 minutes; latest 20 hits of the last 24 h. Polled every 10 s (overview every 60 s), only while the tab is visible.
     g. Traffic channels from the referrer host: Direct / Search / Social / Referral (apps/api/src/stats/channels.ts channelOf).
     h. "Allow" on a hostname drop adds that host to the site's accepted hosts (MongoDB, then KV): its new hits count from then on; past drops stay dropped.
     i. Nothing on the dashboard is sample data. Features not built yet (email digest, alerts, stats API key, public link, server-log comparison, HTML-attribute / dashboard-rule events) are listed as "Coming next" instead of controls that do nothing. The login page's capture-rate illustration is labelled "(example)".
@@ -592,8 +592,10 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      when both periods have 10+ (display only; the API value is unchanged).
      Owner, 2026-10-19: the real value is always shown (transparent), with "From only N visits" under it
      below 10 visits; the change vs the previous period still needs 10+ in both.
-   - Owner, 2026-10-19: "Active now" counts the same visitors as the Live visitors chart: distinct visitors
-     in the last 30 minutes (live_active), not 5. The chart's shaded "Active now" part is gone.
+   - Owner, 2026-10-19: "Active now" = the newest point of the Live visitors chart: distinct visitors in
+     the current minute (live_active), so when the chart drops to 0 the card does too. (Tried the chart's
+     whole 30 minutes first, same day: the card stayed at 1 while the chart showed 0.) The chart's shaded
+     "Active now" part is gone.
    - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
      change vs the previous period.
    - A "Filter" menu next to the period filters the whole overview by a page, referrer, country, device or

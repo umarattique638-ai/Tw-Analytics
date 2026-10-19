@@ -135,8 +135,8 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     for (const want of ['Good', 'Umar', '3,456', '98,765', '37.5%', '1m 23s', 'Time on site', '/only-real-page', 'news.ycombinator.com', 'Pakistan', 'Germany', 'Firefox', 'Desktop', 'staging.realshop.test', '/checkout-live', 'Asia/Karachi']) {
       expect(t, want).toContain(want);
     }
-    // Active now counts the same 30 minutes as the Live visitors chart (owner, 2026-10-19): no shaded part.
-    for (const want of ['Visitors in the last 30 minutes', 'Visitors per minute, last 30 minutes']) expect(await text(), want).toContain(want);
+    // Active now is the Live visitors chart's newest point, this minute (owner, 2026-10-19): no shaded part.
+    for (const want of ['Visitors this minute, as on the live chart', 'Visitors per minute, last 30 minutes']) expect(await text(), want).toContain(want);
     expect(await page.locator('.recharts-reference-area').count()).toBe(0);
     if (process.env.TW_SCREENSHOTS) {
       await page.getByText('Visitors per minute, last 30 minutes').scrollIntoViewIfNeeded();
