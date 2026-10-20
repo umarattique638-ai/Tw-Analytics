@@ -596,6 +596,8 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      the current minute (live_active), so when the chart drops to 0 the card does too. (Tried the chart's
      whole 30 minutes first, same day: the card stayed at 1 while the chart showed 0.) The chart's shaded
      "Active now" part is gone.
+   - Owner, 2026-10-20: the Events page has no "New, to review" card and no "New · review" badge (every
+     event in the period shows "Active"). The API still sends isNew/firstSeen; nothing reads them.
    - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
      change vs the previous period.
    - A "Filter" menu next to the period filters the whole overview by a page, referrer, country, device or

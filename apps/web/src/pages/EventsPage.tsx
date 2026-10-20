@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Code, Search, Sparkles, Target, X, Zap } from 'lucide-react';
+import { Code, Search, Sparkles, Target, X, Zap } from 'lucide-react';
 import KpiCard from '../components/dashboard/KpiCard';
 import NoSiteYet from '../components/dashboard/NoSiteYet';
 import RangeSelect, { rangeLong } from '../components/dashboard/RangeSelect';
@@ -56,11 +56,10 @@ function Events({ site }: { site: Site }) {
 
       {report.error && <Notice tone="error">{report.error}</Notice>}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard icon={Zap} label="Events tracked" value={ready ? num(totals.events) : null} />
         <KpiCard icon={Sparkles} label="Event types" value={ready ? num(totals.types) : null} />
         <KpiCard icon={Target} label="Custom event types" value={ready ? num(totals.custom) : null} />
-        <KpiCard icon={AlertTriangle} label="New, to review" value={ready ? num(totals.toReview) : null} />
       </div>
 
       {showCode && <TrackEventPanel site={site} />}

@@ -22,7 +22,6 @@ export function useEventsReport(siteId: number, range: RangeKey) {
       events: events.reduce((a, e) => a + e.events, 0),
       types: events.length,
       custom: events.filter((e) => e.kind === 'custom').length,
-      toReview: events.filter((e) => e.isNew).length,
       max: Math.max(1, ...events.map((e) => e.events)),
     }),
     [events],

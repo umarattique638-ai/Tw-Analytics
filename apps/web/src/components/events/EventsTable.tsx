@@ -59,14 +59,11 @@ export default function EventsTable({ rows, max, loading, noEventsAtAll }: { row
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-slate-500 dark:text-slate-400">{ago(e.last)}</td>
               <td className="py-3 pr-5 pl-4 sm:pr-6">
-                {e.isNew ? (
-                  <Badge tone="amber" title="First seen in this period">New · review</Badge>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                    <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                    Active
-                  </span>
-                )}
+                {/* No "New · review" badge (owner, 2026-10-20): every event in the period is simply active. */}
+                <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                  Active
+                </span>
               </td>
             </tr>
           ))}

@@ -185,7 +185,10 @@ describe('dashboard pages show the Query API numbers, nothing else', { timeout: 
     await page.getByRole('link', { name: 'Events' }).click();
     await page.locator('[data-event="trial_started"]').waitFor();
     const ev = await text();
-    for (const want of ['trial_started', '98,777', 'New · review', 'account_id', '1,234']) expect(ev, want).toContain(want);
+    for (const want of ['trial_started', '98,777', 'account_id', '1,234']) expect(ev, want).toContain(want);
+    // No "New, to review" card and no "New · review" badge (owner, 2026-10-20).
+    expect(ev).not.toContain('to review');
+    expect(ev).not.toContain('New · review');
 
     await page.getByRole('link', { name: 'Suspicious activity' }).click();
     await page.getByText('ua_denylist').waitFor();
