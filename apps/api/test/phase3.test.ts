@@ -6,7 +6,7 @@ import type { AnalyticsReader } from '../src/repositories/clickhouse';
 import { defaultConfig } from '../src/config';
 import { MemoryEraser } from '../src/repositories/eraser';
 import type { DataTable } from '../src/repositories/eraser';
-import { ERASURE_SETTLE_DAYS, retentionCutoff } from '../src/services/jobs';
+import { ERASURE_SETTLE_DAYS, retentionCutoff } from '../src/services/jobs.service';
 import { MemoryKv, kvName } from '../src/repositories/kv';
 import type { SiteConfigSink } from '../src/repositories/kv';
 import { MemoryMailer } from '../src/services/mail';

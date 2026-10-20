@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
+import type { Actor } from '../services/types';
+import type { Ctx } from './types';
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,3 +45,6 @@ export function attachment(c: Context, contentType: string, filename: string) {
   c.header('content-type', contentType);
   c.header('content-disposition', `attachment; filename="${filename}"`);
 }
+
+/** Who is asking: the signed-in user and workspace (set by the session middleware). */
+export const actorOf = (c: Ctx): Actor => ({ user: c.get('user'), tenant: c.get('tenant') });

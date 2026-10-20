@@ -9,6 +9,7 @@
  *   auth-token.model.ts   password-reset and e-mail-verification links
  *   site.model.ts         sites and their public keys
  *   site-health.model.ts  is a site still sending data (decisions 28, 29, 31)
+ *   setup.model.ts        a site being set up (Cloudflare KV only, until it is verified)
  *   export.model.ts       saved CSV reports
  *   audit.model.ts        the activity log and every action it can record
  *   erasure.model.ts      account / site data being erased
@@ -22,6 +23,7 @@ export * from './session.model';
 export * from './auth-token.model';
 export * from './site.model';
 export * from './site-health.model';
+export * from './setup.model';
 export * from './export.model';
 export * from './audit.model';
 export * from './erasure.model';

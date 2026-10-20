@@ -19,20 +19,34 @@ tw.js (packages/browser, packages/core)
 
 ## apps/api (Vercel serverless, Hono), MVC
 
-Owner, 2026-10-16: the API follows MVC (models, views, controllers) with a service layer and repositories.
-Only code moved (files, and declarations between files) and route functions were renamed
-(`siteRoutes` -> `siteController`); no logic changed.
+Owner, 2026-10-16 and 2026-10-20: the API follows MVC with routes, validators, a service layer and
+repositories. A request goes middlewares -> route -> controller (validator, service, view) -> answer.
+Only code moved between layers; no rule, query, message or order of checks changed (both times checked
+by comparing every string and every route before and after, and by the full test suite).
 
 | Path | What it is |
 |---|---|
-| `app.ts` | Builds the app: error handling, CSRF guard, then `registerRoutes`. Nothing else. |
-| `routes.ts` | Which URL goes to which controller, in order; the signed-in paths. |
-| **`controllers/`** | One per area: `public`, `auth`, `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal`. Read the request, check it, call services and models, answer with a view. |
-| **`models/`** | What the data looks like, nothing else: one file per model, `index.ts` lists them. |
-| `models/user.model.ts`, `tenant.model.ts`, `session.model.ts`, `auth-token.model.ts` | Users, workspaces and memberships, login sessions, reset and verification links. |
-| `models/site.model.ts`, `site-health.model.ts`, `kv-issue.model.ts` | Sites and keys, site health, sites whose KV copy may be out of date. |
-| `models/export.model.ts`, `audit.model.ts`, `erasure.model.ts` | Saved reports, the activity log (and every action it can record), data being erased. |
-| `models/analytics.model.ts`, `stats.model.ts` | Shapes read from ClickHouse: health check inputs; the Query API answers. |
+| `app.ts` | Builds the app: error handling, CSRF guard, services, controllers, `registerRoutes`. Nothing else. |
+| **`middlewares/`** | `error.middleware` (error answers, 404), `csrf.middleware`, `session.middleware` (`requireSession`), `cron.middleware` (`requireCron`). |
+| **`routes/`** | Which URL goes to which controller handler, nothing else: `public`, `auth` (+ logout), `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal` (`*.routes.ts`). `routes/index.ts` registers them in order, with the signed-in paths. |
+| **`controllers/`** | HTTP only, one per area (`*.controller.ts`): read the request with a validator, call a service, answer with a view; cookies and file downloads. `controllers/index.ts` builds them all. |
+| **`validators/`** | Checks of what the client sent, each throwing the error the client sees: `auth` (name, e-mail, password, reset), `site` (site id, domain, timezone, site changes, host), `stats` (range, filters, report id), `account` (delete confirmation, activity-log query). |
+| **`services/`** | Business logic, free of HTTP (they get an `Actor`: the signed-in user and workspace). |
+| `services/index.ts`, `types.ts` | `createServices(deps)`: every service, built in order; `Deps`, `Actor`, `Services`. |
+| `services/auth.service.ts` | Sign-up, login, e-mail verification, forgot / reset password, logout. |
+| `services/account.service.ts`, `account-export.service.ts` | Who am I, "Download all data", deleting the account. |
+| `services/setup.service.ts` | Adding a site: start, verify (the site is saved only when every check passed), cancel (decision 25). |
+| `services/sites.service.ts` | Loading and saving a site, roles, site changes, delete / erase, site health for the dashboard, domain change (decision 29), hosts. |
+| `services/keys.service.ts` | Adding and revoking keys. |
+| `services/stats.service.ts` | Reading analytics for the dashboard pages, the period, the CSV. |
+| `services/reports.service.ts` | Saved CSV reports. |
+| `services/audit.service.ts` | Writing and reading the activity log. |
+| `services/session.service.ts` | Login sessions (the token; the cookie is `http/cookies.ts`). |
+| `services/kv-sync.service.ts` | Cloudflare KV: grant first / revoke first, retries, reconciling issues. |
+| `services/health.service.ts`, `spikes.service.ts` | Is each site still sending data (decisions 28, 29); unusual traffic (decision 31). |
+| `services/maintenance.service.ts`, `jobs.service.ts` | Nightly jobs: erasures, retention, KV reconcile; erasure steps and retention pruning. |
+| `services/mail/` | Sending e-mail (Brevo, Resend, console). What is sent is `views/emails.ts`. |
+| `services/verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`, `probe` (does the domain answer). |
 | **`repositories/`** | Reading and writing the data. |
 | `repositories/control-store.ts` | The `ControlStore` interface (every MongoDB operation) and `DuplicateError`. |
 | `repositories/mongo-store.ts`, `memory-store.ts` | The MongoDB store; the in-memory one for tests. |
@@ -41,29 +55,16 @@ Only code moved (files, and declarations between files) and route functions were
 | `repositories/stats/` | Query API: `range`, `queries` (the SQL of docs/QUERIES.md), `channels`, `reader`. |
 | `repositories/eraser.ts` | Deleting ClickHouse rows (retention, erasure). |
 | `repositories/kv.ts` | Cloudflare KV: the collector's copy of each site. |
-| **`views/`** | What clients and people see. |
-| `views/json.ts` | JSON views of stored documents (never identity secrets, hashes or CSV bodies). |
-| `views/site-health.ts` | `healthView`: the site-health banner's JSON. |
-| `views/emails.ts` | Every e-mail (verification, reset, account deleted, site health, unusual traffic). |
-| `views/snippets.ts` | The install snippet and the custom-event code. |
-| **`services/`** | Business logic. |
-| `services/index.ts` | `createServices(deps)`: everything controllers share. |
-| `services/session.ts` | Signing in (token, cookie). |
-| `services/kv-sync.ts` | Cloudflare KV: grant first / revoke first, retries, reconciling issues. |
-| `services/audit.ts` | The activity log. |
-| `services/sites.ts` | Loading and saving one of the workspace's sites, roles. |
-| `services/setup.ts` | A site being set up: KV-only entries that expire by themselves (decision 25). |
-| `services/reports.ts` | Reading analytics, the report period, the CSV. |
-| `services/account-export.ts` | "Download all data". |
-| `services/maintenance.ts` | Nightly jobs: erasures, retention, KV reconcile. |
-| `services/health.ts`, `services/spikes.ts` | Is each site still sending data (decision 28, 29); unusual traffic (decision 31). |
-| `services/jobs.ts` | Erasure steps and retention pruning. |
-| `services/mail/` | Sending e-mail (Brevo, Resend, console). What is sent is `views/emails.ts`. |
-| `services/verifier/` | Install check: `types`, `fetch` (SSRF-safe), `html`, `csp`, `check`, `probe` (does the domain answer). |
-| `http/` | `errors`, `limiter` (rate limits), `request` helpers, `middleware` (errors, CSRF, `requireSession`, `requireCron`), `types`. |
-| `lib/` | `constants`, `domain`, `secrets`, `passwords`, `netguard`: small helpers without state. |
+| `repositories/setup-store.ts` | Cloudflare KV entries of a site being set up; they expire by themselves. |
+| **`models/`** | What the data looks like, nothing else: one file per model (`*.model.ts`), `index.ts` lists them. |
+| **`views/`** | What clients and people see: `json` (documents, setup, KV issues; never secrets, hashes or CSV bodies), `site-health` (the banner), `emails`, `snippets`. |
+| `http/` | `request` helpers (`body`, `clientIp`, `actorOf`, downloads), `cookies` (session cookie), `errors` (`HttpError`, logging), `limiter` (rate limits), `types`. |
+| `lib/` | `constants`, `domain`, `secrets`, `passwords`, `netguard`, `text` (wording for the activity log): small helpers without state. |
 | `server.ts`, `vercel.ts`, `runtime.ts`, `config.ts` | Entry points and configuration from the environment. |
 | `queries-doc.ts` | Writes docs/QUERIES.md from `repositories/stats/queries.ts`. |
+
+A new endpoint, step by step: a validator for its input (if any), a service method for what it does, a
+controller handler that connects the two and picks the view, and one line in its `*.routes.ts`.
 
 ## apps/collector (Cloudflare Worker)
 

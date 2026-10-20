@@ -1,7 +1,7 @@
 import type { ObjectId } from 'mongodb';
 
 /**
- * Is a site still sending data (decision 28)? One per site, written by the health check (services/health.ts).
+ * Is a site still sending data (decision 28)? One per site, written by the health check (services/health.service.ts).
  *   healthy  data arrived recently (for this site's usual rhythm)
  *   quiet    no data for a while, but the install check passes: simply no visitors
  *   broken   no data for a while AND the install check fails (`failedCheck`, `reason`)

@@ -3,17 +3,24 @@ import type { ApiConfig } from '../config';
 import type { AnalyticsEraser } from '../repositories/eraser';
 import type { Limiters } from '../http/limiter';
 import type { SiteConfigSink } from '../repositories/kv';
-import type { Mailer } from './mail';
+import type { SetupStore } from '../repositories/setup-store';
 import type { StatsReader } from '../repositories/stats';
-import type { VerifierOptions } from './verifier';
-import type { AuditLog } from './audit';
-import type { ReportsService } from './reports';
-import type { SessionService } from './session';
-import type { SiteService } from './sites';
-import type { KvSyncService } from './kv-sync';
-import type { SetupService } from './setup';
-import type { HealthService } from './health';
 import type { ControlStore } from '../repositories/control-store';
+import type { TenantDoc } from '../models/tenant.model';
+import type { UserDoc } from '../models/user.model';
+import type { Mailer } from './mail';
+import type { VerifierOptions } from './verifier';
+import type { AccountService } from './account.service';
+import type { AuditService } from './audit.service';
+import type { AuthService } from './auth.service';
+import type { HealthService } from './health.service';
+import type { KeysService } from './keys.service';
+import type { KvSyncService } from './kv-sync.service';
+import type { ReportsService } from './reports.service';
+import type { SessionService } from './session.service';
+import type { SetupService } from './setup.service';
+import type { SitesService } from './sites.service';
+import type { StatsService } from './stats.service';
 
 /** What createApp needs from the outside world (real services in production, fakes in tests). */
 export interface Deps {
@@ -31,7 +38,13 @@ export interface Deps {
   verifier?: VerifierOptions;
 }
 
-/** Everything a route needs: the deps with their defaults filled in, plus the shared services. */
+/** Who is asking: the signed-in user and their workspace. Services never read the HTTP request. */
+export interface Actor {
+  user: UserDoc;
+  tenant: TenantDoc;
+}
+
+/** Everything the controllers and jobs use: the deps with their defaults filled in, plus every service. */
 export interface Services {
   deps: Deps;
   store: ControlStore;
@@ -41,12 +54,19 @@ export interface Services {
   eraser: AnalyticsEraser | null;
   now: () => Date;
   limits: Limiters;
+  /** Cloudflare KV entries of a site being set up (repository). */
+  setupStore: SetupStore;
+
   session: SessionService;
-  sites: SiteService;
   kvSync: KvSyncService;
-  setup: SetupService;
-  audit: AuditLog;
-  reports: ReportsService;
+  audit: AuditService;
+  stats: StatsService;
   /** Is each site still sending data (decision 28). */
   health: HealthService;
+  sites: SitesService;
+  keys: KeysService;
+  reports: ReportsService;
+  setup: SetupService;
+  auth: AuthService;
+  account: AccountService;
 }

@@ -1,6 +1,6 @@
 import type { SiteHealthDoc } from '../models/site-health.model';
 import type { SiteDoc } from '../models/site.model';
-import { lastSignal } from '../services/health';
+import { lastSignal } from '../services/health.service';
 import { LABELS } from '../services/verifier';
 import type { CheckId } from '../services/verifier';
 

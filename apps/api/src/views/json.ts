@@ -2,11 +2,17 @@
  * What clients see of stored documents. Every answer is built here, so it is easy to check that nothing
  * private (identity secrets, password hashes, CSV bodies) is ever sent.
  */
-import { ObjectId } from 'mongodb';
+import type { ObjectId } from 'mongodb';
+import { allowedHostsFor } from '../lib/domain';
 import type { AuditDoc } from '../models/audit.model';
 import type { ExportDoc } from '../models/export.model';
+import type { KvIssueDoc } from '../models/kv-issue.model';
+import type { Setup } from '../models/setup.model';
 import type { SiteDoc } from '../models/site.model';
+import type { TenantDoc } from '../models/tenant.model';
 import type { UserDoc } from '../models/user.model';
+import { SETUP_TTL_DAYS } from '../repositories/setup-store';
+import { snippetsFor } from './snippets';
 
 /** A site. Never the identity secret. */
 export function siteView(site: SiteDoc) {
@@ -64,17 +70,33 @@ export function auditView(e: AuditDoc, me: ObjectId, domains: Map<number, string
   };
 }
 
-/** Cursor of the activity log: "<ms>.<id>" of the last entry shown. */
+/** Cursor of the activity log: "<ms>.<id>" of the last entry shown (validators/account.validator reads it). */
 export const auditCursor = (e: AuditDoc) => `${e.at.getTime()}.${e._id.toHexString()}`;
-export function parseAuditCursor(raw: string | undefined): { at: Date; id: ObjectId } | undefined {
-  const m = /^(\d{1,15})\.([0-9a-f]{24})$/.exec(raw ?? '');
-  return m ? { at: new Date(Number(m[1])), id: new ObjectId(m[2]) } : undefined;
+
+/** A site whose Cloudflare KV copy may be out of date, as the dashboard's banner shows it. */
+export function kvIssueView(issue: KvIssueDoc, site: SiteDoc | null) {
+  return {
+    siteId: issue._id,
+    domain: site?.domain ?? String(issue._id),
+    deleted: site?.status === 'deleted',
+    error: issue.error,
+    since: issue.createdAt.toISOString(),
+    attempts: issue.attempts,
+  };
 }
 
-// ------------------------------------------------------------------ words for the activity log
+/** The signed-in user's workspace. */
+export const tenantView = (t: TenantDoc) => ({ id: t._id.toHexString(), plan: t.plan, region: t.region });
 
-/** "tw_pub_AbC1…": enough to tell keys apart in the activity log, never the whole key. */
-export const shortKey = (k: string) => `${k.slice(0, 11)}…`;
-export const dayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
-/** count(2, 'site') -> "2 sites". */
-export const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+/** A site being set up, with the snippet to paste and when the setup expires. */
+export function setupView(setup: Setup, collectorUrl: string) {
+  return {
+    domain: setup.domain,
+    timezone: setup.timezone,
+    allowedHosts: allowedHostsFor(setup.domain),
+    publicKey: setup.publicKey,
+    startedAt: setup.startedAt,
+    expiresAt: new Date(new Date(setup.startedAt).getTime() + SETUP_TTL_DAYS * 86_400_000).toISOString(),
+    snippets: snippetsFor(collectorUrl, setup.publicKey),
+  };
+}

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ClickHouseClient } from '../../src/repositories/clickhouse';
 import { ClickHouseEraser, totalOf } from '../../src/repositories/eraser';
 import type { RowCounts } from '../../src/repositories/eraser';
-import { retentionCutoff } from '../../src/services/jobs';
+import { retentionCutoff } from '../../src/services/jobs.service';
 import { StatsReader } from '../../src/repositories/stats';
 
 /**

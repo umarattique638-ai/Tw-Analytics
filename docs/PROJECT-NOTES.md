@@ -553,7 +553,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      auth.email_verified are new in control-plane.schema.json: run `pnpm db:mongo` BEFORE deploying.
 
 28. DECIDED 2026-10-15 (owner): tell the customer when a site STOPS sending data, and tell "broken" apart
-   from "no visitors" (services/health.ts).
+   from "no visitors" (services/health.service.ts).
    - Silent = no event for longer than the site's own habit: 2 x the longest gap between events over the
      last 7 days, kept between 6 hours and 3 days. A site verified less than 2 days ago: 24 hours. The
      clock starts at the last event, or at the verification if that is later (a site added again).
@@ -600,6 +600,9 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      event in the period shows "Active"). The API still sends isNew/firstSeen; nothing reads them.
    - Owner, 2026-10-20: "Latest hits" leaves out engagement hits (live_events: name != 'engagement'); they
      are still sent, stored and counted (time on site, bounce), only not listed.
+   - Owner, 2026-10-20: the API is fully layered (docs/CODE-STRUCTURE.md): routes/ (URLs only),
+     controllers/ (HTTP only), validators/, services/ (business logic, no HTTP), repositories/, models/,
+     views/, middlewares/. Code moved, behaviour did not.
    - New KPI "Time on site" = sum(sessions.engagement_ms) / sessions (sessions_bounce query), with its
      change vs the previous period.
    - A "Filter" menu next to the period filters the whole overview by a page, referrer, country, device or
@@ -614,7 +617,7 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
      events (top_pages_filtered: the rollup has no country or device). Never filtered: Active now, Live
      visitors, Latest hits, capture rate, warnings, and Export CSV.
 
-31. DECIDED 2026-10-15 (owner): an e-mail when a site gets far more traffic than usual (services/spikes.ts).
+31. DECIDED 2026-10-15 (owner): an e-mail when a site gets far more traffic than usual (services/spikes.service.ts).
    - Part of the nightly health run (/internal/health, 06:23 PKT). Per site: page views in the last 24 hours
      vs "usual" = the median of the 14 24-hour windows before (no timezone involved; one big day does not
      move a median). Unusual = at least 100 page views AND at least 5x usual.
