@@ -29,7 +29,7 @@ const USED_BY: Record<QueryName, string> = {
   high_cardinality_props: 'Events page: high-cardinality property warning',
   live_active: 'Active now: distinct visitors in the current minute (the newest point of the Live visitors chart)',
   live_minutes: 'Live chart: visitors per minute, last 30 minutes',
-  live_events: 'Live events list',
+  live_events: 'Latest hits: the newest 20 page views and events of the last 24 hours (engagement hits are left out: they only carry time on page)',
 };
 
 export function queriesMarkdown(): string {

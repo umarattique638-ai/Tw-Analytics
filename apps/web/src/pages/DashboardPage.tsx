@@ -143,7 +143,7 @@ function Overview({ site, name }: { site: Site; name: string }) {
             data={(l?.minutes ?? []).map((m) => ({ time: new Date(m.minute).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), count: m.visitors }))}
           />
         </Panel>
-        <Panel title="Latest hits" subtitle="The newest 20 from the last 24 hours">
+        <Panel title="Latest hits" subtitle="Page views and events, newest 20 from the last 24 hours">
           <LiveEvents events={l?.events ?? null} />
         </Panel>
       </div>

@@ -207,7 +207,7 @@ GROUP BY minute`,
 
   live_events: `SELECT name, pathname, country_code, toUnixTimestamp64Milli(received_at) AS at
 FROM {db}.events
-WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 1 DAY AND received_at <= {now:DateTime64(3, 'UTC')}
+WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 1 DAY AND received_at <= {now:DateTime64(3, 'UTC')} AND name != 'engagement'
 ORDER BY received_at DESC
 LIMIT 20`,
 } as const;

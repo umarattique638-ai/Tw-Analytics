@@ -342,12 +342,12 @@ GROUP BY minute
 
 ## live_events
 
-Live events list
+Latest hits: the newest 20 page views and events of the last 24 hours (engagement hits are left out: they only carry time on page)
 
 ```sql
 SELECT name, pathname, country_code, toUnixTimestamp64Milli(received_at) AS at
 FROM {db}.events
-WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 1 DAY AND received_at <= {now:DateTime64(3, 'UTC')}
+WHERE site_id = {site:UInt64} AND received_at > {now:DateTime64(3, 'UTC')} - INTERVAL 1 DAY AND received_at <= {now:DateTime64(3, 'UTC')} AND name != 'engagement'
 ORDER BY received_at DESC
 LIMIT 20
 ```

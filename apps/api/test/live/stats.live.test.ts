@@ -196,6 +196,7 @@ describe.skipIf(!URL_)('Query API on a real ClickHouse', () => {
     expect(live.minutes).toHaveLength(30);
     expect(live.minutes.reduce((s, m) => s + m.visitors, 0)).toBe(2);
     expect(live.events[0]).toMatchObject({ name: 'pageview', path: '/pricing', country: 'US' });
+    expect(live.events.every((e) => e.name !== 'engagement')).toBe(true); // Latest hits leave them out
   });
 
   it('events report: kinds, counts, new custom events, high-cardinality properties', async () => {
