@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, FileText, History, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, Sparkles, X } from 'lucide-react';
+import { BarChart3, Building2, FileText, History, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, Sparkles, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import logo from '../../assets/lg.png';
 import PageLoading from '../common/PageLoading';
@@ -30,6 +30,8 @@ const groups: { label: string; items: Item[] }[] = [
     ],
   },
 ];
+/** Only for the TailWatch team (super admins): every customer account. */
+const teamGroup = { label: 'TailWatch team', items: [{ label: 'All accounts', icon: Building2, to: '/admin' }] };
 
 const initials = (name: string) =>
   name
@@ -43,7 +45,7 @@ const initials = (name: string) =>
 export default function AppShell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { user, current, signOut } = useSession();
+  const { user, current, signOut, superAdmin } = useSession();
   const [drawer, setDrawer] = useState(false);
 
   useEffect(() => setDrawer(false), [pathname]);
@@ -83,7 +85,7 @@ export default function AppShell() {
           <SiteSwitcher />
 
           <nav aria-label="Main" className="mt-6 grid gap-6">
-            {groups.map((g) => (
+            {(superAdmin ? [...groups, teamGroup] : groups).map((g) => (
               <div key={g.label}>
                 <p className="mb-1.5 px-3 text-xs font-medium text-slate-500">{g.label}</p>
                 <ul className="grid gap-0.5">
@@ -91,7 +93,7 @@ export default function AppShell() {
                     <li key={it.to}>
                       <NavLink
                         to={it.to}
-                        end
+                        end={it.to !== '/admin'}
                         className={({ isActive }) =>
                           `relative flex items-center gap-3 rounded-lg px-3 py-2 text-[14.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 ${
                             isActive ? 'bg-white/[0.08] text-white before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-teal-400' : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'

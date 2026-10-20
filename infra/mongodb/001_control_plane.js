@@ -403,6 +403,7 @@ ensureCollection('audit_log', {
         'report.deleted',
         'account.exported',
         'data.pruned',
+        'support.report_downloaded',
       ],
     },
     siteId: { bsonType: ['long', 'int', 'null'] },

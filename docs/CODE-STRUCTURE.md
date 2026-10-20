@@ -27,10 +27,10 @@ by comparing every string and every route before and after, and by the full test
 | Path | What it is |
 |---|---|
 | `app.ts` | Builds the app: error handling, CSRF guard, services, controllers, `registerRoutes`. Nothing else. |
-| **`middlewares/`** | `error.middleware` (error answers, 404), `csrf.middleware`, `session.middleware` (`requireSession`), `cron.middleware` (`requireCron`). |
-| **`routes/`** | Which URL goes to which controller handler, nothing else: `public`, `auth` (+ logout), `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `internal` (`*.routes.ts`). `routes/index.ts` registers them in order, with the signed-in paths. |
+| **`middlewares/`** | `error.middleware` (error answers, 404), `csrf.middleware`, `session.middleware` (`requireSession`), `super-admin.middleware` (`requireSuperAdmin`), `cron.middleware` (`requireCron`). |
+| **`routes/`** | Which URL goes to which controller handler, nothing else: `public`, `auth` (+ logout), `account`, `setup`, `sites`, `keys`, `stats`, `reports`, `audit`, `admin`, `internal` (`*.routes.ts`). `routes/index.ts` registers them in order, with the signed-in paths. |
 | **`controllers/`** | HTTP only, one per area (`*.controller.ts`): read the request with a validator, call a service, answer with a view; cookies and file downloads. `controllers/index.ts` builds them all. |
-| **`validators/`** | Checks of what the client sent, each throwing the error the client sees: `auth` (name, e-mail, password, reset), `site` (site id, domain, timezone, site changes, host), `stats` (range, filters, report id), `account` (delete confirmation, activity-log query). |
+| **`validators/`** | Checks of what the client sent, each throwing the error the client sees: `auth` (name, e-mail, password, reset), `site` (site id, domain, timezone, site changes, host), `stats` (range, filters, report id), `account` (delete confirmation, activity-log query), `admin` (account id, confirmation, search). |
 | **`services/`** | Business logic, free of HTTP (they get an `Actor`: the signed-in user and workspace). |
 | `services/index.ts`, `types.ts` | `createServices(deps)`: every service, built in order; `Deps`, `Actor`, `Services`. |
 | `services/auth.service.ts` | Sign-up, login, e-mail verification, forgot / reset password, logout. |
@@ -41,6 +41,7 @@ by comparing every string and every route before and after, and by the full test
 | `services/stats.service.ts` | Reading analytics for the dashboard pages, the period, the CSV. |
 | `services/reports.service.ts` | Saved CSV reports. |
 | `services/audit.service.ts` | Writing and reading the activity log. |
+| `services/admin.service.ts` | Super admin (decision 32): every account, delete accounts and sites, download any site's report. |
 | `services/session.service.ts` | Login sessions (the token; the cookie is `http/cookies.ts`). |
 | `services/kv-sync.service.ts` | Cloudflare KV: grant first / revoke first, retries, reconciling issues. |
 | `services/health.service.ts`, `spikes.service.ts` | Is each site still sending data (decisions 28, 29); unusual traffic (decision 31). |
@@ -57,7 +58,7 @@ by comparing every string and every route before and after, and by the full test
 | `repositories/kv.ts` | Cloudflare KV: the collector's copy of each site. |
 | `repositories/setup-store.ts` | Cloudflare KV entries of a site being set up; they expire by themselves. |
 | **`models/`** | What the data looks like, nothing else: one file per model (`*.model.ts`), `index.ts` lists them. |
-| **`views/`** | What clients and people see: `json` (documents, setup, KV issues; never secrets, hashes or CSV bodies), `site-health` (the banner), `emails`, `snippets`. |
+| **`views/`** | What clients and people see: `json` (documents, setup, KV issues; never secrets, hashes or CSV bodies), `admin` (the super admin pages), `site-health` (the banner), `emails`, `snippets`. |
 | `http/` | `request` helpers (`body`, `clientIp`, `actorOf`, downloads), `cookies` (session cookie), `errors` (`HttpError`, logging), `limiter` (rate limits), `types`. |
 | `lib/` | `constants`, `domain`, `secrets`, `passwords`, `netguard`, `text` (wording for the activity log): small helpers without state. |
 | `server.ts`, `vercel.ts`, `runtime.ts`, `config.ts` | Entry points and configuration from the environment. |

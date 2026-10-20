@@ -10,7 +10,7 @@ import { ERASURE_SETTLE_DAYS, advanceErasure } from './jobs.service';
 import type { Actor, Services } from './types';
 
 /** A fresh erasure record; the store fills in siteIds and publicKeys from what its transaction deletes. */
-const newErasure = (tenantId: ErasureDoc['_id'], email: string, name: string | null, at: Date): Omit<ErasureDoc, 'siteIds' | 'publicKeys'> => ({
+const newErasure = (tenantId: ErasureDoc['_id'], email: string | null, name: string | null, at: Date): Omit<ErasureDoc, 'siteIds' | 'publicKeys'> => ({
   _id: tenantId,
   email,
   name,
@@ -31,11 +31,46 @@ const newErasure = (tenantId: ErasureDoc['_id'], email: string, name: string | n
 export function createAccountService(s: Services) {
   const { store, config, limits, mailer, sites, audit, now } = s;
 
+  /**
+   * Deletes a workspace (shared by "Delete account" and the super admin): everything in MongoDB at once, in
+   * one transaction; an erasure record remembers what is left (KV keys, ClickHouse rows). `owner` gets the
+   * "account deleted" e-mail and, later, the "erasure finished" one.
+   */
+  const eraseWorkspace = async (tenantId: ErasureDoc['_id'], owner: { email: string; name: string | null } | null, memberIds: ErasureDoc['_id'][], byTeam: boolean) => {
+    const at = now();
+    const erasure = await store.eraseAccount(newErasure(tenantId, owner?.email ?? null, owner?.name ?? null, at), memberIds);
+    const siteCount = erasure.siteIds.length;
+    logInfo('account_deleted', { erasure: tenantId.toHexString(), sites: siteCount, ...(byTeam ? { by: 'super_admin' } : {}) });
+
+    // The e-mail first: it must not depend on how fast Cloudflare or ClickHouse answer.
+    if (owner && mailer.configured) {
+      try {
+        await mailer.send(accountDeletedMail(owner.email, owner.name, siteCount, ERASURE_SETTLE_DAYS, byTeam));
+      } catch (error) {
+        logError('mail_failed', { kind: 'account_deleted', message: errorText(error) });
+      }
+    }
+    // Then the first step of the erasure (best effort; the nightly job retries everything).
+    const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer }, erasure, at, { finish: false, dataBudgetMs: 20_000, deleteFirst: true }).catch((error) => {
+      logError('erasure_start_failed', { message: errorText(error) });
+      return erasure;
+    });
+    return {
+      id: tenantId.toHexString(),
+      sites: siteCount,
+      trackingStopped: !!progress.kvDoneAt,
+      dataDeleteSent: !!progress.dataDeleteSentAt || (progress.rowsFound !== null && Object.values(progress.rowsFound).every((n) => n === 0)),
+      finishesWithinDays: ERASURE_SETTLE_DAYS + 1,
+    };
+  };
+
   return {
     /** Who is signed in, their role, and the retention choices this server offers. */
     async profile(actor: Actor) {
       return {
         role: (await sites.roleOf(actor)) ?? 'viewer',
+        /** Shows the Admin link in the dashboard (the API checks it again on every /admin call). */
+        superAdmin: s.admin.isSuperAdmin(actor.user),
         retention: { choices: RETENTION_CHOICES.filter((d) => d <= config.retentionDays), max: config.retentionDays, default: config.retentionDays },
       };
     },
@@ -68,35 +103,15 @@ export function createAccountService(s: Services) {
       if (members.find((m) => m.userId.equals(user._id))?.role !== 'owner') {
         throw new HttpError(403, 'owner_only', 'Only the owner of this workspace can delete it.');
       }
-      const at = now();
-      const erasure = await store.eraseAccount(
-        newErasure(tenant._id, user.email, user.name ?? null, at),
+      return eraseWorkspace(
+        tenant._id,
+        { email: user.email, name: user.name ?? null },
         members.map((m) => m.userId),
+        false,
       );
-      const siteCount = erasure.siteIds.length;
-      logInfo('account_deleted', { erasure: tenant._id.toHexString(), sites: siteCount });
-
-      // The e-mail first: it must not depend on how fast Cloudflare or ClickHouse answer.
-      if (mailer.configured) {
-        try {
-          await mailer.send(accountDeletedMail(user.email, user.name ?? null, siteCount, ERASURE_SETTLE_DAYS));
-        } catch (error) {
-          logError('mail_failed', { kind: 'account_deleted', message: errorText(error) });
-        }
-      }
-      // Then the first step of the erasure (best effort; the nightly job retries everything).
-      const progress = await advanceErasure({ store, kv: s.kv, eraser: s.eraser, mailer }, erasure, at, { finish: false, dataBudgetMs: 20_000, deleteFirst: true }).catch((error) => {
-        logError('erasure_start_failed', { message: errorText(error) });
-        return erasure;
-      });
-      return {
-        id: tenant._id.toHexString(),
-        sites: siteCount,
-        trackingStopped: !!progress.kvDoneAt,
-        dataDeleteSent: !!progress.dataDeleteSentAt || (progress.rowsFound !== null && Object.values(progress.rowsFound).every((n) => n === 0)),
-        finishesWithinDays: ERASURE_SETTLE_DAYS + 1,
-      };
     },
+
+    eraseWorkspace,
   };
 }
 export type AccountService = ReturnType<typeof createAccountService>;

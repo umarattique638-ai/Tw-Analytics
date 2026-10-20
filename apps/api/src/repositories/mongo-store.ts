@@ -128,6 +128,18 @@ export class MongoStore implements ControlStore {
   tenantById(id: ObjectId) {
     return this.tenants.findOne({ _id: id });
   }
+  allTenants() {
+    return this.tenants.find({}).sort({ createdAt: -1 }).toArray();
+  }
+  allMemberships() {
+    return this.memberships.find({}).toArray();
+  }
+  usersByIds(ids: ObjectId[]) {
+    return ids.length ? this.users.find({ _id: { $in: ids } }).toArray() : Promise.resolve([]);
+  }
+  countPendingErasures() {
+    return this.erasures.countDocuments({ status: 'pending' });
+  }
 
   async createSession(s: SessionDoc) {
     await this.sessions.insertOne(s);

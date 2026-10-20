@@ -26,6 +26,7 @@ export const AUDIT_ACTIONS = [
   'report.deleted',
   'account.exported',
   'data.pruned',
+  'support.report_downloaded',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -1,5 +1,6 @@
 import type { Services } from '../services';
 import { createAccountController } from './account.controller';
+import { createAdminController } from './admin.controller';
 import { createAuditController } from './audit.controller';
 import { createAuthController } from './auth.controller';
 import { createInternalController } from './internal.controller';
@@ -25,6 +26,7 @@ export function createControllers(services: Services) {
     stats: createStatsController(services),
     reports: createReportsController(services),
     audit: createAuditController(services),
+    admin: createAdminController(services),
     internal: createInternalController(services),
   };
 }

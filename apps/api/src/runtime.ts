@@ -7,7 +7,7 @@
 import { ClickHouseClient, ClickHouseReader, UnconfiguredReader } from './repositories/clickhouse';
 import type { AnalyticsReader } from './repositories/clickhouse';
 import type { Deps } from './app';
-import { defaultConfig, parseAllowlist } from './config';
+import { defaultConfig, parseAllowlist, parseSuperAdmins } from './config';
 import type { ApiConfig } from './config';
 import { ClickHouseEraser } from './repositories/eraser';
 import type { AnalyticsEraser } from './repositories/eraser';
@@ -42,6 +42,7 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
   if (!env.TW_COLLECTOR_URL) throw missing('TW_COLLECTOR_URL');
   // Sign-up is open to everyone (decision 23); TW_SIGNUP_ALLOWLIST optionally limits it.
   const signupAllowlist = parseAllowlist(env.TW_SIGNUP_ALLOWLIST);
+  const ownerEmail = env.TW_OWNER_EMAIL?.includes('@') ? env.TW_OWNER_EMAIL.trim() : null;
   return defaultConfig({
     collectorUrl: env.TW_COLLECTOR_URL,
     region: env.TW_REGION === 'in-eu' ? 'in-eu' : 'in',
@@ -51,8 +52,9 @@ export function configFromEnv(env: Env, publicUrl: string): ApiConfig {
     signupAllowlist,
     requireEmailVerification: env.TW_EMAIL_VERIFICATION !== 'off',
     publicUrl: publicUrl.replace(/\/+$/, ''),
-    ownerEmail: env.TW_OWNER_EMAIL?.includes('@') ? env.TW_OWNER_EMAIL.trim() : null,
+    ownerEmail,
     cronSecret: env.CRON_SECRET && env.CRON_SECRET.length >= 16 ? env.CRON_SECRET : null,
+    superAdmins: parseSuperAdmins(env.TW_ADMIN_EMAILS, ownerEmail),
   });
 }
 

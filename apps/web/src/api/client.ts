@@ -43,6 +43,8 @@ export interface Me {
   tenant: { id: string; plan: string; region: string };
   role: Role;
   retention: { choices: number[]; max: number; default: number };
+  /** The TailWatch team (TW_ADMIN_EMAILS): sees every account at /admin. */
+  superAdmin?: boolean;
 }
 export interface Sync { ok: boolean; pending?: boolean; message?: string }
 /** A site whose Cloudflare KV entries do not match yet (decision 18). Retried automatically. */
@@ -278,4 +280,73 @@ export const account = {
     }
   },
   remove: (password: string, confirm: string) => call<{ ok: true; erasure: Erasure }>('POST', '/account/delete', { password, confirm }),
+};
+
+// ------------------------------------------------------------------ Super admin (/admin, owner 2026-10-20)
+
+export interface AdminOverview {
+  accounts: number;
+  users: number;
+  sites: { active: number; paused: number; deleted: number };
+  brokenSites: number;
+  kvIssues: number;
+  pendingErasures: number;
+}
+export interface AdminAccountRow {
+  id: string;
+  owner: { name: string | null; email: string } | null;
+  plan: string;
+  status: string;
+  createdAt: string;
+  members: number;
+  sites: { id: number; domain: string; status: 'active' | 'paused' }[];
+  deletedSites: number;
+}
+export interface AdminSite {
+  id: number;
+  domain: string;
+  status: 'active' | 'paused' | 'deleted';
+  timezone: string;
+  retentionDays: number;
+  createdAt: string;
+  verifiedAt: string | null;
+  keys: { key: string; status: 'active' | 'revoked' }[];
+  health: SiteHealth | null;
+}
+export interface AdminAccount extends AdminAccountRow {
+  region: string;
+  people: { id: string; name: string | null; email: string; role: Role; verified: boolean; status: string; createdAt: string }[];
+  siteList: AdminSite[];
+  activity: { id: string; at: string; action: string; who: string; siteId: number | null; summary: string }[];
+  kvIssues: KvIssue[];
+}
+
+/** Fetches a file first, so an error is shown as a message instead of being saved as the file. */
+async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1${path}`, { credentials: 'same-origin' });
+  } catch {
+    throw new ApiError(0, 'network', 'Cannot reach the TailWatch API. Is it running?');
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new ApiError(res.status, data.error ?? 'error', data.message ?? `Download failed (${res.status}).`);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  try {
+    startDownload(url, name);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+}
+
+export const admin = {
+  overview: () => call<AdminOverview>('GET', '/admin/overview'),
+  accounts: (q = '') => call<{ accounts: AdminAccountRow[] }>('GET', `/admin/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  account: (id: string) => call<{ account: AdminAccount }>('GET', `/admin/accounts/${id}`),
+  deleteAccount: (id: string) => call<{ ok: true; erasure: Erasure }>('POST', `/admin/accounts/${id}/delete`, { confirm: 'DELETE' }),
+  deleteSite: (siteId: number, eraseData: boolean) => call<{ ok: true; erased: boolean; sync: Sync }>('DELETE', `/admin/sites/${siteId}`, { eraseData }),
+  downloadReport: (siteId: number, range: RangeKey) => downloadFile(`/admin/sites/${siteId}/report.csv?range=${range}`, 'report.csv'),
 };

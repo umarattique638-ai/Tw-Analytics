@@ -11,8 +11,8 @@ export function createAccountController({ account, config }: Services) {
   return {
     async me(c: Ctx) {
       const actor = actorOf(c);
-      const { role, retention } = await account.profile(actor);
-      return c.json({ user: userView(actor.user), tenant: tenantView(actor.tenant), role, retention });
+      const { role, retention, superAdmin } = await account.profile(actor);
+      return c.json({ user: userView(actor.user), tenant: tenantView(actor.tenant), role, retention, superAdmin });
     },
 
     /**

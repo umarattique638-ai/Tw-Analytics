@@ -72,13 +72,13 @@ ${paragraphs.map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.
 }
 
 /** Sent when an account is deleted: what is gone now, and what is still being erased. */
-export function accountDeletedMail(to: string, name: string | null, sites: number, settleDays: number): MailMessage {
+export function accountDeletedMail(to: string, name: string | null, sites: number, settleDays: number, byTeam = false): MailMessage {
   const hello = name ? `Hi ${name},` : 'Hi,';
   const lines = [
-    `${hello} your TailWatch account was deleted just now.`,
+    byTeam ? `${hello} your TailWatch account was deleted just now by the TailWatch team.` : `${hello} your TailWatch account was deleted just now.`,
     `Your login, workspace, ${sites === 1 ? 'site' : `${sites} sites`}, saved reports and activity log are gone. Tracking stopped: the collector no longer accepts your site keys.`,
     `The analytics your sites collected are being erased in the background. This finishes within ${settleDays + 1} days, and we send one more e-mail when it is done.`,
-    'If you did not do this, reply to this e-mail at once.',
+    byTeam ? 'If this is a surprise, reply to this e-mail at once.' : 'If you did not do this, reply to this e-mail at once.',
   ];
   return { to, subject: 'Your TailWatch account was deleted', text: [...lines, '', 'TailWatch'].join('\n\n'), html: card('Your account was deleted', lines) };
 }

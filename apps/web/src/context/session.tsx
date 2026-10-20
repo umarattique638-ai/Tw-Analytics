@@ -14,6 +14,8 @@ import { notify } from '../lib/notify';
 interface Session {
   user: User;
   role: Role;
+  /** The TailWatch team: the sidebar shows "All accounts" (/admin). The API checks it on every call. */
+  superAdmin: boolean;
   /** Retention choices of this deployment (days). */
   retention: Me['retention'];
   /** The workspace's sites. Every one is verified: a site is saved only after its install check (decision 25). */
@@ -56,7 +58,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const [state, setState] = useState<'loading' | 'out' | 'in'>('loading');
   const [user, setUser] = useState<User | null>(null);
-  const [me, setMe] = useState<Pick<Me, 'role' | 'retention'>>({ role: 'viewer', retention: { choices: [], max: 0, default: 0 } });
+  const [me, setMe] = useState<Pick<Me, 'role' | 'retention'> & { superAdmin: boolean }>({ role: 'viewer', retention: { choices: [], max: 0, default: 0 }, superAdmin: false });
   const [sites, setSites] = useState<Site[]>([]);
   const [kvIssues, setKvIssues] = useState<KvIssue[]>([]);
   const [setup, setSetup] = useState<Setup | null>(null);
@@ -86,12 +88,12 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
     let live = true;
     api
       .me()
-      .then(async ({ user, role, retention }) => {
+      .then(async ({ user, role, retention, superAdmin }) => {
         const [list, pending] = await Promise.all([reload(), api.setup().then((r) => r.setup).catch(() => null)]);
         setSetup(pending);
         if (!live) return;
         setUser(user);
-        setMe({ role: role ?? 'viewer', retention: retention ?? { choices: [], max: 0, default: 0 } });
+        setMe({ role: role ?? 'viewer', retention: retention ?? { choices: [], max: 0, default: 0 }, superAdmin: superAdmin === true });
         const verified = list.filter((s) => !!s.verifiedAt);
         // A link from an e-mail (/dashboard?site=101) opens that site.
         const linked = Number(new URLSearchParams(window.location.search).get('site'));
@@ -126,6 +128,7 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
       user,
       role: me.role,
       retention: me.retention,
+      superAdmin: me.superAdmin,
       sites: verified,
       allSites: sites,
       setup,
@@ -155,4 +158,10 @@ export function RequireAuth({ children }: { children?: ReactNode }) {
   }
   if (state === 'out' || !value) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   return <Ctx.Provider value={value}>{children ?? <Outlet />}</Ctx.Provider>;
+}
+
+/** Route guard of /admin: the TailWatch team only (the API refuses everyone else anyway). */
+export function RequireSuperAdmin() {
+  const { superAdmin } = useSession();
+  return superAdmin ? <Outlet /> : <Navigate to="/dashboard" replace />;
 }

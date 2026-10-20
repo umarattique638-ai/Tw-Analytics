@@ -672,7 +672,8 @@
               "report.created",
               "report.deleted",
               "account.exported",
-              "data.pruned"
+              "data.pruned",
+              "support.report_downloaded"
             ]
           },
           "siteId": {

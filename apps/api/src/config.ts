@@ -44,6 +44,11 @@ export interface ApiConfig {
   ownerEmail: string | null;
   /** Shared secret for the scheduled KV reconcile call (Vercel Cron sends it as a Bearer token). Null: route off. */
   cronSecret: string | null;
+  /**
+   * Super admins (lower-case e-mails): they see and manage every account at /admin (owner, 2026-10-20).
+   * TW_ADMIN_EMAILS="a@x.com, b@y.com"; when it is not set, TW_OWNER_EMAIL alone. Empty: nobody.
+   */
+  superAdmins: string[];
 }
 
 /** Retention a customer can choose for a site, in days (never above ApiConfig.retentionDays). */
@@ -53,6 +58,13 @@ export const RETENTION_CHOICES = [30, 90, 180, 395] as const;
 export function parseAllowlist(raw: string | undefined): string[] | null {
   const list = (raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   return list.length && !list.includes('*') ? list : null;
+}
+
+/** TW_ADMIN_EMAILS, else TW_OWNER_EMAIL: plain addresses only (no "@domain" entries, no "*"). */
+export function parseSuperAdmins(raw: string | undefined, ownerEmail: string | null): string[] {
+  const list = (raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+  if (list.length) return list;
+  return ownerEmail ? [ownerEmail.trim().toLowerCase()] : [];
 }
 
 export function signupAllowed(allowlist: string[] | null, email: string): boolean {
@@ -76,5 +88,6 @@ export const defaultConfig = (over: Partial<ApiConfig> = {}): ApiConfig => ({
   publicUrl: 'http://localhost:8788',
   ownerEmail: null,
   cronSecret: null,
+  superAdmins: [],
   ...over,
 });

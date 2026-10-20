@@ -628,6 +628,21 @@ Unresearched (13): dashboard + query layer (timezone per site is the trap; do be
    - MongoDB: site_health.spikeAlertedAt and the audit action site.traffic_spike: run `pnpm db:mongo`
      BEFORE deploying.
 
+32. DECIDED 2026-10-20 (owner): a super admin dashboard for the TailWatch team (/admin).
+   - Who: the e-mails in TW_ADMIN_EMAILS (comma-separated), else TW_OWNER_EMAIL alone; the address must be
+     confirmed. Server configuration only: nothing stored can make an account a super admin. Everyone else
+     gets 404 on /api/v1/admin/* and is sent back to the dashboard from /admin.
+   - Sees every account (newest first, search by e-mail, name or domain): people, sites with their health
+     and keys (shortened), the latest activity, Cloudflare KV problems; totals at the top.
+   - Can download any site's CSV report (not saved), delete a site (keep or erase its data, as the owner
+     can) and delete a whole account (typed DELETE; not the team's own account). Deleting reuses exactly
+     the code the owner's own deletion runs.
+   - Transparency: the customer's activity log says "The TailWatch team downloaded a report of ..." (new
+     audit action support.report_downloaded) and "... by the TailWatch team" on a site deletion; a deleted
+     account's owner is e-mailed that the TailWatch team deleted it.
+   - MongoDB: the audit action support.report_downloaded: run `pnpm db:mongo` BEFORE deploying. Vercel:
+     TW_ADMIN_EMAILS (optional; without it TW_OWNER_EMAIL is the super admin).
+
 ## 16. Lessons from the first attempt (do not repeat)
 
 - A client-controlled timestamp (t or x = 1e300) was accepted by the collector and then crashed the consumer's date conversion, failing a whole batch of up to 100 events. Rule: every client-controlled number gets a bound, and the consumer never throws on one bad message. Under invariant 7 (never tighten validation) the right fix is to ACCEPT, replace the value and add a warning, not to reject.

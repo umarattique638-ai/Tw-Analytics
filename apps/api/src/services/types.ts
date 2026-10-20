@@ -11,6 +11,7 @@ import type { UserDoc } from '../models/user.model';
 import type { Mailer } from './mail';
 import type { VerifierOptions } from './verifier';
 import type { AccountService } from './account.service';
+import type { AdminService } from './admin.service';
 import type { AuditService } from './audit.service';
 import type { AuthService } from './auth.service';
 import type { HealthService } from './health.service';
@@ -69,4 +70,6 @@ export interface Services {
   setup: SetupService;
   auth: AuthService;
   account: AccountService;
+  /** The TailWatch team's view of every account (/admin). */
+  admin: AdminService;
 }

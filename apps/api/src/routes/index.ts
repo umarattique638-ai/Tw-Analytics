@@ -13,6 +13,7 @@
  *   stats       /sites/:id/stats/*, export.csv               stats.routes.ts
  *   reports     /sites/:id/exports/*                         reports.routes.ts
  *   audit       /audit                                       audit.routes.ts
+ *   admin       /admin/* (super admins only)                 admin.routes.ts
  *   --- scheduled (CRON_SECRET) ---
  *   internal    /internal/maintenance, reconcile, health     internal.routes.ts
  */
@@ -20,6 +21,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { Controllers } from '../controllers';
 import type { Api, Env } from '../http/types';
 import { accountRoutes } from './account.routes';
+import { adminRoutes } from './admin.routes';
 import { auditRoutes } from './audit.routes';
 import { authRoutes, logoutRoutes } from './auth.routes';
 import { internalRoutes } from './internal.routes';
@@ -31,9 +33,13 @@ import { sitesRoutes } from './sites.routes';
 import { statsRoutes } from './stats.routes';
 
 /** Paths that need a signed-in user (the session middleware runs before their routes). */
-export const SIGNED_IN = ['/auth/logout', '/me', '/setup', '/setup/*', '/sites', '/sites/*', '/audit', '/account/*'];
+export const SIGNED_IN = ['/auth/logout', '/me', '/setup', '/setup/*', '/sites', '/sites/*', '/audit', '/account/*', '/admin/*'];
 
-export function registerRoutes(app: Api, c: Controllers, mw: { session: MiddlewareHandler<Env>; cronSecret: string | null | undefined }) {
+export function registerRoutes(
+  app: Api,
+  c: Controllers,
+  mw: { session: MiddlewareHandler<Env>; superAdmin: MiddlewareHandler<Env>; cronSecret: string | null | undefined },
+) {
   // Public
   publicRoutes(app, c.public);
   authRoutes(app, c.auth);
@@ -48,6 +54,7 @@ export function registerRoutes(app: Api, c: Controllers, mw: { session: Middlewa
   statsRoutes(app, c.stats);
   reportsRoutes(app, c.reports);
   auditRoutes(app, c.audit);
+  adminRoutes(app, c.admin, mw.superAdmin);
 
   // Scheduled (CRON_SECRET)
   internalRoutes(app, c.internal, mw.cronSecret);

@@ -2,6 +2,7 @@ import { createLimiters } from '../http/limiter';
 import { createSetupStore } from '../repositories/setup-store';
 import { UnconfiguredMailer } from './mail';
 import { createAccountService } from './account.service';
+import { createAdminService } from './admin.service';
 import { createAuditService } from './audit.service';
 import { createAuthService } from './auth.service';
 import { createHealthService } from './health.service';
@@ -45,5 +46,6 @@ export function createServices(deps: Deps): Services {
   s.setup = createSetupService(s);
   s.auth = createAuthService(s);
   s.account = createAccountService(s);
+  s.admin = createAdminService(s);
   return s;
 }

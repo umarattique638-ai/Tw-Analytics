@@ -95,6 +95,16 @@ export interface ControlStore {
 
   /** Users of a workspace (deleting an account removes all of them that belong to no other workspace). */
   membersOf(tenantId: ObjectId): Promise<MembershipDoc[]>;
+
+  // Super admin (/admin): every workspace at once.
+  /** Every workspace, newest first. */
+  allTenants(): Promise<TenantDoc[]>;
+  /** Every membership (who is in which workspace, with which role). */
+  allMemberships(): Promise<MembershipDoc[]>;
+  /** These users (missing ids are left out). */
+  usersByIds(ids: ObjectId[]): Promise<UserDoc[]>;
+  /** Erasures not finished yet (the nightly job is still working on them). */
+  countPendingErasures(): Promise<number>;
   /**
    * Account deletion, all or nothing (a MongoDB transaction): the workspace's sites are read INSIDE the
    * transaction and their ids and keys become the erasure record's siteIds / publicKeys (so a key added

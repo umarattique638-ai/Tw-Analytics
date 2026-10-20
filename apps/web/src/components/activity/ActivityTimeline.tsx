@@ -29,6 +29,7 @@ const LOOK: Record<string, { icon: LucideIcon; tone: Tone }> = {
   'report.deleted': { icon: FileText, tone: 'slate' },
   'account.exported': { icon: Download, tone: 'slate' },
   'data.pruned': { icon: Trash2, tone: 'slate' },
+  'support.report_downloaded': { icon: Download, tone: 'amber' },
 };
 const TONES: Record<Tone, string> = {
   teal: 'bg-teal-50 text-teal-700 dark:bg-teal-400/10 dark:text-teal-300',

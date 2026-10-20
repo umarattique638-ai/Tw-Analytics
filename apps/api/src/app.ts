@@ -6,7 +6,7 @@
  *
  * MVC (owner, 2026-10-16 and 2026-10-20). This file only builds the app. A request goes:
  *
- *   middlewares/   CSRF guard, session, cron secret, error answers
+ *   middlewares/   CSRF guard, session, super admin, cron secret, error answers
  *   routes/        which URL goes to which controller (nothing else)
  *   controllers/   HTTP only: read the request, call a service, answer with a view
  *   validators/    checks of what the client sent (domain, timezone, e-mail, password, range, ids)
@@ -21,7 +21,7 @@
 import { Hono } from 'hono';
 import { createControllers } from './controllers';
 import type { Env } from './http/types';
-import { csrfGuard, notFound, onError, requireSession } from './middlewares';
+import { csrfGuard, notFound, onError, requireSession, requireSuperAdmin } from './middlewares';
 import { registerRoutes } from './routes';
 import { createServices } from './services';
 import type { Deps } from './services';
@@ -37,7 +37,11 @@ export function createApp(deps: Deps) {
   app.notFound(notFound);
   app.use('*', csrfGuard);
 
-  registerRoutes(app, createControllers(services), { session: requireSession(deps.store), cronSecret: deps.config.cronSecret });
+  registerRoutes(app, createControllers(services), {
+    session: requireSession(deps.store),
+    superAdmin: requireSuperAdmin(services.admin),
+    cronSecret: deps.config.cronSecret,
+  });
 
   return app;
 }

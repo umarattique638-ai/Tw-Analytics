@@ -79,6 +79,18 @@ export class MemoryStore implements ControlStore {
   async tenantById(id: ObjectId) {
     return clone(this.tenants.find((t) => same(t._id, id)) ?? null);
   }
+  async allTenants() {
+    return clone([...this.tenants].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+  }
+  async allMemberships() {
+    return clone(this.memberships);
+  }
+  async usersByIds(ids: ObjectId[]) {
+    return clone(this.users.filter((u) => ids.some((id) => same(u._id, id))));
+  }
+  async countPendingErasures() {
+    return this.erasures.filter((e) => e.status === 'pending').length;
+  }
 
   async createSession(s: SessionDoc) {
     check('sessions', s);

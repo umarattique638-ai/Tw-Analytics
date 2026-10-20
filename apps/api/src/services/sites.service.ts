@@ -32,11 +32,18 @@ export function createSitesService(s: Services) {
   };
 
   /** Saves a change, unless the site changed since it was loaded (another tab): then 409. */
-  const patch = async (actor: Actor, site: SiteDoc, change: SitePatch): Promise<SiteDoc> => {
-    const updated = await store.updateSite(actor.tenant._id, site._id, site.updatedAt, change, now());
+  const patchIn = async (tenantId: SiteDoc['tenantId'], site: SiteDoc, change: SitePatch): Promise<SiteDoc> => {
+    const updated = await store.updateSite(tenantId, site._id, site.updatedAt, change, now());
     if (!updated) throw new HttpError(409, 'conflict', 'This site changed in another tab. Reload and try again.');
     return updated;
   };
+  const patch = (actor: Actor, site: SiteDoc, change: SitePatch) => patchIn(actor.tenant._id, site, change);
+
+  /** Who deletes a site: a signed-in user of the workspace, or the TailWatch team (super admin, /admin). */
+  type By = { actor: Actor } | { team: true };
+  /** One activity line in the site's workspace, for whoever did it. */
+  const logBy = (by: By, site: SiteDoc, summary: string) =>
+    'actor' in by ? audit.record(by.actor, 'site.deleted', site, summary) : audit.write(site.tenantId, null, 'site.deleted', site._id, `${summary} by the TailWatch team`);
 
   /** The signed-in user's role in the signed-in workspace. */
   const roleOf = async (actor: Actor): Promise<MembershipDoc['role'] | undefined> => {
@@ -61,8 +68,8 @@ export function createSitesService(s: Services) {
   };
 
   /** Delete a site AND everything collected for it, now and for good (an erasure record, like an account). */
-  const erase = async (actor: Actor, site: SiteDoc) => {
-    if (!canManage(await roleOf(actor))) throw new HttpError(403, 'not_allowed', 'Only the owner or an admin can delete collected data.');
+  const erase = async (by: By, site: SiteDoc) => {
+    if ('actor' in by && !canManage(await roleOf(by.actor))) throw new HttpError(403, 'not_allowed', 'Only the owner or an admin can delete collected data.');
     if (!s.eraser) {
       throw new HttpError(503, 'erase_unavailable', 'Deleting collected data is not set up on the server (TW_CH_PRUNE_PASSWORD). Nothing was changed; you can still delete the site and keep its data.');
     }
@@ -84,7 +91,7 @@ export function createSitesService(s: Services) {
         completedAt: null,
         updatedAt: at,
       },
-      actor.tenant._id,
+      site.tenantId,
       site._id,
     );
     if (!erasure) throw new HttpError(404, 'not_found', 'No such site.');
@@ -93,8 +100,17 @@ export function createSitesService(s: Services) {
       logError('site_erase_start_failed', { site: site._id, message: errorText(error) });
       return erasure;
     });
-    await audit.record(actor, 'site.deleted', site, `Deleted ${site.domain} and all its collected data (erased for good; it cannot be brought back)`);
+    await logBy(by, site, `Deleted ${site.domain} and all its collected data (erased for good; it cannot be brought back)`);
     return { sync: { ok: !!progress.kvDoneAt }, erased: true };
+  };
+
+  /** Delete a site keeping its data (tracking stops), or erasing it (`eraseData`). */
+  const removeBy = async (by: By, site: SiteDoc, eraseData: boolean) => {
+    if (eraseData) return erase(by, site);
+    const updated = await patchIn(site.tenantId, site, { status: 'deleted', keys: revokeAll(site.keys, now()) });
+    const sync = await kvSync.sync(updated);
+    await logBy(by, updated, `Deleted ${site.domain} (tracking stopped; collected data is kept for ${site.retentionDays} days)`);
+    return { sync, erased: false };
   };
 
   return {
@@ -199,13 +215,10 @@ export function createSitesService(s: Services) {
      *     are sent right away; the nightly job repeats both until nothing is left, then watches for late
      *     rows (queue retries) for a while.
      */
-    async remove(actor: Actor, site: SiteDoc, eraseData: boolean) {
-      if (eraseData) return erase(actor, site);
-      const updated = await patch(actor, site, { status: 'deleted', keys: revokeAll(site.keys, now()) });
-      const sync = await kvSync.sync(updated);
-      await audit.record(actor, 'site.deleted', updated, `Deleted ${site.domain} (tracking stopped; collected data is kept for ${site.retentionDays} days)`);
-      return { sync, erased: false };
-    },
+    remove: (actor: Actor, site: SiteDoc, eraseData: boolean) => removeBy({ actor }, site, eraseData),
+
+    /** The same, by the TailWatch team (super admin): no role needed, the activity line says who did it. */
+    removeByTeam: (site: SiteDoc, eraseData: boolean) => removeBy({ team: true }, site, eraseData),
 
     /** Writes the site to Cloudflare KV again, as MongoDB has it. */
     sync: (site: SiteDoc) => kvSync.sync(site),

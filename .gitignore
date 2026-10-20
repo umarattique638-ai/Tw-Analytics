@@ -3,6 +3,9 @@ dist
 .wrangler
 .dev.vars
 .env
+# Any other env file (.env.local from `vercel link`, .env.vercel from `vercel env pull`): never commit
+.env.*
+!.env.example
 *.log
 *.timestamp-*
 .vercel
@@ -11,6 +14,3 @@ dist
 .next/
 test-results/
 playwright-report/
-
-.vercel
-.env*.local
